@@ -1,0 +1,98 @@
+---
+# Exploration Tree — pinn
+# Research DAG: nested tree with cross-edges (also_depends_on) forming a DAG.
+# Node types: question | experiment | dead_end | decision | pivot
+
+tree:
+  - id: N01
+    type: question
+    title: "Why is PINN training so difficult, especially for challenging PDEs?"
+    description: "PINNs often fail to learn PDE solutions even in simple settings. What optimization properties of the PINN loss cause this, and how can they be addressed?"
+    children:
+
+      - id: N02
+        type: experiment
+        title: "Is near-zero loss actually needed for accurate PINN solutions?"
+        result: "Yes — confirmed strong correlation between loss and L2RE; loss must reach ~1e-5 for L2RE ~1e-2. But trivial solutions (constant u satisfying residual) can give loss ~0 with L2RE ~1."
+        evidence: [C01, "Figure 2", "§4"]
+        children:
+
+          - id: N03
+            type: decision
+            title: "Focus on achieving interpolation (L=0) as the training objective"
+            choice: "Design optimizers and training pipelines that drive loss to near-zero rather than acceptable convergence."
+            alternatives:
+              - "Relax accuracy requirement and accept L2RE ~0.1"
+              - "Use regularization to avoid trivial solutions"
+            evidence: "Figure 2 shows monotone loss-L2RE relationship requires near-zero loss for meaningful accuracy."
+            children:
+
+              - id: N04
+                type: experiment
+                title: "Characterize Hessian spectral structure of PINN loss"
+                result: "PINN Hessian is severely ill-conditioned: condition numbers >10^4 (convection >10^4, reaction >10^3, wave >10^5). Large outlier eigenvalues + spectral density near 0."
+                evidence: [C02, "Figure 3 top", "§5.1"]
+                children:
+
+                  - id: N05
+                    type: experiment
+                    title: "Which loss component drives ill-conditioning?"
+                    result: "Residual loss (containing differential operator D) is most ill-conditioned. IC and BC components are comparatively well-conditioned."
+                    evidence: [C03, "Figure 3 bottom", "Figure 7", "§5.2"]
+                    children:
+
+                      - id: N06
+                        type: decision
+                        title: "Target residual ill-conditioning via preconditioning"
+                        choice: "Use quasi-Newton (L-BFGS) preconditioning to reduce condition number of the loss landscape."
+                        alternatives:
+                          - "Loss reweighting to balance residual vs BC/IC terms"
+                          - "Spectral bias mitigation via Fourier features"
+                        evidence: "Residual loss drives >90% of ill-conditioning; preconditioning directly addresses this."
+                        children:
+
+                          - id: N07
+                            type: experiment
+                            title: "Does L-BFGS preconditioning reduce condition number?"
+                            result: "Yes — L-BFGS preconditioned Hessian shows ≥1000× reduction in top eigenvalue for all three PDEs and all loss components."
+                            evidence: [C04, "Figure 3 dashed lines", "§5.3"]
+                            children: []
+
+      - id: N08
+        type: experiment
+        title: "Compare Adam, L-BFGS, Adam+L-BFGS across widths and PDEs"
+        result: "Adam+L-BFGS consistently achieves lowest min loss and L2RE. 14.2× smaller L2RE than Adam on convection, 6.07× smaller than L-BFGS on wave. Exception: reaction at width=100 where Adam~Adam+L-BFGS."
+        evidence: [C05, "Table 1", "Figure 8", "§6.1"]
+        also_depends_on: [N04]
+        children:
+
+          - id: N09
+            type: dead_end
+            title: "Can L-BFGS alone achieve sufficient accuracy?"
+            hypothesis: "L-BFGS alone with good initialization should be competitive since it preconditions the loss."
+            failure_mode: "L-BFGS terminates early due to strong Wolfe line search failure (no acceptable step size found). Gradient norm ~1e-2 to 1e-3 at termination — significant gradient information remains."
+            lesson: "Strong Wolfe conditions are too restrictive for PINN loss; L-BFGS structural limitation requires workaround."
+
+          - id: N10
+            type: experiment
+            title: "Why does L-BFGS terminate early and can it be fixed?"
+            result: "L-BFGS strong Wolfe line search fails to find valid step size in convection and wave (Figure 9). For reaction, gradient slope below threshold. Armijo (weaker) conditions allow continuation."
+            evidence: ["§7.1", "Figure 4 bottom", "Figure 9"]
+            children:
+
+              - id: N11
+                type: decision
+                title: "Design NNCG to use Armijo instead of strong Wolfe"
+                choice: "NysNewton-CG uses Armijo line search (subset of strong Wolfe conditions), enabling continuation after L-BFGS stalls. Nyström preconditioner handles ill-conditioned Hessian for CG."
+                alternatives:
+                  - "Modify L-BFGS to use Armijo (unstable without valid Hessian approximation)"
+                  - "Use more aggressive curvature in line search"
+                evidence: "Armijo is sufficient for descent guarantee; NyströmPCG solves for Newton step efficiently using fast spectral decay structure."
+                children:
+
+                  - id: N12
+                    type: experiment
+                    title: "NNCG after Adam+L-BFGS: loss and L2RE improvement"
+                    result: "NNCG reduces loss >10× after Adam+L-BFGS across all three PDEs. GD applied identically produces zero improvement. NNCG is 5-322× slower per-iteration than L-BFGS."
+                    evidence: [C06, "Table 2", "Table 3", "Figure 4", "Figure 5", "§7.3"]
+                    children: []

@@ -1,0 +1,101 @@
+# Exploration Tree — rice
+# Research DAG: nested tree with cross-edges (also_depends_on) forming a DAG.
+# Node types: question | experiment | dead_end | decision | pivot
+
+tree:
+  - id: N01
+    type: question
+    title: "How to break through DRL training bottlenecks without re-training from scratch?"
+    description: "Pre-trained DRL agents plateau at sub-optimal performance (local optima, sparse rewards). Re-training is prohibitively expensive (millions of dollars for complex tasks). How can we refine a pre-trained agent efficiently while providing theoretical guarantees?"
+    children:
+
+      - id: N02
+        type: experiment
+        title: "Evaluate existing refining methods: PPO fine-tuning, StateMask-R, JSRL"
+        result: "PPO fine-tuning: marginal gains (trapped in local optima). StateMask-R: sometimes degrades performance due to overfitting. JSRL: poor performance due to random frontier selection."
+        evidence: [C02, "Table 1", "§4.3"]
+        children:
+
+          - id: N03
+            type: dead_end
+            title: "StateMask-R: fine-tuning exclusively from critical states"
+            hypothesis: "Starting refining from explanation-identified critical states should help the agent learn correct behavior from those states"
+            failure_mode: "Overfitting: agent achieves 50.8% evasion from critical states but only 36.2% from default initial states (vs 33.8% baseline). Distribution shift between training and test initial state distributions."
+            lesson: "Critical-state-only initialization causes distribution mismatch. Need to mix critical states with default initial states. Led to the mixed initial state distribution idea (N05)."
+
+          - id: N04
+            type: dead_end
+            title: "JSRL: random curriculum frontier selection"
+            hypothesis: "Using a pre-trained policy as a guide with random exploration frontiers should enable the agent to explore from diverse states"
+            failure_mode: "Random frontiers do not guarantee positive returns or informative starting points. Cannot guarantee the frontier states are the ones where errors occur. Empirically performs poorly across all 8 environments."
+            lesson: "Frontier selection must be guided by understanding which states matter most for the agent's reward. Led to using explanation methods for frontier selection (N06)."
+
+          - id: N05
+            type: decision
+            title: "Adopt mixed initial state distribution to prevent overfitting"
+            choice: "µ(s) = p·d^ˆπ_ρ(s) + (1-p)·ρ(s) where p ∈ [0.25, 0.5] is optimal"
+            alternatives:
+              - "p=1 (all critical states): StateMask-R — causes overfitting"
+              - "p=0 (all default states): vanilla PPO fine-tuning — cannot escape local optima"
+            evidence: "Table 7 malware case study shows p=mixed achieves 58.4% vs 36.2% (p=1 tested from default). Figure 7 systematic sweep."
+            children:
+
+              - id: N06
+                type: decision
+                title: "Use explanation method to select informative exploration frontiers"
+                choice: "StateMask-based critical state identification: select state with highest P(a^m=0|s)"
+                alternatives:
+                  - "Random visited state selection (PPO++): no theoretical guarantee on frontier quality"
+                  - "Return-based archive (Go-Explore): does not identify why the policy fails"
+                  - "Human feedback (Guan et al., 2021): does not scale to large action spaces"
+                evidence: "Table 1 right half: RICE+Ours explanation outperforms RICE+Random across all 8 environments. Claim 1 theoretical analysis."
+                children:
+
+                  - id: N07
+                    type: experiment
+                    title: "Can original StateMask objective be simplified for faster training?"
+                    result: "Theorem 3.3: η(π̄) ≤ η(π) under Assumption 3.1. So J(θ) = min|η(π)-η(π̄)| simplifies to J(θ) = max η(π̄), enabling vanilla PPO training. 16.8% average speedup (Table 4)."
+                    evidence: [C03, "Table 4", "§3.3", "Theorem 3.3"]
+                    children:
+
+                      - id: N08
+                        type: dead_end
+                        title: "Naive max η(π̄) leads to trivial solution (never blind)"
+                        hypothesis: "Simply maximizing η(π̄) via PPO would learn to identify critical steps"
+                        failure_mode: "The optimal solution to max η(π̄) without constraints is to never blind the agent (always output a^m=0), since blinding can only decrease reward. Mask network degenerates to identity."
+                        lesson: "Need explicit incentive to blind. Solution: add bonus reward +α·a^m_t when mask outputs 1. Led to the modified reward formulation (N09)."
+
+                      - id: N09
+                        type: decision
+                        title: "Add blinding bonus α·a^m to prevent trivial solution"
+                        choice: "R'(s,a) = R(s,a) + α·a^m_t where α=0.0001 (all environments)"
+                        alternatives:
+                          - "Constraint-based approach: enforce minimum blinding rate — more complex to implement"
+                          - "Entropy regularization: add entropy bonus to mask distribution"
+                        evidence: "Figure 9: fidelity scores insensitive to α ∈ {0.01, 0.001, 0.0001}. Table 4: 16.8% efficiency gain vs StateMask."
+                        children:
+
+                          - id: N10
+                            type: experiment
+                            title: "Verify Lemma 3.5: MaskNet sampling ≡ sampling from better policy ˆπ"
+                            also_depends_on: [N06]
+                            result: "Proved: d^ˆπ_ρ(s,a) = d^π_ρ(s,a)·w(s,a) where w(s,a) ∝ Q^π(s,a). This reweighting corresponds to a policy ˆπ with η(ˆπ) ≥ η(π). Combined with Assumption 3.4, proves the distribution mismatch coefficient ||d^π*/d^ˆπ_ρ||∞ < ||d^π*/d^π_ρ||∞."
+                            evidence: [C01, "Lemma 3.5", "Appendix B.2", "Theorem 3.6"]
+                            children:
+
+                              - id: N11
+                                type: decision
+                                title: "Add RND exploration from mixed initial states"
+                                choice: "R'(s,a) = R(s,a) + λ·|f(s')-f̂(s')|² with λ=0.01 as default"
+                                alternatives:
+                                  - "Goal-conditional RL exploration (Ren et al., 2019): requires goal specification"
+                                  - "Count-based exploration: impractical in large/continuous state spaces"
+                                  - "No exploration (fine-tuning only): insufficient for escaping local optima"
+                                evidence: "Figure 8: λ>0 provides noticeable improvement vs λ=0. Table 7 malware: mixed+exploration (68.2%) >> mixed+no-exploration (58.4%)."
+                                children:
+
+                                  - id: N12
+                                    type: experiment
+                                    title: "Validate RICE generalizes to non-PPO pretrained agents (Experiment IV)"
+                                    result: "SAC pre-trained Hopper agent refined via GAIL+RICE outperforms SAC fine-tuning, PPO fine-tuning, JSRL, StateMask-R. Switching to PPO-based refining also helps escape bottleneck even without RICE."
+                                    evidence: [C06, "Figure 3", "§4.3"]

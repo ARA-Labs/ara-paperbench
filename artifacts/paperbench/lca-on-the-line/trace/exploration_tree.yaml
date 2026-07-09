@@ -1,0 +1,104 @@
+# Exploration Tree — lca-on-the-line
+# Research DAG: nested tree with cross-edges (also_depends_on) forming a DAG.
+# Node types: question | experiment | dead_end | decision | pivot
+
+tree:
+  - id: N01
+    type: question
+    title: "How can we predict OOD performance from ID measurements for both VMs and VLMs?"
+    description: "The core research question: existing Accuracy-on-the-Line works within each model family but fails to unify Vision Models (VMs) and Vision-Language Models (VLMs). Can we find a single ID metric that predicts OOD performance for both?"
+    children:
+
+      - id: N02
+        type: experiment
+        title: "Test Accuracy-on-the-Line across VM and VLM families"
+        result: "ID Top-1 accuracy produces two separate linear trends (one for VMs, one for VLMs). VLMs achieve higher OOD accuracy than their ID accuracy predicts — the 'effective robustness' gap. R² drops to ~0 for ImageNet-A across combined modalities."
+        evidence: [C01, "Figure 5 (red line)", "Table 2", "§4.1"]
+        children:
+
+          - id: N03
+            type: dead_end
+            title: "Use multiple ID test sets (Shi et al., 2023) to bridge the VM/VLM gap"
+            hypothesis: "Evaluating on multiple ID test sets would provide a more stable predictor that works across modalities"
+            failure_mode: "Requires multiple evaluation runs; not a single unified measurement. Computationally expensive. Does not capture why VLMs generalize better in a mechanistic sense."
+            lesson: "Need a single ID metric that captures intrinsic model property — quality of feature alignment — rather than just accuracy on multiple datasets"
+
+          - id: N04
+            type: question
+            title: "What property of models actually correlates with OOD generalization across modalities?"
+            description: "If Top-1 accuracy fails, what does distinguish good generalizers (VLMs) from poor generalizers (VMs with similar ID accuracy)?"
+            children:
+
+              - id: N05
+                type: experiment
+                title: "Revisit LCA distance as a measure of misprediction quality"
+                result: "LCA distance measured on ID data strongly correlates with OOD accuracy for BOTH VMs and VLMs — a single linear trend. R²>0.7, PEA>0.7 on 4/5 OOD datasets. VLMs have systematically lower LCA distance (better mistakes) than VMs with similar ID accuracy."
+                evidence: [C01, "Figure 1 (right)", "Table 2", "§4.1"]
+                children:
+
+                  - id: N06
+                    type: decision
+                    title: "Choose information content vs. tree depth for LCA scoring function"
+                    choice: "Information content: I(v) = -log2(p(v)) with uniform leaf probabilities (D^I_LCA)"
+                    alternatives:
+                      - "Tree depth P(v): simple but susceptible to tree imbalance"
+                      - "Mixed: use depth for soft labels (D^P_LCA), IC for main correlation experiments"
+                    evidence: "Information content more robust to imbalanced hierarchies; tree depth used for soft label construction where normalization handles imbalance"
+                    children:
+
+                      - id: N07
+                        type: experiment
+                        title: "Validate LCA correlation across 75 models and 5 OOD datasets"
+                        result: "Strong linear LCA-on-the-Line established. R²(LCA→ImgN-S)=0.816, R²(LCA→ImgN-R)=0.779, R²(LCA→ImgN-A)=0.704, R²(LCA→ObjNet)=0.915. ID Top1 achieves R²≈0 on ImgN-A combined. LCA also superior predictor by MAE in Table 3."
+                        evidence: [C01, "Table 2", "Table 3", "Figure 5"]
+                        children:
+
+                          - id: N08
+                            type: decision
+                            title: "Extend to datasets without predefined hierarchies"
+                            choice: "Construct latent hierarchy via 9-layer K-means clustering on per-class average features from a pretrained model"
+                            alternatives:
+                              - "Manual hierarchy construction (too labor intensive)"
+                              - "Use cosine similarity matrix directly as proxy for distance (loses hierarchical structure)"
+                            evidence: "K-means produces hierarchical organization; results in Table 4 show robust PEA across 75 source models"
+                            children:
+
+                              - id: N09
+                                type: experiment
+                                title: "K-means latent hierarchy robustness study (Table 4)"
+                                result: "Mean PEA from latent hierarchies: 0.815 (ImgN-v2), 0.773 (ImgN-S), 0.712 (ImgN-R), 0.662 (ImgN-A), 0.930 (ObjNet). Std very low (~0.02-0.03). VLM-sourced hierarchies better quality than VM-sourced."
+                                evidence: [C02, "Table 4", "§4.3.1"]
+                                children: []
+
+                          - id: N10
+                            type: decision
+                            title: "Apply LCA insight to improve generalization (not just measure it)"
+                            choice: "Augment CE loss with LCA soft label auxiliary loss for linear probing"
+                            alternatives:
+                              - "Full end-to-end training with LCA loss (not reported in main paper)"
+                              - "Use LCA distance as a filtering criterion to select training data"
+                              - "Modify architecture to encourage hierarchical representations"
+                            evidence: "Linear probing is computationally efficient; weight interpolation allows tunable ID/OOD trade-off"
+                            also_depends_on: [N09]
+                            children:
+
+                              - id: N11
+                                type: experiment
+                                title: "LCA soft labels for linear probing (Table 5, 6)"
+                                result: "Consistent OOD improvements across all 6 backbones with WordNet soft labels. ResNet-50: +6.0% on ImgN-R, +5.9% on ImgN-A. VLM-sourced latent hierarchies also improve OOD performance, with WordNet being best."
+                                evidence: [C03, "Table 5", "Table 6", "Table 9", "§4.3.2"]
+                                children: []
+
+                              - id: N12
+                                type: experiment
+                                title: "Taxonomy-aligned prompts for VLMs (Table 14)"
+                                result: "Taxonomy Parent prompt ('A, which is a type of B, which is a type of C') achieves highest Top-1 and lowest CE across all datasets. Shuffle Parent (wrong hierarchy) degrades performance vs correct hierarchy. Stack Parent (no relational structure) performs worst."
+                                evidence: [C05, "Table 14", "§4.3.3"]
+                                children: []
+
+      - id: N13
+        type: dead_end
+        title: "Use data diversity metrics to explain VLM generalization"
+        hypothesis: "VLMs generalize better because LAION has more diverse training data; measuring data diversity would predict OOD performance"
+        failure_mode: "Data diversity is difficult to measure; does not explain differences within CLIP variants with same training data; requires knowing training dataset composition which is unavailable for many VLMs"
+        lesson: "Need a model-intrinsic metric (like LCA distance) that works regardless of training data knowledge"

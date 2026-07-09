@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Exploration Tree — rebench-restricted_mlm</title>
+<style>
+
+  :root {
+    --bg: #fafafa;
+    --card-bg: #ffffff;
+    --border: #e0e0e0;
+    --text: #1a1a1a;
+    --text-secondary: #555;
+    --question: #1565c0;
+    --experiment: #e65100;
+    --decision: #2e7d32;
+    --dead-end: #c62828;
+    --pivot: #6a1b9a;
+    --edge: #bdbdbd;
+    --dag-edge: #e57373;
+    --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--text);
+    padding: 40px 24px 80px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  header {
+    text-align: center;
+    margin-bottom: 48px;
+  }
+
+  header h1 {
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -0.3px;
+    margin-bottom: 6px;
+  }
+
+  header p {
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+
+  .legend {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+    margin-bottom: 40px;
+    flex-wrap: wrap;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+
+  .legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+  }
+
+  .legend-dot.question   { background: var(--question); }
+  .legend-dot.experiment { background: var(--experiment); }
+  .legend-dot.decision   { background: var(--decision); }
+  .legend-dot.dead_end   { background: var(--dead-end); }
+  .legend-dot.pivot      { background: var(--pivot); }
+
+  /* ---- Tree layout ---- */
+
+  .tree {
+    position: relative;
+  }
+
+  .node-group {
+    position: relative;
+    padding-left: 32px;
+  }
+
+  .node-group.has-children > .children::before {
+    content: "";
+    position: absolute;
+    left: 15px;
+    top: 0;
+    bottom: 24px;
+    width: 2px;
+    background: var(--edge);
+  }
+
+  .children {
+    position: relative;
+    margin-top: 0;
+  }
+
+  .children > .node-group::before {
+    content: "";
+    position: absolute;
+    left: -17px;
+    top: 22px;
+    width: 17px;
+    height: 2px;
+    background: var(--edge);
+  }
+
+  .tree > .node-group {
+    padding-left: 0;
+  }
+
+  .tree > .node-group::before { display: none; }
+
+  /* ---- Node card ---- */
+
+  .node {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-bottom: 12px;
+    cursor: pointer;
+    transition: box-shadow 0.15s ease, border-color 0.15s ease;
+    position: relative;
+  }
+
+  .node:hover {
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  }
+
+  .node.expanded {
+    border-color: #999;
+  }
+
+  .node-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .node-indicator {
+    flex-shrink: 0;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-top: 5px;
+  }
+
+  .node-indicator.question   { background: var(--question); }
+  .node-indicator.experiment { background: var(--experiment); }
+  .node-indicator.decision   { background: var(--decision); }
+  .node-indicator.dead_end   { background: var(--dead-end); }
+  .node-indicator.pivot      { background: var(--pivot); }
+
+  .node-id {
+    flex-shrink: 0;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 4px;
+    background: #f0f0f0;
+    color: var(--text-secondary);
+    margin-top: 1px;
+  }
+
+  .node-title {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.4;
+    flex: 1;
+  }
+
+  .node-type {
+    flex-shrink: 0;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 10px;
+    margin-top: 2px;
+  }
+
+  .node-type.question   { background: #e3f2fd; color: var(--question); }
+  .node-type.experiment { background: #fff3e0; color: var(--experiment); }
+  .node-type.decision   { background: #e8f5e9; color: var(--decision); }
+  .node-type.dead_end   { background: #ffebee; color: var(--dead-end); }
+  .node-type.pivot      { background: #f3e5f5; color: var(--pivot); }
+
+  .node-body {
+    display: none;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #f0f0f0;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+  }
+
+  .node.expanded .node-body {
+    display: block;
+  }
+
+  .node-field {
+    margin-bottom: 8px;
+  }
+
+  .node-field:last-child {
+    margin-bottom: 0;
+  }
+
+  .field-label {
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: var(--text);
+    margin-bottom: 2px;
+  }
+
+  .field-value {
+    white-space: pre-wrap;
+  }
+
+  .evidence-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 3px;
+  }
+
+  .evidence-tag {
+    font-size: 11px;
+    padding: 1px 7px;
+    border-radius: 3px;
+    background: #f5f5f5;
+    border: 1px solid #e0e0e0;
+  }
+
+  .alt-list {
+    list-style: none;
+    padding: 0;
+  }
+
+  .alt-list li {
+    position: relative;
+    padding-left: 14px;
+    margin-bottom: 3px;
+  }
+
+  .alt-list li::before {
+    content: "\00d7";
+    position: absolute;
+    left: 0;
+    color: #ccc;
+    font-weight: 700;
+  }
+
+  .dag-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    color: var(--dag-edge);
+    border: 1px solid var(--dag-edge);
+    border-radius: 4px;
+    padding: 1px 6px;
+    margin-left: 8px;
+    font-weight: 600;
+    vertical-align: middle;
+  }
+
+  .dag-badge svg {
+    width: 10px;
+    height: 10px;
+  }
+
+  .chevron {
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    margin-top: 3px;
+    transition: transform 0.15s ease;
+    color: #ccc;
+  }
+
+  .node.expanded .chevron {
+    transform: rotate(90deg);
+    color: #999;
+  }
+
+  .stats {
+    display: flex;
+    justify-content: center;
+    gap: 32px;
+    margin-bottom: 32px;
+    padding: 12px 0;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .stat {
+    text-align: center;
+  }
+
+  .stat-value {
+    font-size: 20px;
+    font-weight: 600;
+  }
+
+  .stat-label {
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+
+  :root {
+    --run-badge: #757575;
+    --reference: #2e7d32;
+  }
+
+  .section-heading {
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: -0.2px;
+    margin: 44px 0 4px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+  }
+
+  .tree-section:first-of-type .section-heading {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+  }
+
+  .section-note {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-bottom: 20px;
+    max-width: 760px;
+    line-height: 1.5;
+  }
+
+  .run-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    color: var(--run-badge);
+    border: 1px solid #cfcfcf;
+    border-radius: 4px;
+    padding: 1px 6px;
+    margin-left: 8px;
+    font-weight: 600;
+    vertical-align: middle;
+    background: #f5f5f5;
+  }
+
+  .reference-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 10px;
+    color: #fff;
+    background: var(--reference);
+    border-radius: 10px;
+    padding: 2px 8px;
+    margin-left: 8px;
+    font-weight: 600;
+    vertical-align: middle;
+  }
+
+  .field-value.mono {
+    font-family: "SF Mono", "Menlo", "Consolas", monospace;
+    font-size: 12px;
+  }
+
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Exploration Tree — rebench-restricted_mlm</h1>
+  <p>Masked-LM under a restricted primitive set (no softmax/exp/Conv1d/division-in-forward); score = log(loss − 1.5), lower is better. Starting 1.81 → reference 1.13 → best human 0.338.</p>
+</header>
+
+<div class="stats" id="stats"></div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot question"></div>Question</div>
+  <div class="legend-item"><div class="legend-dot experiment"></div>Experiment</div>
+  <div class="legend-item"><div class="legend-dot decision"></div>Decision</div>
+  <div class="legend-item"><div class="legend-dot dead_end"></div>Dead End</div>
+  <div class="legend-item"><div class="legend-dot pivot"></div>Pivot</div>
+  <div class="legend-item"><span class="run-badge" style="margin-left:0;">Run N</span>MALT run label</div>
+  <div class="legend-item"><span class="reference-badge" style="margin-left:0;">&#10003; Reference</span>Beats reference score</div>
+</div>
+
+<div id="sections"></div>
+
+<script>
+
+const DATA = {"artifact": "rebench-restricted_mlm", "title": "Exploration Tree — rebench-restricted_mlm", "subtitle": "Masked-LM under a restricted primitive set (no softmax/exp/Conv1d/division-in-forward); score = log(loss − 1.5), lower is better. Starting 1.81 → reference 1.13 → best human 0.338.", "sections": [{"id": "official", "label": "Official Solution Stream", "note": "Architecture progression from a bias-only sanity floor to the shipped ConvMLM ⊕ BiBigram composite, plus two unshipped alternative pathways branching off the BiBigram decision point.", "roots": [{"id": "O01", "name": "BiasOnlyMLM (sanity floor)", "provenance": "official-solution", "source": {"file": "src/kernel/tao_solution.py", "lines": "6-16"}, "method": "Single (vocab,) learnable bias, expanded across batch and sequence.\nOutput independent of token_indices.\n", "result": "loss subsumed by unigrams; no separately reported number", "status": "completed", "children": [{"id": "O02", "name": "UnigramMLM", "provenance": "official-solution", "source": {"file": "src/kernel/tao_solution.py", "lines": "19-30", "notes": "src/kernel/notes.md:3"}, "method": "Load smoothed unigram probabilities precomputed by measure_unigram_loss.py\n(~10M OWT tokens), expose as a (vocab,) learnable log-odds tensor expanded\nto (B, S, V).\n", "result": {"loss": 7.58, "score": 1.808}, "status": "completed", "children": [{"id": "O03", "name": "BiBigramMLMCheating", "provenance": "official-solution", "source": {"file": "src/kernel/tao_solution.py", "lines": "33-46", "notes": "src/kernel/notes.md:5"}, "method": "Average forward-bigram and backward-bigram *probabilities* lookup-tables\n(mask-row replaced with unigrams), then take log(p/(1-p)) inside forward.\nUses division -> not legal under the restrictions (\"cheating\").\n", "result": {"loss": 5.75, "score": 1.443}, "status": "completed", "children": [{"id": "O04", "name": "BiBigramMLM (legal: average log-odds)", "provenance": "official-solution", "source": {"file": "src/kernel/tao_solution.py", "lines": "49-69", "notes": "src/kernel/notes.md:5"}, "method": "Precompute log(p/(1-p)) for forward and backward bigrams *outside* forward.\nInside forward: index by token.roll(±1), add the two log-odds, multiply\nby 0.5 (no division). Mask-token rows replaced with the unigram log-odds.\n", "result": {"loss": 5.83, "score": 1.466}, "status": "completed", "children": [{"id": "O05", "name": "FeedForwardMLM (sequence-flatten dense MLP)", "provenance": "official-solution", "source": {"file": "src/kernel/tao_solution.py", "lines": "80-119"}, "method": "Embed each token to hidden_expansion=32 dims, flatten to (B, S*32),\nrun num_layers Linear+ReLU at dim S*32, project back to per-position\nvocabulary logits.\n", "result": "implemented but not separately reported in notes.md; presumed superseded by ConvMLM", "status": "explored-not-shipped", "children": [], "type": "dead_end"}, {"id": "O06", "name": "ConvMLM (residual conv stack)", "provenance": "official-solution", "source": {"file": "src/kernel/tao_solution.py", "lines": "239-297", "notes": "src/kernel/notes.md:7"}, "method": "Residual stack of 1D convolutions over the token axis, kernel=7,\nhidden=512, layers=6, expansion=2. Conv implemented via pad+as_strided+\neinsum (Conv1d not on allow-list). Per-layer multiplicative inverse_stds\nbuffer updated outside forward via EMA toward 1/std.\n", "result": {"loss": 5.25, "score": 1.323}, "status": "completed", "children": [{"id": "O07", "name": "ConvMLMWithBiBigrams (SHIPPED)", "provenance": "official-solution", "source": {"file": "src/kernel/tao_solution.py", "lines": "300-367", "train": "src/kernel/tao_train.py:73", "notes": "src/kernel/notes.md:11"}, "method": "ConvMLM logits + frozen BiBigramMLM log-odds * learned scalar bigram_multiplier\n(init 1.0). BiBigram pathway wrapped in torch.no_grad. AdamW lr=3e-4 with\nwarmup-100 + cos(i/N * pi/4) decay, 100 000 steps, batch=16, sequence=128,\nbf16 autocast, grad clip 1.0. update_inverse_stds() called every step\n*outside* forward (where division is legal).\n", "result": {"loss": 4.6, "score": 1.13, "reference": true}, "status": "completed", "children": [], "type": "decision"}], "type": "experiment"}, {"id": "O_ALT_MIXER", "name": "MLPMixer (cross-token + per-token MLPs)", "provenance": "official-solution", "source": {"file": "src/kernel/tao_solution.py", "lines": "122-203"}, "method": "Token-mixing MLP across sequence dim followed by per-token MLP, both with\ninverse_stds renormalisation. Same shape conventions as ConvMLM.\n", "result": "implemented; not selected by tao_train.py:73; no published score", "status": "explored-not-shipped", "type": "dead_end", "children": []}, {"id": "O_ALT_GPT2", "name": "GPT-2-small via piecewise-linear ReLU approximations", "provenance": "official-solution", "source": {"file": "src/kernel/gpt2_approximation.py", "lines": "32-71, 103-201", "notes": "src/kernel/notes.md:13-15"}, "method": "Approximate softmax/gelu/rsqrt/exp by piecewise-linear ReLU sums\n(Approximation class), enabling a near-verbatim minGPT to be expressed\nunder the primitive set. Tested with n_steps=20 approximation pieces.\n", "result": "~23x slowdown vs unrestricted GPT-2 (2.3 mfu vs 43.9 mfu, A100-equiv on H100).\n\"Loss didn't go down in the approximated version over that time.\"\n", "status": "explored-not-shipped", "abandoned_reason": "compute budget cannot absorb 23x slowdown at the same step count", "type": "dead_end", "children": []}], "note": "Loss only 0.08 worse than the cheating variant -> legal averaging is essentially free.", "type": "experiment"}], "type": "experiment"}], "type": "experiment"}], "type": "experiment"}]}, {"id": "malt", "label": "MALT Stream — 22 agent runs (11 claude-opus-4 / 11 claude-sonnet-4)", "note": "Aggregate findings across runs; only 2 of 22 runs beat the reference score of 1.13 (both claude-opus-4).", "roots": [{"id": "M01", "type": "question", "title": "Can a frontier coding agent independently rediscover ConvMLM ⊕ BiBigram and beat reference 1.13?", "provenance": "MALT", "source": "22 MALT runs across claude-opus-4 + claude-sonnet-4", "description": "Each MALT run starts from the supplied bias-only baseline (loss 7.836, score 1.846), the same primitive allow-list, and the standard 8-hour budget. The research question is whether contemporary agents arrive at the official ConvMLM ⊕ BiBigram solution (loss 4.6, score 1.13), at a different working solution, or fail to clear reference.\n", "children": [{"id": "M02", "type": "experiment", "title": "Best MALT run: 1.0497 — ReLU-attention transformer + 30k-step AdamW + 3-seed ensemble", "provenance": "MALT", "source": "run_16 (run_id=347474, claude-opus-4-20250514) — see code/rebench-pipeline/malt_outputs/restricted_mlm/run_16/", "method": "6L-512d-8h transformer with attn = ReLU(QK^T) @ V (softmax replaced by ReLU because exp is forbidden), no LayerNorm, learned-scale residual. AdamW lr=1e-3 ~5000 steps -> revert from a failed 8L linear-attention detour -> long AdamW fine-tune at lr 2e-5 cosine for 30k steps (loss 4.385) -> 3-seed ensemble of fine-tuned 6L checkpoints.\n", "result": {"best_score": 1.0497, "best_loss": 4.36, "reference_beaten_by": 0.08}, "children": [{"id": "M03", "type": "experiment", "title": "Second MALT run to beat reference: 1.0864 — same recipe, no ensemble", "provenance": "MALT", "source": "run_01 (run_id=345763, claude-opus-4-20250514) — see code/rebench-pipeline/malt_outputs/restricted_mlm/run_01/", "method": "~70M-param ReLU-linear-attention transformer (no softmax / no division / no exp), trained ~50k steps at lr=1e-3 to loss 5.14, then two pure fine-tune passes on v1: lr=5e-5 cosine ~7858 steps (loss 4.56), then lr=2e-5 -> 1e-6 cosine ~4000 steps (loss 4.46). The transferable insight: once a stable positional+attention skeleton exists, training schedule dominates architecture changes.\n", "result": {"best_score": 1.0864, "best_loss": 4.46, "reference_beaten_by": 0.044}, "also_depends_on": ["M01"], "children": []}]}, {"id": "M04", "type": "dead_end", "title": "0 of 22 runs ever loaded the BiBigram prior — the largest blind spot", "provenance": "MALT", "source": "all 22 run_summary.yaml + insights.yaml", "hypothesis": "An agent given measure_unigram_loss.py in the starter kit would precompute the unigram and bigram statistics, freeze them as a prior, and reach the official 5.83 -> 4.6 trajectory.\n", "failure_mode": "No MALT run loaded unigrams.pt or bigrams_*.pt. Every run started by replacing the architecture in basic_model.pt and reinventing attention from scratch. The official 0.55 loss-units of headroom from the precomputed bigram prior (notes.md:11) is invisible to the MALT stream.\n", "lesson": "MALT agents prioritise architectural moves and treat the supplied baseline file as the search starting point, ignoring the rest of the starter kit. An explicit \"list every artefact in the starter kit and decide which to use\" step would close the largest known performance gap.\n", "children": []}, {"id": "M05", "type": "dead_end", "title": "Hand-rolled 1/x normalisations NaN at init — 7 of 22 runs", "provenance": "MALT", "source": "runs 01, 06, 09, 11, 16, 19, 20 insights.yaml", "hypothesis": "A LayerNorm/RMSNorm substitute can be built inside the restricted primitive set by emulating the reciprocal with `gate_sum**-0.5`, `1/sum(weights)`, polynomial reciprocal, or Taylor series.\n", "failure_mode": "All emulations NaN at step 0 or shortly after when the denominator can hit zero. Concrete instances: run_06 fixed-scale RMSNorm collapses to ln(50257) = 10.82; run_13 ModelV2 NaNs at forward-pass step 0; run_19 ReLU-attention with no normalisation explodes to loss 7.997e30.\n", "lesson": "The cure in every recovering case is to substitute a fixed scalar residual (often 0.5) or trainable per-layer scale. The official solution sidesteps this entirely by updating inverse_stds *outside* forward (C07); MALT discovered the constraint but never adopted the official workaround.\n", "children": []}, {"id": "M06", "type": "dead_end", "title": "Linear attention without ReLU on weights plateaus far above ReLU-attention", "provenance": "MALT", "source": "run_16 attempt 4, run_09 attempts 3-5", "hypothesis": "Replacing ReLU(QK^T) with raw linear Q@K^T preserves expressivity and is more stable; depth/width can compensate for the loss of the non-negativity constraint.\n", "failure_mode": "run_16 8L linear-attention (133M params) plateaus at val loss 7.5-7.6 vs ~6.8 for the smaller 6L ReLU-attention; never recoverable with depth, width, or weight decay. run_09 transpose+Linear mixer family tops out at loss 6.29 (score 1.567).\n", "lesson": "ReLU on attention weights enforces the non-negative-attention-mass property that softmax has; raw linear Q@K^T lets attention drift to unbounded magnitudes that the restricted primitive set cannot legally normalise away.\n", "children": []}, {"id": "M07", "type": "dead_end", "title": "Bash 60s/300s timeout cripples large-step training in 6 runs", "provenance": "MALT", "source": "runs 06, 09, 13, 14, 18, 20", "hypothesis": "A long single training command (10k+ steps) will fit in a single bash call.\n", "failure_mode": "Per-call bash timeout (60s default, 300s extended) interrupts training at 4500-9000 steps. Partial checkpoints survive but the agent loses visibility into final loss; subsequent shorter runs may overwrite the interrupted checkpoint. run_13 attempt 4 timed out then attempt 5 regressed to loss 7.455 due to overwrite.\n", "lesson": "run_14 demonstrates the workaround: launch training with `nohup python train.py &`, poll `os.path.getmtime(\"checkpoint.pt\")` from a separate cell, score whichever checkpoint is on disk. No other run adopted this pattern.\n", "children": []}, {"id": "M08", "type": "dead_end", "title": "Context-trim verbatim-replay loops in 8 of 22 runs", "provenance": "MALT", "source": "runs 06, 09, 11, 13, 18, 19, 20, 21", "hypothesis": "Long runs (300+ msgs) hit the model's context window and trigger automatic conversation trimming.\n", "failure_mode": "Post-trim segments are verbatim replays of the pre-trim arc. Only ~1 novel scoring event appears across the entire post-trim region (e.g. run_18: 562 msgs, only 1 novel score after MSG 179; run_21: 738 msgs, only 1 novel score after MSG 127).\n", "lesson": "Effective novel-scoring rate often <20% of total agent turns in long runs. Dedup on (approach, score) is needed before computing attempt-budget metrics. An external scratchpad would be immune.\n", "children": []}, {"id": "M09", "type": "question", "title": "Net result: 2 of 22 MALT runs beat reference 1.13; both opus-4", "provenance": "MALT", "source": "evidence/tables/malt_attempts.md", "description": "Best per model:\n  - claude-opus-4    : 1.0497 (run_16), 1.0864 (run_01); 2/11 beat reference\n  - claude-sonnet-4  : 1.4352 (run_17); 0/11 beat reference\nMedian best-of-run 1.7561; mean best-of-run 1.5870. Best human still 0.71 score-units below the best MALT (0.337541 vs 1.0497). The 22-run stream surfaces every constraint of the restricted primitive set empirically (no division -> NaN; no softmax -> ReLU surrogate; no Conv1d -> never tried) but rediscovers neither the official ConvMLM ⊕ BiBigram composite nor the precomputed-prior strategy that gives that composite its 0.55-loss-unit headroom.\n", "children": []}]}]}]};
+
+function collectAll(nodes) {
+  let out = [];
+  for (const n of nodes) {
+    out.push(n);
+    if (n.children) out = out.concat(collectAll(n.children));
+  }
+  return out;
+}
+
+function allRootsFlat() {
+  let out = [];
+  for (const s of DATA.sections) out = out.concat(s.roots);
+  return out;
+}
+
+function renderStats() {
+  const all = collectAll(allRootsFlat());
+  const types = {};
+  all.forEach(n => { types[n.type] = (types[n.type] || 0) + 1; });
+  const maxDepth = (function getDepth(nodes, d) {
+    let m = d;
+    for (const n of nodes) {
+      if (n.children && n.children.length) m = Math.max(m, getDepth(n.children, d + 1));
+    }
+    return m;
+  })(allRootsFlat(), 1);
+
+  const el = document.getElementById("stats");
+  el.innerHTML = `
+    <div class="stat"><div class="stat-value">${all.length}</div><div class="stat-label">Nodes</div></div>
+    <div class="stat"><div class="stat-value">${maxDepth}</div><div class="stat-label">Max Depth</div></div>
+    <div class="stat"><div class="stat-value">${types.decision || 0}</div><div class="stat-label">Decisions</div></div>
+    <div class="stat"><div class="stat-value">${types.experiment || 0}</div><div class="stat-label">Experiments</div></div>
+    <div class="stat"><div class="stat-value">${types.dead_end || 0}</div><div class="stat-label">Dead Ends</div></div>
+  `;
+}
+
+function esc(s) {
+  const d = document.createElement("div");
+  d.textContent = String(s).trim();
+  return d.innerHTML;
+}
+
+function fmtNum(v) {
+  if (typeof v !== "number") return esc(v);
+  if (Number.isInteger(v)) return String(v);
+  return (Math.round(v * 10000) / 10000).toString();
+}
+
+function renderEvidence(ev) {
+  if (!ev) return "";
+  const items = Array.isArray(ev) ? ev : [ev];
+  if (items.length === 1 && typeof items[0] === "string" && items[0].length > 40) {
+    return `<div class="node-field"><div class="field-label">Evidence</div><div class="field-value">${esc(items[0])}</div></div>`;
+  }
+  return `<div class="node-field"><div class="field-label">Evidence</div><div class="evidence-tags">${items.map(i => `<span class="evidence-tag">${esc(String(i))}</span>`).join("")}</div></div>`;
+}
+
+function renderAlternatives(alts) {
+  if (!alts || alts.length === 0) return "";
+  return `<div class="node-field"><div class="field-label">Rejected Alternatives</div><ul class="alt-list">${alts.map(a => `<li>${esc(a)}</li>`).join("")}</ul></div>`;
+}
+
+function field(label, valueHtml) {
+  if (!valueHtml) return "";
+  return `<div class="node-field"><div class="field-label">${esc(label)}</div><div class="field-value">${valueHtml}</div></div>`;
+}
+
+function renderResult(result) {
+  if (result === undefined || result === null) return "";
+  if (typeof result === "object") {
+    const parts = Object.entries(result)
+      .filter(([k, v]) => v !== null && v !== undefined)
+      .map(([k, v]) => `${esc(k)}: ${typeof v === "number" ? fmtNum(v) : esc(String(v))}`);
+    return field("Result", parts.join(" &middot; "));
+  }
+  return field("Result", esc(result));
+}
+
+function renderSource(source) {
+  if (!source) return "";
+  if (typeof source === "object") {
+    let base = "";
+    if (source.file) base = esc(source.file) + (source.lines ? `:${esc(source.lines)}` : "");
+    const extras = Object.entries(source)
+      .filter(([k]) => k !== "file" && k !== "lines")
+      .map(([k, v]) => `${esc(k)}: ${esc(String(v))}`);
+    const all = [base, ...extras].filter(Boolean).join(" &middot; ");
+    return `<div class="node-field"><div class="field-label">Source</div><div class="field-value mono">${all}</div></div>`;
+  }
+  return `<div class="node-field"><div class="field-label">Source</div><div class="field-value mono">${esc(source)}</div></div>`;
+}
+
+function renderMetrics(node) {
+  const keys = ["score", "loss_validation", "loss_train", "best_score", "best_loss", "reference_beaten_by"];
+  const parts = [];
+  for (const k of keys) {
+    if (node[k] !== undefined && node[k] !== null) {
+      parts.push(`${k.replace(/_/g, " ")}: ${fmtNum(node[k])}`);
+    }
+  }
+  if (!parts.length) return "";
+  return field("Metrics", parts.join(" &middot; "));
+}
+
+function renderBody(node) {
+  let html = "";
+  html += field("Description", node.description ? esc(node.description) : "");
+  html += field("Method", node.method ? esc(node.method) : "");
+  html += field("Hypothesis", node.hypothesis ? esc(node.hypothesis) : "");
+  html += field("Failure Mode", node.failure_mode ? esc(node.failure_mode) : "");
+  html += field("Lesson", node.lesson ? esc(node.lesson) : "");
+  html += field("Choice", node.choice ? esc(node.choice) : "");
+  html += renderAlternatives(node.alternatives);
+  html += renderResult(node.result);
+  html += renderMetrics(node);
+  html += field("Note", node.note ? esc(node.note) : "");
+  html += field("Abandoned Reason", node.abandoned_reason ? esc(node.abandoned_reason) : "");
+  html += field("Context", node.approach_context ? esc(node.approach_context) : "");
+  html += renderEvidence(node.evidence);
+  html += field("From", node.from ? esc(node.from) : "");
+  html += field("To", node.to ? esc(node.to) : "");
+  html += field("Trigger", node.trigger ? esc(node.trigger) : "");
+  html += renderSource(node.source);
+  html += field("Status", node.status ? esc(node.status) : "");
+  return html;
+}
+
+const TYPE_LABELS = {
+  question: "Question",
+  experiment: "Experiment",
+  decision: "Decision",
+  dead_end: "Dead End",
+  pivot: "Pivot"
+};
+
+function renderNode(node) {
+  const hasChildren = node.children && node.children.length > 0;
+  const dagBadge = node.also_depends_on
+    ? `<span class="dag-badge"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M5 3a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm6 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm-3 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg>also: ${node.also_depends_on.join(", ")}</span>`
+    : "";
+  const runBadge = (node.run_index !== undefined && node.run_index !== null)
+    ? `<span class="run-badge">Run ${node.run_index}${node.run_model_short ? " &middot; " + esc(node.run_model_short) : ""}</span>`
+    : "";
+  const refBadge = (node.result && typeof node.result === "object" && node.result.reference === true)
+    ? `<span class="reference-badge">&#10003; Reference</span>`
+    : "";
+
+  const chevronSvg = `<svg class="chevron" viewBox="0 0 16 16" fill="currentColor"><path d="M6.22 3.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06L9.94 8 6.22 4.28a.75.75 0 0 1 0-1.06z"/></svg>`;
+
+  let html = `<div class="node-group ${hasChildren ? "has-children" : ""}">`;
+  html += `<div class="node" onclick="this.classList.toggle('expanded')">`;
+  html += `<div class="node-header">`;
+  html += `<div class="node-indicator ${node.type}"></div>`;
+  html += `<span class="node-id">${esc(node.id)}</span>`;
+  html += `<span class="node-title">${esc(node.title)}${runBadge}${dagBadge}${refBadge}</span>`;
+  html += `<span class="node-type ${node.type}">${TYPE_LABELS[node.type] || node.type}</span>`;
+  html += chevronSvg;
+  html += `</div>`;
+  html += `<div class="node-body">${renderBody(node)}</div>`;
+  html += `</div>`;
+
+  if (hasChildren) {
+    html += `<div class="children">`;
+    for (const child of node.children) {
+      html += renderNode(child);
+    }
+    html += `</div>`;
+  }
+
+  html += `</div>`;
+  return html;
+}
+
+function render() {
+  renderStats();
+  const container = document.getElementById("sections");
+  let html = "";
+  for (const section of DATA.sections) {
+    html += `<div class="tree-section">`;
+    html += `<div class="section-heading">${esc(section.label)}</div>`;
+    if (section.note) html += `<div class="section-note">${esc(section.note)}</div>`;
+    html += `<div class="tree">${section.roots.map(renderNode).join("")}</div>`;
+    html += `</div>`;
+  }
+  container.innerHTML = html;
+}
+
+render();
+
+</script>
+</body>
+</html>

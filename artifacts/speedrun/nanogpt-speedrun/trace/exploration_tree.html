@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Exploration Tree — nanogpt-speedrun</title>
+<style>
+
+  :root {
+    --bg: #fafafa;
+    --card-bg: #ffffff;
+    --border: #e0e0e0;
+    --text: #1a1a1a;
+    --text-secondary: #555;
+    --question: #1565c0;
+    --experiment: #e65100;
+    --decision: #2e7d32;
+    --dead-end: #c62828;
+    --pivot: #6a1b9a;
+    --edge: #bdbdbd;
+    --dag-edge: #e57373;
+    --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    --mono: "SF Mono", "Menlo", "Consolas", monospace;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--text);
+    padding: 40px 24px 80px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  header {
+    text-align: center;
+    margin-bottom: 48px;
+  }
+
+  header h1 {
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -0.3px;
+    margin-bottom: 6px;
+  }
+
+  header p {
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+
+  .legend {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+    margin-bottom: 40px;
+    flex-wrap: wrap;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+
+  .legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+  }
+
+  .legend-dot.question   { background: var(--question); }
+  .legend-dot.experiment { background: var(--experiment); }
+  .legend-dot.decision   { background: var(--decision); }
+  .legend-dot.dead_end   { background: var(--dead-end); }
+  .legend-dot.pivot      { background: var(--pivot); }
+
+  /* ---- Stream sections ---- */
+
+  .stream-header {
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--text-secondary);
+    margin: 36px 0 14px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+  }
+
+  .stream-section:first-of-type .stream-header {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+  }
+
+  .stream-header .stream-note {
+    display: block;
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: 12px;
+    color: #999;
+    margin-top: 3px;
+  }
+
+  /* ---- Tree layout ---- */
+
+  .tree {
+    position: relative;
+  }
+
+  .node-group {
+    position: relative;
+    padding-left: 32px;
+  }
+
+  .node-group.has-children > .children::before {
+    content: "";
+    position: absolute;
+    left: 15px;
+    top: 0;
+    bottom: 24px;
+    width: 2px;
+    background: var(--edge);
+  }
+
+  .children {
+    position: relative;
+    margin-top: 0;
+  }
+
+  .children > .node-group::before {
+    content: "";
+    position: absolute;
+    left: -17px;
+    top: 22px;
+    width: 17px;
+    height: 2px;
+    background: var(--edge);
+  }
+
+  .tree > .node-group {
+    padding-left: 0;
+  }
+
+  .tree > .node-group::before { display: none; }
+
+  /* ---- Node card ---- */
+
+  .node {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-bottom: 12px;
+    cursor: pointer;
+    transition: box-shadow 0.15s ease, border-color 0.15s ease;
+    position: relative;
+  }
+
+  .node:hover {
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  }
+
+  .node.expanded {
+    border-color: #999;
+  }
+
+  .node.dead_end {
+    background: #fffafa;
+  }
+
+  .node-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .node-indicator {
+    flex-shrink: 0;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-top: 5px;
+  }
+
+  .node-indicator.question   { background: var(--question); }
+  .node-indicator.experiment { background: var(--experiment); }
+  .node-indicator.decision   { background: var(--decision); }
+  .node-indicator.dead_end   { background: var(--dead-end); }
+  .node-indicator.pivot      { background: var(--pivot); }
+
+  .node-id {
+    flex-shrink: 0;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 4px;
+    background: #f0f0f0;
+    color: var(--text-secondary);
+    margin-top: 1px;
+    font-family: var(--mono);
+  }
+
+  .node-title {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.4;
+    flex: 1;
+  }
+
+  .node-type {
+    flex-shrink: 0;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 10px;
+    margin-top: 2px;
+  }
+
+  .node-type.question   { background: #e3f2fd; color: var(--question); }
+  .node-type.experiment { background: #fff3e0; color: var(--experiment); }
+  .node-type.decision   { background: #e8f5e9; color: var(--decision); }
+  .node-type.dead_end   { background: #ffebee; color: var(--dead-end); }
+  .node-type.pivot      { background: #f3e5f5; color: var(--pivot); }
+
+  .prov-badge {
+    flex-shrink: 0;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 10px;
+    margin-top: 2px;
+    background: #f5f5f5;
+    color: #888;
+    border: 1px solid #e8e8e8;
+  }
+
+  .node-body {
+    display: none;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #f0f0f0;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+  }
+
+  .node.expanded .node-body {
+    display: block;
+  }
+
+  .node-field {
+    margin-bottom: 8px;
+  }
+
+  .node-field:last-child {
+    margin-bottom: 0;
+  }
+
+  .field-label {
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: var(--text);
+    margin-bottom: 2px;
+  }
+
+  .field-value {
+    white-space: pre-wrap;
+  }
+
+  .field-value.mono {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: #999;
+  }
+
+  .evidence-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 3px;
+  }
+
+  .evidence-tag {
+    font-size: 11px;
+    padding: 1px 7px;
+    border-radius: 3px;
+    background: #f5f5f5;
+    border: 1px solid #e0e0e0;
+  }
+
+  .alt-list {
+    list-style: none;
+    padding: 0;
+  }
+
+  .alt-list li {
+    position: relative;
+    padding-left: 14px;
+    margin-bottom: 3px;
+  }
+
+  .alt-list li::before {
+    content: "\00d7";
+    position: absolute;
+    left: 0;
+    color: #ccc;
+    font-weight: 700;
+  }
+
+  .run-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 3px;
+  }
+
+  .run-stat {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 3px;
+    background: #f5f5f5;
+    border: 1px solid #e0e0e0;
+    color: var(--text-secondary);
+  }
+
+  .run-stat b {
+    color: var(--text);
+    font-weight: 600;
+  }
+
+  .dag-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    color: var(--dag-edge);
+    border: 1px solid var(--dag-edge);
+    border-radius: 4px;
+    padding: 1px 6px;
+    margin-left: 8px;
+    font-weight: 600;
+    vertical-align: middle;
+  }
+
+  .dag-badge svg {
+    width: 10px;
+    height: 10px;
+  }
+
+  .chevron {
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    margin-top: 3px;
+    transition: transform 0.15s ease;
+    color: #ccc;
+  }
+
+  .node.expanded .chevron {
+    transform: rotate(90deg);
+    color: #999;
+  }
+
+  .stats {
+    display: flex;
+    justify-content: center;
+    gap: 32px;
+    margin-bottom: 32px;
+    padding: 12px 0;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+
+  .stat {
+    text-align: center;
+  }
+
+  .stat-value {
+    font-size: 20px;
+    font-weight: 600;
+  }
+
+  .stat-label {
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .controls {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin-bottom: 28px;
+  }
+
+  .controls button {
+    font-family: var(--font);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 14px;
+    cursor: pointer;
+    transition: border-color 0.15s ease, color 0.15s ease;
+  }
+
+  .controls button:hover {
+    border-color: #999;
+    color: var(--text);
+  }
+
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Exploration Tree — nanogpt-speedrun</h1>
+  <p>Research DAG &middot; NanoGPT Speedrun optimization trajectory: GPT-2 124M training, 49.5 min &rarr; 3.1 min on 8&times;H100 (21 records, 16.1&times; speedup)</p>
+</header>
+
+<div class="stats" id="stats"></div>
+
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot question"></div>Question</div>
+  <div class="legend-item"><div class="legend-dot experiment"></div>Experiment</div>
+  <div class="legend-item"><div class="legend-dot decision"></div>Decision</div>
+  <div class="legend-item"><div class="legend-dot dead_end"></div>Dead End</div>
+  <div class="legend-item"><div class="legend-dot pivot"></div>Pivot</div>
+</div>
+
+
+<div class="controls">
+  <button onclick="setAllExpanded(true)">Expand All</button>
+  <button onclick="setAllExpanded(false)">Collapse All</button>
+</div>
+
+<div id="tree"></div>
+
+<script>
+const STREAMS = [{"label": null, "note": null, "roots": [{"id": "N01", "type": "question", "title": "How fast can GPT-2 124M be trained to val_loss \u2264 3.28 on 8\u00d7H100?", "description": "The NanoGPT speedrun challenge: optimize training wall-clock time while maintaining quality (val_loss \u2264 3.28 on FineWeb-Edu 10B). Baseline (Record 1) takes 49.5 min with standard PyTorch setup.\n", "children": [{"id": "N02", "type": "decision", "title": "Replace learned positional embeddings with RoPE", "description": "Record 2: Switch to rotary position embeddings, adopt trapezoidal LR schedule with gradient norm scaling, increase batch size 32\u219264.\n", "result": "49.5 min \u2192 36.8 min (25.6% speedup)", "evidence": ["C01", "Record 2: 2,209,926 ms, val_loss 3.2603"], "alternatives": ["ALiBi position encoding \u2014 simpler but weaker on long context", "Learned PE with larger batch \u2014 limited by memory"], "children": [{"id": "N03", "type": "experiment", "title": "Muon optimizer: orthogonal Nesterov for weight matrices", "description": "Record 3: Replace AdamW with Muon \u2014 OrthogonalNesterov momentum for 2D+ parameters using Newton-Schulz orthogonalization, AdamW for 1D parameters. Largest single-record speedup.\n", "result": "36.8 min \u2192 23.1 min (37.2% speedup) \u2014 LARGEST SINGLE GAIN", "evidence": ["C01", "C03", "Record 3: 1,386,147 ms, val_loss 3.2813"], "children": [{"id": "N04", "type": "experiment", "title": "Muon refinements: QKV split, unit variance, warmup removal", "description": "Record 4: Split QKV projections for per-component Muon treatment, apply unit variance scaling, remove LR warmup.\n", "result": "23.1 min \u2192 21.7 min (6.1% speedup)", "evidence": ["C01", "Record 4: 1,301,740 ms, val_loss 3.2772"]}]}]}, {"id": "N05", "type": "decision", "title": "Architectural overhaul: ReLU\u00b2, padded vocab, zero-init, QK norm", "description": "Record 5: Multiple architectural changes applied together. Pad vocabulary to 50304 (GPU-aligned), switch GELU\u2192ReLU\u00b2, zero-init output projections, add QK normalization, change to 6 heads with 128-dim each.\n", "result": "21.7 min \u2192 15.8 min (27.0% speedup)", "evidence": ["C01", "C05", "Record 5: 949,528 ms, val_loss 3.2751"], "alternatives": ["SwiGLU activation \u2014 more parameters, slower at this scale", "Keep GELU \u2014 simpler but slower to compute"], "children": [{"id": "N06", "type": "experiment", "title": "Distributed Muon with CUDA 12.5 upgrade", "description": "Record 6: Distribute Newton-Schulz orthogonalization across GPUs. Upgrade to CUDA 12.5 for FlexAttention compatibility.\n", "result": "15.8 min \u2192 12.8 min (19.2% speedup)", "evidence": ["C01", "Record 6: 766,259 ms, val_loss 3.2750"]}, {"id": "N07", "type": "experiment", "title": "Untied embeddings, RMSNorm, 3 optimizer groups", "description": "Record 7: Untie embedding and LM head weights. Add RMSNorm after embeddings. Partition parameters into 3 optimizer groups (Muon 2D, AdamW head, AdamW 1D). Switch to cuDNN attention.\n", "result": "12.8 min \u2192 12.9 min (slight regression, but enables future gains)", "evidence": ["C01", "Record 7: 773,072 ms, val_loss 3.2760"], "children": [{"id": "N07a", "type": "dead_end", "title": "cuDNN attention slower than expected on short sequences", "hypothesis": "cuDNN attention would be faster than manual SDPA", "failure_mode": "At current sequence lengths (~4K tokens), cuDNN attention overhead exceeds the kernel speedup. Net effect is slight regression in wall-clock time.\n", "lesson": "cuDNN attention becomes beneficial only at longer sequences (Record 11+ at 64K context). Premature optimization.\n"}]}, {"id": "N08", "type": "experiment", "title": "U-Net skip connections + momentum warmup + logit softcap", "description": "Record 8: Add encoder-decoder residual connections between transformer layers with learnable blending. Warm up momentum 0.85\u21920.95 for stability. Add tanh logit softcapping.\n", "result": "12.9 min \u2192 11.0 min (14.5% speedup)", "evidence": ["C01", "C05", "Record 8: 662,205 ms, val_loss 3.2789"]}]}, {"id": "N09", "type": "pivot", "title": "Shift focus from architecture to precision engineering", "description": "After exhausting major architectural changes, pivot to precision and systems-level optimizations. bfloat16 throughout with custom CastedLinear layer eliminates dtype casting overhead.\n", "trigger": "Diminishing returns from architecture changes alone", "justification": "Records 5-8 achieved 21.7\u219211.0 min through architecture. Next frontier requires eliminating framework overhead (autocast, dtype conversions, memory copies).\n", "children": [{"id": "N10", "type": "experiment", "title": "bfloat16 activations via CastedLinear, remove autocast", "description": "Record 9: Custom CastedLinear layer handles precision at layer boundaries. Remove torch.autocast entirely. Simplify forward pass for better torch.compile optimization.\n", "result": "11.0 min \u2192 8.4 min (23.5% speedup)", "evidence": ["C01", "Record 9: 505,531 ms, val_loss 3.2785"], "children": [{"id": "N11", "type": "experiment", "title": "Refined U-Net skip connections + doubled LRs + optimized Newton-Schulz", "description": "Record 10: Proper encoder-decoder U-Net with refined mixing. Double all learning rates (0.6, 0.008, 0.04). Optimize Newton-Schulz iteration for better GPU utilization.\n", "result": "8.4 min \u2192 8.0 min (5.7% speedup)", "evidence": ["C01", "Record 10: 477,150 ms, val_loss 3.2782"]}]}]}, {"id": "N12", "type": "decision", "title": "FlexAttention with document-aware 64K context", "description": "Record 11: Major transition to FlexAttention API. Enable 64K token sequences with document-aware causal masking and sliding window (1024 tokens). This is the second architectural revolution after Muon.\n", "result": "8.0 min \u2192 7.4 min (7.2% speedup)", "evidence": ["C01", "C04", "Record 11: 442,985 ms, val_loss 3.2742"], "alternatives": ["Flash Attention 2 \u2014 faster kernel but no custom masking", "Standard SDPA \u2014 no block mask support", "Ring Attention \u2014 for cross-node, overkill for single-node"], "children": [{"id": "N13", "type": "experiment", "title": "Block mask optimization + async DataLoader + pinned memory", "description": "Record 12: Optimize FlexAttention block mask compilation. Add async all_gather overlapping with compute. Pinned memory DataLoader for faster host\u2192device transfer. Refine U-Net decoder.\n", "result": "7.4 min \u2192 5.3 min (28.2% speedup)", "evidence": ["C01", "Record 12: 317,839 ms, val_loss 3.2739"]}]}, {"id": "N14", "type": "experiment", "title": "Value token embeddings + sequence parallelism", "description": "Record 13: Introduce layerwise value token embeddings (VTE) \u2014 per-layer learned embeddings that modulate value projections. Add sequence parallelism for distributed attention.\n", "result": "5.3 min \u2192 4.8 min (8.8% speedup)", "evidence": ["C01", "Record 13: 289,805 ms, val_loss 3.2739"], "also_depends_on": ["N12"], "children": [{"id": "N15", "type": "experiment", "title": "Muon restructuring + size-based parameter grouping", "description": "Record 14: Restructure Muon optimizer for size-based parameter groups. Optimize async all_gather scheduling. Further block mask optimization.\n", "result": "4.8 min \u2192 4.6 min (4.7% speedup)", "evidence": ["C01", "Record 14: 273,107 ms, val_loss 3.2739"]}, {"id": "N16", "type": "decision", "title": "GQA + block-level sliding window (128 tokens)", "description": "Record 15: Switch to Grouped Query Attention. Tighten sliding window from 1024\u2192128 tokens at block level. Add reversible value embeddings. Enable gradient_as_bucket_view.\n", "result": "4.6 min \u2192 4.0 min (11.7% speedup)", "evidence": ["C01", "C05", "Record 15: 241,463 ms, val_loss 3.2771"], "alternatives": ["Multi-Query Attention \u2014 too aggressive quality loss", "Keep full attention \u2014 too slow at 64K context"]}, {"id": "N17", "type": "experiment", "title": "Sparse value embeddings + RoPE truncation", "description": "Record 16: Sparsify value embeddings (3 of 6 active). Remove 8th attention layer. Truncate RoPE to half dimensions.\n", "result": "4.0 min \u2192 3.9 min (3.5% speedup)", "evidence": ["C01", "Record 16: 232,971 ms, val_loss 3.2773"], "children": [{"id": "N17a", "type": "dead_end", "title": "Removing more attention layers causes val_loss regression", "hypothesis": "Can remove 2+ layers given skip connections compensate", "failure_mode": "Removing the 8th layer works but removing additional layers causes val_loss to exceed 3.28 threshold. Skip connections cannot compensate for losing too much depth.\n", "lesson": "There is a minimum depth below which skip connections cannot maintain representation quality. One layer removal is the practical limit at this scale.\n"}]}, {"id": "N18", "type": "experiment", "title": "Logit softcap reduction + microbatching + dynamic sliding window", "description": "Record 17: Reduce logit softcap 30\u219215. Enable microbatching for memory efficiency. Half-truncated RoPE. Dynamic sliding window that varies by layer position.\n", "result": "3.9 min \u2192 3.7 min (5.2% speedup)", "evidence": ["C01", "Record 17: 220,374 ms, val_loss 3.2739"]}]}, {"id": "N19", "type": "pivot", "title": "Shift to hardware-specific optimizations (FP8, custom CUDA)", "description": "After exhausting algorithmic and architectural optimizations, the final frontier is hardware-specific precision engineering: FP8 tensor cores, custom CUDA kernels, precision-aware scaling.\n", "trigger": "Software-level optimizations approaching diminishing returns", "justification": "Records 13-17 yielded 4.8\u21923.7 min (23% total). Further gains require exploiting H100-specific hardware features that standard PyTorch does not expose.\n", "children": [{"id": "N20", "type": "experiment", "title": "FP8 linear head + sigmoid logit offset", "description": "Record 18: Implement FP8 (E4M3) precision for LM head via custom CUDA ops. Add sigmoid logit offset to compensate for FP8 quantization bias. Set LR floor at 0.1\u00d7 peak.\n", "result": "3.7 min \u2192 3.5 min (3.8% speedup)", "evidence": ["C01", "C10", "Record 18: 211,840 ms, val_loss 3.2770"]}, {"id": "N21", "type": "experiment", "title": "Merged QKV + long-short sliding window + batched Muon", "description": "Record 19: Merge Q/K/V weight matrices for single GEMM. Implement long-short sliding window attention (different windows per head). Batch Muon updates for better GPU util.\n", "result": "3.5 min \u2192 3.3 min (6.0% speedup)", "evidence": ["C01", "Record 19: 199,442 ms, val_loss 3.2770"]}, {"id": "N22", "type": "experiment", "title": "Training 64K\u219248K seq len + validation 64K\u2192256K", "description": "Record 20: Reduce training sequence length from 64K to 48K (fewer tokens per step but faster steps). Increase validation to 256K for more stable loss estimation. Tune FP8 scales.\n", "result": "3.3 min \u2192 3.1 min (5.7% speedup)", "evidence": ["C01", "Record 20: 188,680 ms, val_loss 3.2739"]}]}, {"id": "N23", "type": "question", "title": "Can LLM agents reproduce any of these optimizations?", "description": "Given the 21-record trajectory, test whether frontier LLMs can implement any single record-to-record optimization with hints.\n", "children": [{"id": "N24", "type": "experiment", "title": "Agent benchmark: 4 models \u00d7 20 records \u00d7 4 hint levels", "description": "Deploy BoN framework with DeepSeek R1, o3-mini, Gemini 2.5, Claude 3.7 Sonnet. Each agent starts from record N and attempts to produce record N+1 with hints at levels 1 (pseudo), 2 (description), 3 (paper), z (zero-knowledge).\n", "result": "No model succeeds on any record, even with pseudocode hints", "evidence": ["C02", "C06", "C09"], "children": [{"id": "N25", "type": "dead_end", "title": "All frontier models fail \u2014 implementation gap confirmed", "hypothesis": "Pseudocode hints should enable reproduction", "failure_mode": "Agents understand the optimization direction correctly but produce buggy distributed training code. Common failures: NCCL errors, torch.compile incompatibilities, numerical precision issues, CUDA kernel errors.\n", "lesson": "The gap between knowing what to do and implementing it in production distributed training code is currently insurmountable for LLMs. This is a systems engineering capability gap, not a knowledge gap.\n"}, {"id": "N26", "type": "decision", "title": "Tree search (BoN) > linear search for agents", "description": "Compare 5 search strategies. BoN with tree/forest branching consistently outperforms linear AIDE-style search in gap_recovered metric.\n", "result": "Forest and Tree strategies achieve highest IQM gap_recovered", "evidence": ["C07"], "alternatives": ["AIDE (linear, debug-focused) \u2014 lower IQM", "Flat (one-shot N=20) \u2014 high variance", "Multi-AIDE (linear + branching) \u2014 middle ground"]}]}]}]}]}];
+
+
+function collectAll(nodes) {
+  let out = [];
+  for (const n of nodes) {
+    out.push(n);
+    if (n.children) out = out.concat(collectAll(n.children));
+  }
+  return out;
+}
+
+function allRoots() {
+  let out = [];
+  for (const s of STREAMS) out = out.concat(s.roots);
+  return out;
+}
+
+function renderStats() {
+  const all = collectAll(allRoots());
+  const types = {};
+  all.forEach(n => { types[n.type] = (types[n.type] || 0) + 1; });
+  const maxDepth = (function getDepth(nodes, d) {
+    let m = d;
+    for (const n of nodes) {
+      if (n.children && n.children.length) m = Math.max(m, getDepth(n.children, d + 1));
+    }
+    return m;
+  })(allRoots(), 1);
+
+  const el = document.getElementById("stats");
+  el.innerHTML = `
+    <div class="stat"><div class="stat-value">${all.length}</div><div class="stat-label">Nodes</div></div>
+    <div class="stat"><div class="stat-value">${maxDepth}</div><div class="stat-label">Max Depth</div></div>
+    <div class="stat"><div class="stat-value">${types.decision || 0}</div><div class="stat-label">Decisions</div></div>
+    <div class="stat"><div class="stat-value">${types.experiment || 0}</div><div class="stat-label">Experiments</div></div>
+    <div class="stat"><div class="stat-value">${types.dead_end || 0}</div><div class="stat-label">Dead Ends</div></div>
+  `;
+}
+
+function esc(s) {
+  const d = document.createElement("div");
+  d.textContent = String(s).trim();
+  return d.innerHTML;
+}
+
+function renderEvidence(ev) {
+  if (!ev) return "";
+  const items = Array.isArray(ev) ? ev : [ev];
+  if (items.length === 0) return "";
+  if (items.length === 1 && typeof items[0] === "string" && items[0].length > 40) {
+    return `<div class="node-field"><div class="field-label">Evidence</div><div class="field-value">${esc(items[0])}</div></div>`;
+  }
+  return `<div class="node-field"><div class="field-label">Evidence</div><div class="evidence-tags">${items.map(i => `<span class="evidence-tag">${esc(String(i))}</span>`).join("")}</div></div>`;
+}
+
+function renderAlternatives(alts) {
+  if (!alts || alts.length === 0) return "";
+  return `<div class="node-field"><div class="field-label">Rejected Alternatives</div><ul class="alt-list">${alts.map(a => `<li>${esc(a)}</li>`).join("")}</ul></div>`;
+}
+
+// Ordered, generic field list shared across question / experiment / decision /
+// dead_end / pivot nodes and MALT attempt/run nodes -- each schema only
+// populates a subset of these keys, so this renders whatever is present.
+const FIELD_ORDER = [
+  ["description", "Description"],
+  ["method", "Method"],
+  ["approach_context", "Context"],
+  ["choice", "Choice"],
+  ["result", "Result"],
+  ["hypothesis", "Hypothesis"],
+  ["failure_mode", "Failure Mode"],
+  ["lesson", "Lesson"],
+  ["trigger", "Trigger"],
+  ["justification", "Justification"],
+];
+
+function fmtNum(x) {
+  if (typeof x !== "number" || !isFinite(x)) return null;
+  return (Math.round(x * 10000) / 10000).toString();
+}
+
+function renderRunStats(node) {
+  const has = ["model", "run_id", "total_messages", "total_attempts", "included_attempts",
+               "excluded_attempts_beat_reference", "best_included_score"].some(k => node[k] !== undefined && node[k] !== null);
+  if (!has) return "";
+  const stats = [];
+  if (node.model) stats.push(`<span class="run-stat">Model: <b>${esc(node.model)}</b></span>`);
+  if (node.run_id !== undefined && node.run_id !== null) stats.push(`<span class="run-stat">Run ID: <b>${esc(String(node.run_id))}</b></span>`);
+  if (node.total_messages !== undefined && node.total_messages !== null) stats.push(`<span class="run-stat">Messages: <b>${esc(String(node.total_messages))}</b></span>`);
+  if (node.total_attempts !== undefined && node.total_attempts !== null) {
+    const inc = node.included_attempts !== undefined && node.included_attempts !== null ? node.included_attempts : "?";
+    stats.push(`<span class="run-stat">Attempts: <b>${esc(String(inc))}/${esc(String(node.total_attempts))}</b> included</span>`);
+  }
+  if (node.excluded_attempts_beat_reference !== undefined && node.excluded_attempts_beat_reference !== null) {
+    stats.push(`<span class="run-stat">Excluded (beat ref): <b>${esc(String(node.excluded_attempts_beat_reference))}</b></span>`);
+  }
+  const bestScore = fmtNum(node.best_included_score);
+  if (bestScore !== null) stats.push(`<span class="run-stat">Best score: <b>${esc(bestScore)}</b></span>`);
+  return `<div class="node-field"><div class="field-label">Run Summary</div><div class="run-stats">${stats.join("")}</div></div>`;
+}
+
+function renderScoreTime(node) {
+  const parts = [];
+  const score = fmtNum(node.score);
+  if (score !== null) parts.push(`<span class="run-stat">Score: <b>${esc(score)}</b></span>`);
+  const time = fmtNum(node.time_ms);
+  if (time !== null) parts.push(`<span class="run-stat">Time: <b>${esc(time)} ms</b></span>`);
+  if (parts.length === 0) return "";
+  return `<div class="node-field"><div class="run-stats">${parts.join("")}</div></div>`;
+}
+
+function renderBody(node) {
+  let html = "";
+
+  for (const [key, label] of FIELD_ORDER) {
+    const val = node[key];
+    if (val === undefined || val === null || val === "") continue;
+    html += `<div class="node-field"><div class="field-label">${label}</div><div class="field-value">${esc(val)}</div></div>`;
+  }
+
+  html += renderScoreTime(node);
+  html += renderRunStats(node);
+  html += renderAlternatives(node.alternatives);
+  html += renderEvidence(node.evidence);
+
+  if (node.source) {
+    html += `<div class="node-field"><div class="field-label">Source</div><div class="field-value mono">${esc(node.source)}</div></div>`;
+  }
+
+  return html;
+}
+
+const TYPE_LABELS = {
+  question: "Question",
+  experiment: "Experiment",
+  decision: "Decision",
+  dead_end: "Dead End",
+  pivot: "Pivot"
+};
+
+function renderNode(node) {
+  const hasChildren = node.children && node.children.length > 0;
+  const dagBadge = node.also_depends_on
+    ? `<span class="dag-badge"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M5 3a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm6 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm-3 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg>also: ${node.also_depends_on.join(", ")}</span>`
+    : "";
+
+  const provBadge = node.provenance
+    ? `<span class="prov-badge">${esc(node.provenance)}</span>`
+    : "";
+
+  const chevronSvg = `<svg class="chevron" viewBox="0 0 16 16" fill="currentColor"><path d="M6.22 3.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06L9.94 8 6.22 4.28a.75.75 0 0 1 0-1.06z"/></svg>`;
+
+  let html = `<div class="node-group ${hasChildren ? "has-children" : ""}">`;
+  html += `<div class="node ${node.type}" onclick="this.classList.toggle('expanded')">`;
+  html += `<div class="node-header">`;
+  html += `<div class="node-indicator ${node.type}"></div>`;
+  html += `<span class="node-id">${esc(node.id)}</span>`;
+  html += `<span class="node-title">${esc(node.title)}${dagBadge}</span>`;
+  html += provBadge;
+  html += `<span class="node-type ${node.type}">${TYPE_LABELS[node.type] || node.type}</span>`;
+  html += chevronSvg;
+  html += `</div>`;
+  html += `<div class="node-body">${renderBody(node)}</div>`;
+  html += `</div>`;
+
+  if (hasChildren) {
+    html += `<div class="children">`;
+    for (const child of node.children) {
+      html += renderNode(child);
+    }
+    html += `</div>`;
+  }
+
+  html += `</div>`;
+  return html;
+}
+
+function setAllExpanded(expanded) {
+  document.querySelectorAll(".node").forEach(el => {
+    el.classList.toggle("expanded", expanded);
+  });
+}
+
+function render() {
+  renderStats();
+  const container = document.getElementById("tree");
+  let html = "";
+  for (const stream of STREAMS) {
+    html += `<div class="stream-section">`;
+    if (stream.label) {
+      html += `<div class="stream-header">${esc(stream.label)}${stream.note ? `<span class="stream-note">${esc(stream.note)}</span>` : ""}</div>`;
+    }
+    html += `<div class="tree">`;
+    for (const root of stream.roots) {
+      html += renderNode(root);
+    }
+    html += `</div></div>`;
+  }
+  container.innerHTML = html;
+}
+
+render();
+
+</script>
+</body>
+</html>

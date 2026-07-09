@@ -1,0 +1,99 @@
+---
+# Exploration Tree — bridging-data-gaps (TAN)
+# Research DAG: nested tree with cross-edges (also_depends_on) forming a DAG.
+# Node types: question | experiment | dead_end | decision | pivot
+
+tree:
+  - id: N01
+    type: question
+    title: "How can we perform efficient few-shot transfer learning for Diffusion Probabilistic Models?"
+    description: "DPMs require large data but transfer methods from GANs cannot be directly applied. Can we design a DPM-specific transfer learning method that works with only 10 target images?"
+    children:
+
+      - id: N02
+        type: experiment
+        title: "Can GAN-based transfer methods (CDC, DCL) be directly applied to DPMs?"
+        result: "No — GAN methods require comparing final clean generated images with target images; DPMs cannot produce clean images during training, only blurry intermediate predictions at timestep t"
+        evidence: ["§1", "§2.2", "Figure 3"]
+        children:
+
+          - id: N03
+            type: dead_end
+            title: "DDPM-PA approach: substitute blurry predicted image for clean target image"
+            hypothesis: "Using the blurry predicted final image at intermediate timestep as a proxy for the clean target image would enable domain comparison"
+            failure_mode: "The predicted blurry image does not accurately represent the target domain distribution; comparison with sharp target images produces inaccurate gradients leading to fuzzy/distorted generated images"
+            lesson: "Domain gap must be estimated without relying on comparing any form of generated image with the target; an indirect measure is needed"
+
+          - id: N04
+            type: decision
+            title: "Use classifier gradients on noised images to estimate domain gap"
+            choice: "Use a binary classifier pϕ trained to distinguish source vs. target domain images at timestep t; use its gradient ∇xt log pϕ(y=T|xt) as an indirect similarity measure — no clean image comparison needed"
+            alternatives:
+              - "Direct comparison of generated images with target images (rejected: impossible during DPM training)"
+              - "DDPM-PA blurry image substitution (rejected: inaccurate, produces distorted results)"
+              - "Perceptual loss on intermediate predictions (not explored)"
+            evidence: "Derived from Dhariwal & Nichol [5] classifier guidance formulation and KL divergence analysis (Eq. 5); similarity guidance circumvents need for clean image comparison"
+            children:
+
+              - id: N05
+                type: experiment
+                title: "Verify that classifier gradient signal provides useful domain transfer direction on 2D toy data"
+                result: "Similarity-guided training (sienna line in Figure 2a) reduces angular deviation from reference gradient compared to vanilla DDPM (dark blue), confirming the classifier gradient provides a useful correction signal"
+                evidence: ["C04", "Figure 2a", "§5.1"]
+                children:
+
+                  - id: N06
+                    type: question
+                    title: "Is the transfer direction alone sufficient, or is the noise mechanism also a problem?"
+                    description: "Even with correct transfer direction from similarity guidance, does the standard random Gaussian noise mechanism in DPMs cause issues for few-shot transfer?"
+                    children:
+
+                      - id: N07
+                        type: experiment
+                        title: "Observe per-sample transfer divergence with standard Gaussian noise (Figure 1)"
+                        result: "When training DDPM from FFHQ → 10-shot Sunglasses, different images transfer at drastically different rates: one image successfully transfers while another severely overfits at the same training iteration. LPIPS values range from 0.394–0.589 across images."
+                        evidence: ["O3", "Figure 1", "§1"]
+                        children:
+
+                          - id: N08
+                            type: dead_end
+                            title: "Use more training iterations to ensure all images transfer"
+                            hypothesis: "Training for more iterations (e.g., 5000) will eventually transfer all images successfully"
+                            failure_mode: "With only 10 training images, more iterations cause overfitting on already-transferred images before the harder ones converge; diversity collapses"
+                            lesson: "The root cause is that standard Gaussian noise is non-targeted — some noise types are already easily denoised in the target domain while others are not; selectively targeting hard noise is needed"
+
+                          - id: N09
+                            type: decision
+                            title: "Adopt adversarial noise selection: find worst-case noise via PGD"
+                            choice: "Use projected gradient descent (PGD) to find the worst-case Gaussian noise ε* that the current model fails most to denoise on target data; minimize loss under ε* (which subsumes all easier noise variants)"
+                            alternatives:
+                              - "Standard random Gaussian noise (rejected: non-targeted, unbalanced per-sample transfer)"
+                              - "Fixed adversarial perturbations (not targeted to current model state)"
+                              - "Data augmentation (ADA-style, GAN-specific, not directly applicable)"
+                            evidence: "PGD inner maximization (Eq. 7-8); worst-case noise in Figure 2a forms ellipse aligned with gradient principal axis rather than circle (standard Gaussian)"
+                            children:
+
+                              - id: N10
+                                type: experiment
+                                title: "Verify adversarial noise distribution shift and gradient correction on toy data"
+                                also_depends_on: [N05]
+                                result: "Adversarial noise distribution shifts from circle (standard Gaussian) to ellipse aligned with gradient principal axis (Figure 2a red points). DDPM-TAN gradient (orange) is closest to reference direction. DDPM-TAN heatmap (Figure 2c) shows brighter central highlight near target mode vs. baseline (Figure 2b)."
+                                evidence: ["C04", "Figure 2a", "Figure 2b", "Figure 2c", "§5.1"]
+                                children:
+
+                                  - id: N11
+                                    type: decision
+                                    title: "Combine adversarial noise with adaptor module for parameter efficiency"
+                                    choice: "Add lightweight adaptor layers ψl (1.3%/1.6% of params, initialized to zero) parallel to frozen U-Net layers; train only adaptors with combined similarity-guided + adversarial noise objective (Eq. 9)"
+                                    alternatives:
+                                      - "Full fine-tuning of all DPM parameters (100% params, 20 GB memory, 7.5 GPU hours — too expensive)"
+                                      - "LoRA-style low-rank updates (not explored in paper)"
+                                      - "Fine-tuning only top layers (not explored)"
+                                    evidence: "Houlsby et al. [10] NLP adaptor applied to U-Net; ablation (Figure 4) shows adaptor-only already competitive with full fine-tuning at 300 iterations"
+                                    children:
+
+                                      - id: N12
+                                        type: experiment
+                                        title: "Full evaluation of DDPM-TAN and LDM-TAN on 7 target domains (Tables 1-3)"
+                                        result: "DDPM-TAN (1.3% params) surpasses all baselines on most Intra-LPIPS tasks; LDM-TAN (1.6% params) achieves best overall Intra-LPIPS. TAN achieves FID=20.06 on FFHQ→Sunglasses vs. 34.75 (DDPM-PA). Only 300 iterations, 3 GPU hours, 9 GB memory."
+                                        evidence: ["C01", "C02", "C03", "Table 1", "Table 2", "Table 3", "§5.3"]

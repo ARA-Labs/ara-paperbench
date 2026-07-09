@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Exploration Tree — lca-on-the-line</title>
+<style>
+  :root {
+    --bg: #fafafa;
+    --card-bg: #ffffff;
+    --border: #e0e0e0;
+    --text: #1a1a1a;
+    --text-secondary: #555;
+    --question: #1565c0;
+    --experiment: #e65100;
+    --decision: #2e7d32;
+    --dead-end: #c62828;
+    --pivot: #6a1b9a;
+    --edge: #bdbdbd;
+    --dag-edge: #e57373;
+    --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--text);
+    padding: 40px 24px 80px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  header {
+    text-align: center;
+    margin-bottom: 48px;
+  }
+
+  header h1 {
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -0.3px;
+    margin-bottom: 6px;
+  }
+
+  header p {
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+
+  .legend {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+    margin-bottom: 40px;
+    flex-wrap: wrap;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+
+  .legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+  }
+
+  .legend-dot.question   { background: var(--question); }
+  .legend-dot.experiment { background: var(--experiment); }
+  .legend-dot.decision   { background: var(--decision); }
+  .legend-dot.dead_end   { background: var(--dead-end); }
+  .legend-dot.pivot      { background: var(--pivot); }
+
+  /* ---- Tree layout ---- */
+
+  .tree {
+    position: relative;
+  }
+
+  .node-group {
+    position: relative;
+    padding-left: 32px;
+  }
+
+  .node-group.has-children > .children::before {
+    content: "";
+    position: absolute;
+    left: 15px;
+    top: 0;
+    bottom: 24px;
+    width: 2px;
+    background: var(--edge);
+  }
+
+  .children {
+    position: relative;
+    margin-top: 0;
+  }
+
+  .children > .node-group::before {
+    content: "";
+    position: absolute;
+    left: -17px;
+    top: 22px;
+    width: 17px;
+    height: 2px;
+    background: var(--edge);
+  }
+
+  .tree > .node-group {
+    padding-left: 0;
+  }
+
+  .tree > .node-group::before { display: none; }
+
+  /* ---- Node card ---- */
+
+  .node {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-bottom: 12px;
+    cursor: pointer;
+    transition: box-shadow 0.15s ease, border-color 0.15s ease;
+    position: relative;
+  }
+
+  .node:hover {
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  }
+
+  .node.expanded {
+    border-color: #999;
+  }
+
+  .node-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .node-indicator {
+    flex-shrink: 0;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-top: 5px;
+  }
+
+  .node-indicator.question   { background: var(--question); }
+  .node-indicator.experiment { background: var(--experiment); }
+  .node-indicator.decision   { background: var(--decision); }
+  .node-indicator.dead_end   { background: var(--dead-end); }
+  .node-indicator.pivot      { background: var(--pivot); }
+
+  .node-id {
+    flex-shrink: 0;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 4px;
+    background: #f0f0f0;
+    color: var(--text-secondary);
+    margin-top: 1px;
+  }
+
+  .node-title {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.4;
+    flex: 1;
+  }
+
+  .node-type {
+    flex-shrink: 0;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 10px;
+    margin-top: 2px;
+  }
+
+  .node-type.question   { background: #e3f2fd; color: var(--question); }
+  .node-type.experiment { background: #fff3e0; color: var(--experiment); }
+  .node-type.decision   { background: #e8f5e9; color: var(--decision); }
+  .node-type.dead_end   { background: #ffebee; color: var(--dead-end); }
+  .node-type.pivot      { background: #f3e5f5; color: var(--pivot); }
+
+  .node-body {
+    display: none;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #f0f0f0;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+  }
+
+  .node.expanded .node-body {
+    display: block;
+  }
+
+  .node-field {
+    margin-bottom: 8px;
+  }
+
+  .node-field:last-child {
+    margin-bottom: 0;
+  }
+
+  .field-label {
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: var(--text);
+    margin-bottom: 2px;
+  }
+
+  .field-value {
+    white-space: pre-wrap;
+  }
+
+  .evidence-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 3px;
+  }
+
+  .evidence-tag {
+    font-size: 11px;
+    padding: 1px 7px;
+    border-radius: 3px;
+    background: #f5f5f5;
+    border: 1px solid #e0e0e0;
+  }
+
+  .alt-list {
+    list-style: none;
+    padding: 0;
+  }
+
+  .alt-list li {
+    position: relative;
+    padding-left: 14px;
+    margin-bottom: 3px;
+  }
+
+  .alt-list li::before {
+    content: "\00d7";
+    position: absolute;
+    left: 0;
+    color: #ccc;
+    font-weight: 700;
+  }
+
+  .dag-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    color: var(--dag-edge);
+    border: 1px solid var(--dag-edge);
+    border-radius: 4px;
+    padding: 1px 6px;
+    margin-left: 8px;
+    font-weight: 600;
+    vertical-align: middle;
+  }
+
+  .dag-badge svg {
+    width: 10px;
+    height: 10px;
+  }
+
+  .chevron {
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    margin-top: 3px;
+    transition: transform 0.15s ease;
+    color: #ccc;
+  }
+
+  .node.expanded .chevron {
+    transform: rotate(90deg);
+    color: #999;
+  }
+
+  .stats {
+    display: flex;
+    justify-content: center;
+    gap: 32px;
+    margin-bottom: 32px;
+    padding: 12px 0;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .stat {
+    text-align: center;
+  }
+
+  .stat-value {
+    font-size: 20px;
+    font-weight: 600;
+  }
+
+  .stat-label {
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Exploration Tree — lca-on-the-line</h1>
+  <p>Research DAG &middot; LCA-on-the-Line: Benchmarking Out-of-Distribution Generalization with Class Taxonomies</p>
+</header>
+
+<div class="stats" id="stats"></div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot question"></div>Question</div>
+  <div class="legend-item"><div class="legend-dot experiment"></div>Experiment</div>
+  <div class="legend-item"><div class="legend-dot decision"></div>Decision</div>
+  <div class="legend-item"><div class="legend-dot dead_end"></div>Dead End</div>
+  <div class="legend-item"><div class="legend-dot pivot"></div>Pivot</div>
+</div>
+
+<div class="tree" id="tree"></div>
+
+<script>
+const TREE = [
+  {
+    "id": "N01",
+    "type": "question",
+    "title": "How can we predict OOD performance from ID measurements for both VMs and VLMs?",
+    "description": "The core research question: existing Accuracy-on-the-Line works within each model family but fails to unify Vision Models (VMs) and Vision-Language Models (VLMs). Can we find a single ID metric that predicts OOD performance for both?",
+    "children": [
+      {
+        "id": "N02",
+        "type": "experiment",
+        "title": "Test Accuracy-on-the-Line across VM and VLM families",
+        "result": "ID Top-1 accuracy produces two separate linear trends (one for VMs, one for VLMs). VLMs achieve higher OOD accuracy than their ID accuracy predicts — the 'effective robustness' gap. R² drops to ~0 for ImageNet-A across combined modalities.",
+        "evidence": [
+          "C01",
+          "Figure 5 (red line)",
+          "Table 2",
+          "§4.1"
+        ],
+        "children": [
+          {
+            "id": "N03",
+            "type": "dead_end",
+            "title": "Use multiple ID test sets (Shi et al., 2023) to bridge the VM/VLM gap",
+            "hypothesis": "Evaluating on multiple ID test sets would provide a more stable predictor that works across modalities",
+            "failure_mode": "Requires multiple evaluation runs; not a single unified measurement. Computationally expensive. Does not capture why VLMs generalize better in a mechanistic sense.",
+            "lesson": "Need a single ID metric that captures intrinsic model property — quality of feature alignment — rather than just accuracy on multiple datasets"
+          },
+          {
+            "id": "N04",
+            "type": "question",
+            "title": "What property of models actually correlates with OOD generalization across modalities?",
+            "description": "If Top-1 accuracy fails, what does distinguish good generalizers (VLMs) from poor generalizers (VMs with similar ID accuracy)?",
+            "children": [
+              {
+                "id": "N05",
+                "type": "experiment",
+                "title": "Revisit LCA distance as a measure of misprediction quality",
+                "result": "LCA distance measured on ID data strongly correlates with OOD accuracy for BOTH VMs and VLMs — a single linear trend. R²>0.7, PEA>0.7 on 4/5 OOD datasets. VLMs have systematically lower LCA distance (better mistakes) than VMs with similar ID accuracy.",
+                "evidence": [
+                  "C01",
+                  "Figure 1 (right)",
+                  "Table 2",
+                  "§4.1"
+                ],
+                "children": [
+                  {
+                    "id": "N06",
+                    "type": "decision",
+                    "title": "Choose information content vs. tree depth for LCA scoring function",
+                    "choice": "Information content: I(v) = -log2(p(v)) with uniform leaf probabilities (D^I_LCA)",
+                    "alternatives": [
+                      "Tree depth P(v): simple but susceptible to tree imbalance",
+                      "Mixed: use depth for soft labels (D^P_LCA), IC for main correlation experiments"
+                    ],
+                    "evidence": "Information content more robust to imbalanced hierarchies; tree depth used for soft label construction where normalization handles imbalance",
+                    "children": [
+                      {
+                        "id": "N07",
+                        "type": "experiment",
+                        "title": "Validate LCA correlation across 75 models and 5 OOD datasets",
+                        "result": "Strong linear LCA-on-the-Line established. R²(LCA→ImgN-S)=0.816, R²(LCA→ImgN-R)=0.779, R²(LCA→ImgN-A)=0.704, R²(LCA→ObjNet)=0.915. ID Top1 achieves R²≈0 on ImgN-A combined. LCA also superior predictor by MAE in Table 3.",
+                        "evidence": [
+                          "C01",
+                          "Table 2",
+                          "Table 3",
+                          "Figure 5"
+                        ],
+                        "children": [
+                          {
+                            "id": "N08",
+                            "type": "decision",
+                            "title": "Extend to datasets without predefined hierarchies",
+                            "choice": "Construct latent hierarchy via 9-layer K-means clustering on per-class average features from a pretrained model",
+                            "alternatives": [
+                              "Manual hierarchy construction (too labor intensive)",
+                              "Use cosine similarity matrix directly as proxy for distance (loses hierarchical structure)"
+                            ],
+                            "evidence": "K-means produces hierarchical organization; results in Table 4 show robust PEA across 75 source models",
+                            "children": [
+                              {
+                                "id": "N09",
+                                "type": "experiment",
+                                "title": "K-means latent hierarchy robustness study (Table 4)",
+                                "result": "Mean PEA from latent hierarchies: 0.815 (ImgN-v2), 0.773 (ImgN-S), 0.712 (ImgN-R), 0.662 (ImgN-A), 0.930 (ObjNet). Std very low (~0.02-0.03). VLM-sourced hierarchies better quality than VM-sourced.",
+                                "evidence": [
+                                  "C02",
+                                  "Table 4",
+                                  "§4.3.1"
+                                ],
+                                "children": []
+                              }
+                            ]
+                          },
+                          {
+                            "id": "N10",
+                            "type": "decision",
+                            "title": "Apply LCA insight to improve generalization (not just measure it)",
+                            "choice": "Augment CE loss with LCA soft label auxiliary loss for linear probing",
+                            "alternatives": [
+                              "Full end-to-end training with LCA loss (not reported in main paper)",
+                              "Use LCA distance as a filtering criterion to select training data",
+                              "Modify architecture to encourage hierarchical representations"
+                            ],
+                            "evidence": "Linear probing is computationally efficient; weight interpolation allows tunable ID/OOD trade-off",
+                            "also_depends_on": [
+                              "N09"
+                            ],
+                            "children": [
+                              {
+                                "id": "N11",
+                                "type": "experiment",
+                                "title": "LCA soft labels for linear probing (Table 5, 6)",
+                                "result": "Consistent OOD improvements across all 6 backbones with WordNet soft labels. ResNet-50: +6.0% on ImgN-R, +5.9% on ImgN-A. VLM-sourced latent hierarchies also improve OOD performance, with WordNet being best.",
+                                "evidence": [
+                                  "C03",
+                                  "Table 5",
+                                  "Table 6",
+                                  "Table 9",
+                                  "§4.3.2"
+                                ],
+                                "children": []
+                              },
+                              {
+                                "id": "N12",
+                                "type": "experiment",
+                                "title": "Taxonomy-aligned prompts for VLMs (Table 14)",
+                                "result": "Taxonomy Parent prompt ('A, which is a type of B, which is a type of C') achieves highest Top-1 and lowest CE across all datasets. Shuffle Parent (wrong hierarchy) degrades performance vs correct hierarchy. Stack Parent (no relational structure) performs worst.",
+                                "evidence": [
+                                  "C05",
+                                  "Table 14",
+                                  "§4.3.3"
+                                ],
+                                "children": []
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "N13",
+        "type": "dead_end",
+        "title": "Use data diversity metrics to explain VLM generalization",
+        "hypothesis": "VLMs generalize better because LAION has more diverse training data; measuring data diversity would predict OOD performance",
+        "failure_mode": "Data diversity is difficult to measure; does not explain differences within CLIP variants with same training data; requires knowing training dataset composition which is unavailable for many VLMs",
+        "lesson": "Need a model-intrinsic metric (like LCA distance) that works regardless of training data knowledge"
+      }
+    ]
+  }
+];
+
+function collectAll(nodes) {
+  let out = [];
+  for (const n of nodes) {
+    out.push(n);
+    if (n.children) out = out.concat(collectAll(n.children));
+  }
+  return out;
+}
+
+function renderStats(tree) {
+  const all = collectAll(tree);
+  const types = {};
+  all.forEach(n => { types[n.type] = (types[n.type] || 0) + 1; });
+  const maxDepth = (function getDepth(nodes, d) {
+    let m = d;
+    for (const n of nodes) {
+      if (n.children) m = Math.max(m, getDepth(n.children, d + 1));
+    }
+    return m;
+  })(tree, 1);
+
+  const el = document.getElementById("stats");
+  el.innerHTML = `
+    <div class="stat"><div class="stat-value">${all.length}</div><div class="stat-label">Nodes</div></div>
+    <div class="stat"><div class="stat-value">${maxDepth}</div><div class="stat-label">Max Depth</div></div>
+    <div class="stat"><div class="stat-value">${types.decision || 0}</div><div class="stat-label">Decisions</div></div>
+    <div class="stat"><div class="stat-value">${types.experiment || 0}</div><div class="stat-label">Experiments</div></div>
+    <div class="stat"><div class="stat-value">${types.dead_end || 0}</div><div class="stat-label">Dead Ends</div></div>
+  `;
+}
+
+function renderEvidence(ev) {
+  if (!ev) return "";
+  const items = Array.isArray(ev) ? ev : [ev];
+  if (items.length === 1 && typeof items[0] === "string" && items[0].length > 40) {
+    return `<div class="node-field"><div class="field-label">Evidence</div><div class="field-value">${esc(items[0])}</div></div>`;
+  }
+  return `<div class="node-field"><div class="field-label">Evidence</div><div class="evidence-tags">${items.map(i => `<span class="evidence-tag">${esc(String(i))}</span>`).join("")}</div></div>`;
+}
+
+function renderAlternatives(alts) {
+  if (!alts || alts.length === 0) return "";
+  return `<div class="node-field"><div class="field-label">Rejected Alternatives</div><ul class="alt-list">${alts.map(a => `<li>${esc(a)}</li>`).join("")}</ul></div>`;
+}
+
+function renderBody(node) {
+  let html = "";
+  const t = node.type;
+
+  if (t === "question" && node.description)
+    html += `<div class="node-field"><div class="field-label">Description</div><div class="field-value">${esc(node.description)}</div></div>`;
+
+  if (t === "experiment") {
+    if (node.result) html += `<div class="node-field"><div class="field-label">Result</div><div class="field-value">${esc(node.result)}</div></div>`;
+    html += renderEvidence(node.evidence);
+  }
+
+  if (t === "decision") {
+    if (node.choice) html += `<div class="node-field"><div class="field-label">Choice</div><div class="field-value">${esc(node.choice)}</div></div>`;
+    html += renderAlternatives(node.alternatives);
+    html += renderEvidence(node.evidence);
+  }
+
+  if (t === "dead_end") {
+    if (node.hypothesis) html += `<div class="node-field"><div class="field-label">Hypothesis</div><div class="field-value">${esc(node.hypothesis)}</div></div>`;
+    if (node.failure_mode) html += `<div class="node-field"><div class="field-label">Failure Mode</div><div class="field-value">${esc(node.failure_mode)}</div></div>`;
+    if (node.lesson) html += `<div class="node-field"><div class="field-label">Lesson</div><div class="field-value">${esc(node.lesson)}</div></div>`;
+  }
+
+  if (t === "pivot") {
+    if (node.from) html += `<div class="node-field"><div class="field-label">From</div><div class="field-value">${esc(node.from)}</div></div>`;
+    if (node.to) html += `<div class="node-field"><div class="field-label">To</div><div class="field-value">${esc(node.to)}</div></div>`;
+    if (node.trigger) html += `<div class="node-field"><div class="field-label">Trigger</div><div class="field-value">${esc(node.trigger)}</div></div>`;
+  }
+
+  return html;
+}
+
+function esc(s) {
+  const d = document.createElement("div");
+  d.textContent = s.trim();
+  return d.innerHTML;
+}
+
+const TYPE_LABELS = {
+  question: "Question",
+  experiment: "Experiment",
+  decision: "Decision",
+  dead_end: "Dead End",
+  pivot: "Pivot"
+};
+
+function renderNode(node) {
+  const hasChildren = node.children && node.children.length > 0;
+  const dagBadge = node.also_depends_on
+    ? `<span class="dag-badge"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M5 3a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm6 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm-3 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg>also: ${node.also_depends_on.join(", ")}</span>`
+    : "";
+
+  const chevronSvg = `<svg class="chevron" viewBox="0 0 16 16" fill="currentColor"><path d="M6.22 3.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06L9.94 8 6.22 4.28a.75.75 0 0 1 0-1.06z"/></svg>`;
+
+  let html = `<div class="node-group ${hasChildren ? "has-children" : ""}">`;
+  html += `<div class="node" onclick="this.classList.toggle('expanded')">`;
+  html += `<div class="node-header">`;
+  html += `<div class="node-indicator ${node.type}"></div>`;
+  html += `<span class="node-id">${node.id}</span>`;
+  html += `<span class="node-title">${esc(node.title)}${dagBadge}</span>`;
+  html += `<span class="node-type ${node.type}">${TYPE_LABELS[node.type]}</span>`;
+  html += chevronSvg;
+  html += `</div>`;
+  html += `<div class="node-body">${renderBody(node)}</div>`;
+  html += `</div>`;
+
+  if (hasChildren) {
+    html += `<div class="children">`;
+    for (const child of node.children) {
+      html += renderNode(child);
+    }
+    html += `</div>`;
+  }
+
+  html += `</div>`;
+  return html;
+}
+
+function render() {
+  renderStats(TREE);
+  const container = document.getElementById("tree");
+  container.innerHTML = TREE.map(renderNode).join("");
+}
+
+render();
+</script>
+</body>
+</html>

@@ -1,0 +1,101 @@
+# Exploration Tree — venn_2312.08298
+# Research DAG: nested tree with cross-edges (also_depends_on) forming a DAG.
+# Node types: question | experiment | dead_end | decision | pivot
+
+tree:
+  - id: N01
+    type: question
+    title: "How to efficiently manage multiple concurrent CL jobs competing for heterogeneous edge devices?"
+    description: "Edge devices are ephemeral, heterogeneous, and have overlapping eligibility sets across CL jobs. Existing managers use random matching, which is suboptimal under contention. Can we do better while remaining computationally tractable at planetary scale?"
+    children:
+
+      - id: N02
+        type: experiment
+        title: "Measure impact of resource contention on CL job accuracy and JCT"
+        result: "Increasing concurrent jobs (1→5→10→20) significantly degrades round-to-accuracy performance. Scheduling delay grows to dominate JCT (Figure 5). Even partitioning is no better than shared pool."
+        evidence: ["Figure 4", "Figure 5", "§2.3"]
+        children:
+
+          - id: N03
+            type: decision
+            title: "Decompose JCT into scheduling delay + response collection time"
+            choice: "Optimize both components separately: (1) job ordering for scheduling delay, (2) device matching for response collection time"
+            alternatives:
+              - "Optimize only response collection time (existing single-job work approach)"
+              - "Joint optimization of all assignments via ILP (exact solution)"
+            evidence: "Figure 1 shows both components; Figure 5 shows scheduling delay dominates under contention; exact ILP is NP-hard (Even et al., 1975)"
+            children:
+
+              - id: N04
+                type: question
+                title: "How to minimize scheduling delay across multiple CL jobs with overlapping eligibility sets?"
+                description: "Random matching and SRSF waste scarce resources on jobs with abundant alternatives (Figure 3). An ILP formulation exists but is intractable at scale."
+                children:
+
+                  - id: N05
+                    type: dead_end
+                    title: "Direct ILP/MCF exact formulation"
+                    hypothesis: "Formulate IRS as integer multi-commodity flow and solve exactly."
+                    failure_mode: "NP-hard (Even et al., 1975); computationally infeasible at planetary scale with thousands of devices and hundreds of jobs."
+                    lesson: "Need a tractable heuristic; decompose by resource homogeneity to reduce problem size."
+
+                  - id: N06
+                    type: dead_end
+                    title: "Apply SRSF (Shortest Remaining Service First) from cluster scheduling"
+                    hypothesis: "SRSF from datacenter scheduling minimizes average JCT."
+                    failure_mode: "SRSF does not account for overlapping eligibility sets across job groups; wastes scarce Emoji-eligible devices on Keyboard job (Figure 3, avg JCT=11 vs optimal 9.3)."
+                    lesson: "Need a scheduler that explicitly models device eligibility intersection structure."
+
+                  - id: N07
+                    type: decision
+                    title: "Introduce Resource-Homogeneous Job Groups and two-level decomposition"
+                    choice: "Group jobs by identical eligibility requirements; solve intra-group (SRDF) then inter-group (scarcity + queue-length ratio) separately"
+                    alternatives:
+                      - "Single-level sorting across all jobs (SRSF ignoring groups)"
+                      - "Per-group independent scheduling ignoring cross-group contention"
+                    evidence: "Lemma 1 proves two-level decomposition gives globally optimal JCT when each step is optimal. Lemma 2 proves inter-group heuristic is optimal for two-group case."
+                    children:
+
+                      - id: N08
+                        type: experiment
+                        title: "Validate IRS heuristic across 5 workload scenarios"
+                        result: "Venn achieves 1.63×–1.88× JCT improvement over random matching. SRSF achieves 1.41×–1.69×. FIFO achieves 1.38×–1.64×. (Table 1)"
+                        evidence: ["Table 1", "§5.2", "C01"]
+                        children:
+
+                          - id: N09
+                            type: experiment
+                            title: "Ablation: IRS-only vs. matching-only vs. full Venn"
+                            result: "IRS scheduling alone (Venn w/o match) gives 1.79× on Low, 1.63× on High. Matching alone (Venn w/o sched) gives 1.62× on Low, 1.42× on High. Full Venn: 1.88× Low, 1.63× High."
+                            evidence: ["Figure 11", "§5.3", "C02", "C03"]
+
+              - id: N10
+                type: question
+                title: "How to reduce response collection time through device-to-job matching?"
+                description: "Response collection time is determined by the slowest device. Assigning homogeneous-capacity devices reduces tail latency but reduces the eligible pool, increasing scheduling delay."
+                also_depends_on: [N03]
+                children:
+
+                  - id: N11
+                    type: dead_end
+                    title: "Always assign highest-tier (fastest) devices to every job"
+                    hypothesis: "Consistently assigning top-tier devices minimizes response collection time."
+                    failure_mode: "Restricts device pool (fewer devices available), significantly increasing scheduling delay under contention. Also reduces participant diversity, potentially harming model quality."
+                    lesson: "Tier-based matching must be conditional on the JCT tradeoff (c_i ratio); always-top-tier is harmful under high contention."
+
+                  - id: N12
+                    type: decision
+                    title: "Conditional tier-based matching with randomized tier selection"
+                    choice: "Apply tier restriction only when 1 + c_i > V + g_u * c_i; select tier randomly to preserve device diversity"
+                    alternatives:
+                      - "Always assign top tier (rejected: see N11)"
+                      - "No tier-based matching at all (FIFO/SRSF baseline)"
+                      - "Deterministic tier assignment (always same tier) — rejected: reduces participant diversity"
+                    evidence: "Figure 7 (condition visualization); Figure 13 (optimal V; gains plateau); Figure 11 (matching helps under low contention only)"
+                    children:
+
+                      - id: N13
+                        type: experiment
+                        title: "Validate full Venn on biased workloads and real testbed"
+                        result: "On biased workloads: Venn achieves up to 2.27× (Memory-heavy) over random. On real testbed with ResNet-18+MobileNet-V2 on FEMNIST: Venn converges faster without hurting final accuracy (Figure 9). Overhead <1ms for 1000 jobs (Figure 10)."
+                        evidence: ["Table 4", "Figure 9", "Figure 10", "§5.2", "§5.4", "C04", "C05"]

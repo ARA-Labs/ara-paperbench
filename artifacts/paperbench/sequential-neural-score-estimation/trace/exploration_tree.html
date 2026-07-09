@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Exploration Tree — sequential-neural-score-estimation</title>
+<style>
+  :root {
+    --bg: #fafafa;
+    --card-bg: #ffffff;
+    --border: #e0e0e0;
+    --text: #1a1a1a;
+    --text-secondary: #555;
+    --question: #1565c0;
+    --experiment: #e65100;
+    --decision: #2e7d32;
+    --dead-end: #c62828;
+    --pivot: #6a1b9a;
+    --edge: #bdbdbd;
+    --dag-edge: #e57373;
+    --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--text);
+    padding: 40px 24px 80px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  header {
+    text-align: center;
+    margin-bottom: 48px;
+  }
+
+  header h1 {
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -0.3px;
+    margin-bottom: 6px;
+  }
+
+  header p {
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+
+  .legend {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+    margin-bottom: 40px;
+    flex-wrap: wrap;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+
+  .legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+  }
+
+  .legend-dot.question   { background: var(--question); }
+  .legend-dot.experiment { background: var(--experiment); }
+  .legend-dot.decision   { background: var(--decision); }
+  .legend-dot.dead_end   { background: var(--dead-end); }
+  .legend-dot.pivot      { background: var(--pivot); }
+
+  /* ---- Tree layout ---- */
+
+  .tree {
+    position: relative;
+  }
+
+  .node-group {
+    position: relative;
+    padding-left: 32px;
+  }
+
+  .node-group.has-children > .children::before {
+    content: "";
+    position: absolute;
+    left: 15px;
+    top: 0;
+    bottom: 24px;
+    width: 2px;
+    background: var(--edge);
+  }
+
+  .children {
+    position: relative;
+    margin-top: 0;
+  }
+
+  .children > .node-group::before {
+    content: "";
+    position: absolute;
+    left: -17px;
+    top: 22px;
+    width: 17px;
+    height: 2px;
+    background: var(--edge);
+  }
+
+  .tree > .node-group {
+    padding-left: 0;
+  }
+
+  .tree > .node-group::before { display: none; }
+
+  /* ---- Node card ---- */
+
+  .node {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-bottom: 12px;
+    cursor: pointer;
+    transition: box-shadow 0.15s ease, border-color 0.15s ease;
+    position: relative;
+  }
+
+  .node:hover {
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  }
+
+  .node.expanded {
+    border-color: #999;
+  }
+
+  .node-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .node-indicator {
+    flex-shrink: 0;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-top: 5px;
+  }
+
+  .node-indicator.question   { background: var(--question); }
+  .node-indicator.experiment { background: var(--experiment); }
+  .node-indicator.decision   { background: var(--decision); }
+  .node-indicator.dead_end   { background: var(--dead-end); }
+  .node-indicator.pivot      { background: var(--pivot); }
+
+  .node-id {
+    flex-shrink: 0;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 4px;
+    background: #f0f0f0;
+    color: var(--text-secondary);
+    margin-top: 1px;
+  }
+
+  .node-title {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.4;
+    flex: 1;
+  }
+
+  .node-type {
+    flex-shrink: 0;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 10px;
+    margin-top: 2px;
+  }
+
+  .node-type.question   { background: #e3f2fd; color: var(--question); }
+  .node-type.experiment { background: #fff3e0; color: var(--experiment); }
+  .node-type.decision   { background: #e8f5e9; color: var(--decision); }
+  .node-type.dead_end   { background: #ffebee; color: var(--dead-end); }
+  .node-type.pivot      { background: #f3e5f5; color: var(--pivot); }
+
+  .node-body {
+    display: none;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #f0f0f0;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+  }
+
+  .node.expanded .node-body {
+    display: block;
+  }
+
+  .node-field {
+    margin-bottom: 8px;
+  }
+
+  .node-field:last-child {
+    margin-bottom: 0;
+  }
+
+  .field-label {
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: var(--text);
+    margin-bottom: 2px;
+  }
+
+  .field-value {
+    white-space: pre-wrap;
+  }
+
+  .evidence-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 3px;
+  }
+
+  .evidence-tag {
+    font-size: 11px;
+    padding: 1px 7px;
+    border-radius: 3px;
+    background: #f5f5f5;
+    border: 1px solid #e0e0e0;
+  }
+
+  .alt-list {
+    list-style: none;
+    padding: 0;
+  }
+
+  .alt-list li {
+    position: relative;
+    padding-left: 14px;
+    margin-bottom: 3px;
+  }
+
+  .alt-list li::before {
+    content: "\00d7";
+    position: absolute;
+    left: 0;
+    color: #ccc;
+    font-weight: 700;
+  }
+
+  .dag-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    color: var(--dag-edge);
+    border: 1px solid var(--dag-edge);
+    border-radius: 4px;
+    padding: 1px 6px;
+    margin-left: 8px;
+    font-weight: 600;
+    vertical-align: middle;
+  }
+
+  .dag-badge svg {
+    width: 10px;
+    height: 10px;
+  }
+
+  .chevron {
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    margin-top: 3px;
+    transition: transform 0.15s ease;
+    color: #ccc;
+  }
+
+  .node.expanded .chevron {
+    transform: rotate(90deg);
+    color: #999;
+  }
+
+  .stats {
+    display: flex;
+    justify-content: center;
+    gap: 32px;
+    margin-bottom: 32px;
+    padding: 12px 0;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .stat {
+    text-align: center;
+  }
+
+  .stat-value {
+    font-size: 20px;
+    font-weight: 600;
+  }
+
+  .stat-label {
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Exploration Tree — sequential-neural-score-estimation</h1>
+  <p>Research DAG &middot; Sequential Neural Score Estimation: Likelihood-Free Inference with Conditional Score Based Diffusion Models</p>
+</header>
+
+<div class="stats" id="stats"></div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot question"></div>Question</div>
+  <div class="legend-item"><div class="legend-dot experiment"></div>Experiment</div>
+  <div class="legend-item"><div class="legend-dot decision"></div>Decision</div>
+  <div class="legend-item"><div class="legend-dot dead_end"></div>Dead End</div>
+  <div class="legend-item"><div class="legend-dot pivot"></div>Pivot</div>
+</div>
+
+<div class="tree" id="tree"></div>
+
+<script>
+const TREE = [
+  {
+    "id": "N01",
+    "type": "question",
+    "title": "Can conditional score-based diffusion models replace normalising flows for SBI?",
+    "description": "The central question: given that diffusion models achieve state-of-the-art generative quality and avoid architectural restrictions of normalising flows, can they be used to estimate the posterior score ∇_θ log p(θ|x) in the simulation-based inference setting where the likelihood p(x|θ) is intractable?",
+    "children": [
+      {
+        "id": "N02",
+        "type": "experiment",
+        "title": "Derive tractable DSM objective for posterior score estimation",
+        "result": "Showed that the intractable posterior score matching objective J^SM_post is equivalent to the tractable denoising objective J^DSM_post (Eq. 7), which only requires samples from p(θ)p(x|θ) and closed-form transition scores. This yields NPSE — the amortised non-sequential algorithm.",
+        "evidence": [
+          "C01",
+          "Eq. 6-7",
+          "Appendix A.1"
+        ],
+        "children": [
+          {
+            "id": "N03",
+            "type": "experiment",
+            "title": "Validate NPSE (VE/VP SDE) vs NPE on 8 sbibm benchmarks",
+            "result": "NPSE-VE and NPSE-VP achieve comparable C2ST to NPE on most tasks. On SLCP and Lotka Volterra (hardest tasks), NPSE variants outperform NPE. VE SDE is better for low-dimensional tasks; VP SDE for high-dimensional.",
+            "evidence": [
+              "C01",
+              "C05",
+              "Figure 2"
+            ],
+            "children": [
+              {
+                "id": "N04",
+                "type": "decision",
+                "title": "Should we develop a sequential variant of NPSE?",
+                "choice": "Yes — for a fixed observation x_obs, concentrating simulations near the posterior reduces simulation cost without sacrificing accuracy (same motivation as SNPE vs NPE). Develop SNPSE.",
+                "alternatives": [
+                  "Keep NPSE amortised-only (simpler, no proposal correction needed)",
+                  "Use MCMC with NPSE score for sequential inference"
+                ],
+                "evidence": "Section 3 motivation; prior sequential SBI success (SNPE, TSNPE)",
+                "children": [
+                  {
+                    "id": "N05",
+                    "type": "question",
+                    "title": "How to correct for proposal prior mismatch in sequential NPSE?",
+                    "description": "When training on proposal distribution ˜p(θ) instead of prior p(θ), the DSM objective minimiser learns the proposal posterior score ∇_θ log ˜p_t(θ_t|x), not the true posterior score. Four approaches were explored in parallel.",
+                    "children": [
+                      {
+                        "id": "N06",
+                        "type": "experiment",
+                        "title": "SNPSE-A: Post-hoc SIR importance weight correction",
+                        "result": "Works in principle but limited by mismatch between true proposal posterior ˜p(θ|x_obs) and the learned approximation ˜p_ψ(θ|x_obs). High variance in practice; only tractable for ≤2 rounds without approximating the normalising constant.",
+                        "evidence": [
+                          "C03",
+                          "Figure 6",
+                          "Appendix C.2"
+                        ],
+                        "children": [
+                          {
+                            "id": "N07",
+                            "type": "dead_end",
+                            "title": "SNPSE-A limited to 2 rounds without additional approximation",
+                            "hypothesis": "SIR correction would be exact in the limit of infinite samples, giving a principled sequential algorithm analogous to SNPE-A.",
+                            "failure_mode": "For r>2 rounds, computing ˜p^r(θ) requires intractable normalising constants. Approximate alternatives (KDE, normalising flow) introduce additional errors. Empirically inferior to TSNPSE on SLCP and GLU.",
+                            "lesson": "Importance weight corrections are fundamentally limited by the approximation gap between true and learned proposal posteriors. Led to search for correction-free sequential approach."
+                          }
+                        ]
+                      },
+                      {
+                        "id": "N08",
+                        "type": "experiment",
+                        "title": "SNPSE-B: Importance-weighted DSM loss",
+                        "result": "Theoretically correct (equivalent to true DSM objective after reweighting). Practically, importance weights p(θ)/˜p^r(θ) are high-variance, causing unstable training and poor performance.",
+                        "evidence": [
+                          "C03",
+                          "Figure 6",
+                          "Appendix C.3"
+                        ],
+                        "children": [
+                          {
+                            "id": "N09",
+                            "type": "dead_end",
+                            "title": "SNPSE-B high-variance importance weights degrade training",
+                            "hypothesis": "Reweighting the DSM loss by p(θ)/˜p^r(θ) should recover the true posterior score, analogous to SNPE-B.",
+                            "failure_mode": "Importance weights are high-variance for multi-round proposals, causing noisy gradient estimates and unstable convergence. Mirrors the known failure mode of SNPE-B (Lueckmann et al., 2017).",
+                            "lesson": "In-loss importance weighting is not robust; confirms that SNPE-B's instability extends to the score-based setting."
+                          }
+                        ]
+                      },
+                      {
+                        "id": "N10",
+                        "type": "experiment",
+                        "title": "SNPSE-C: Score-space correction via proposal prior score",
+                        "result": "Theoretically elegant: parameterises ˜s^r_ψ = s_ψ + ∇log˜p^r_t(θ_t) - ∇log p_t(θ_t) so that minimising the proposal DSM objective recovers the true posterior score. Requires approximating ∇log˜p^r_t(θ_t), which compounds errors. Empirically: C2ST ≈ 1 (complete failure).",
+                        "evidence": [
+                          "C03",
+                          "Appendix C.4"
+                        ],
+                        "children": [
+                          {
+                            "id": "N11",
+                            "type": "dead_end",
+                            "title": "SNPSE-C: proposal prior score approximation compounds errors fatally",
+                            "hypothesis": "Estimating ∇log˜p^r_t(θ_t) with an auxiliary score network (trained via Eq. 123) and substituting into the score correction (Eq. 103) would allow recovering the true posterior score.",
+                            "failure_mode": "Training the proposal prior score network requires large samples and additional iterations. Its approximation error directly contaminates the posterior score estimate. In practice C2ST ≈ 1.0 on all tested tasks, indicating complete failure.",
+                            "lesson": "Score-space corrections require highly accurate auxiliary estimates; any approximation errors cascade. Avoid approaches that chain multiple approximate score networks."
+                          }
+                        ]
+                      },
+                      {
+                        "id": "N12",
+                        "type": "experiment",
+                        "title": "TSNPSE: Truncated proposals require no correction (Proposition 3.1)",
+                        "result": "If ˜p^r(θ) ∝ p(θ) · I{θ ∈ HPR_ε} with the true posterior support Θ_obs ⊆ HPR_ε, then ˜p^r(θ) ∝ p(θ) on Θ_obs, and the DSM objective is minimised by the true posterior score (no correction needed). Empirically outperforms SNPSE-A, B, C on all tested tasks.",
+                        "evidence": [
+                          "C02",
+                          "C03",
+                          "C04",
+                          "Proposition 3.1",
+                          "Figure 3"
+                        ],
+                        "also_depends_on": [
+                          "N06",
+                          "N08",
+                          "N10"
+                        ],
+                        "children": [
+                          {
+                            "id": "N13",
+                            "type": "decision",
+                            "title": "Adopt TSNPSE as the preferred sequential method",
+                            "choice": "TSNPSE: truncated proposal with rejection sampling (hypercube pre-rejection + log-density threshold κ), HPR estimated with ε=5×10⁻⁴ using 20000 ODE samples.",
+                            "alternatives": [
+                              "SNPSE-A (2-round limitation, SIR correction)",
+                              "SNPSE-B (importance-weighted loss, high variance)",
+                              "SNPSE-C (score-space correction, empirically fails)"
+                            ],
+                            "evidence": "Figure 6 comparison; Proposition 3.1 theoretical guarantee; follows TSNPE's truncation strategy (Deistler et al., 2022a).",
+                            "children": [
+                              {
+                                "id": "N14",
+                                "type": "experiment",
+                                "title": "Validate TSNPSE on 8 benchmarks + Pyloric neuroscience",
+                                "result": "TSNPSE outperforms SNPE-C and TSNPE on SLCP and Lotka Volterra. Results mixed on simpler tasks. Achieves 81% valid summary statistics on Pyloric (9 rounds), superior to TSNPE and SNVI.",
+                                "evidence": [
+                                  "C02",
+                                  "C04",
+                                  "Figure 3",
+                                  "Figure 4c"
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+];
+
+function collectAll(nodes) {
+  let out = [];
+  for (const n of nodes) {
+    out.push(n);
+    if (n.children) out = out.concat(collectAll(n.children));
+  }
+  return out;
+}
+
+function renderStats(tree) {
+  const all = collectAll(tree);
+  const types = {};
+  all.forEach(n => { types[n.type] = (types[n.type] || 0) + 1; });
+  const maxDepth = (function getDepth(nodes, d) {
+    let m = d;
+    for (const n of nodes) {
+      if (n.children) m = Math.max(m, getDepth(n.children, d + 1));
+    }
+    return m;
+  })(tree, 1);
+
+  const el = document.getElementById("stats");
+  el.innerHTML = `
+    <div class="stat"><div class="stat-value">${all.length}</div><div class="stat-label">Nodes</div></div>
+    <div class="stat"><div class="stat-value">${maxDepth}</div><div class="stat-label">Max Depth</div></div>
+    <div class="stat"><div class="stat-value">${types.decision || 0}</div><div class="stat-label">Decisions</div></div>
+    <div class="stat"><div class="stat-value">${types.experiment || 0}</div><div class="stat-label">Experiments</div></div>
+    <div class="stat"><div class="stat-value">${types.dead_end || 0}</div><div class="stat-label">Dead Ends</div></div>
+  `;
+}
+
+function renderEvidence(ev) {
+  if (!ev) return "";
+  const items = Array.isArray(ev) ? ev : [ev];
+  if (items.length === 1 && typeof items[0] === "string" && items[0].length > 40) {
+    return `<div class="node-field"><div class="field-label">Evidence</div><div class="field-value">${esc(items[0])}</div></div>`;
+  }
+  return `<div class="node-field"><div class="field-label">Evidence</div><div class="evidence-tags">${items.map(i => `<span class="evidence-tag">${esc(String(i))}</span>`).join("")}</div></div>`;
+}
+
+function renderAlternatives(alts) {
+  if (!alts || alts.length === 0) return "";
+  return `<div class="node-field"><div class="field-label">Rejected Alternatives</div><ul class="alt-list">${alts.map(a => `<li>${esc(a)}</li>`).join("")}</ul></div>`;
+}
+
+function renderBody(node) {
+  let html = "";
+  const t = node.type;
+
+  if (t === "question" && node.description)
+    html += `<div class="node-field"><div class="field-label">Description</div><div class="field-value">${esc(node.description)}</div></div>`;
+
+  if (t === "experiment") {
+    if (node.result) html += `<div class="node-field"><div class="field-label">Result</div><div class="field-value">${esc(node.result)}</div></div>`;
+    html += renderEvidence(node.evidence);
+  }
+
+  if (t === "decision") {
+    if (node.choice) html += `<div class="node-field"><div class="field-label">Choice</div><div class="field-value">${esc(node.choice)}</div></div>`;
+    html += renderAlternatives(node.alternatives);
+    html += renderEvidence(node.evidence);
+  }
+
+  if (t === "dead_end") {
+    if (node.hypothesis) html += `<div class="node-field"><div class="field-label">Hypothesis</div><div class="field-value">${esc(node.hypothesis)}</div></div>`;
+    if (node.failure_mode) html += `<div class="node-field"><div class="field-label">Failure Mode</div><div class="field-value">${esc(node.failure_mode)}</div></div>`;
+    if (node.lesson) html += `<div class="node-field"><div class="field-label">Lesson</div><div class="field-value">${esc(node.lesson)}</div></div>`;
+  }
+
+  if (t === "pivot") {
+    if (node.from) html += `<div class="node-field"><div class="field-label">From</div><div class="field-value">${esc(node.from)}</div></div>`;
+    if (node.to) html += `<div class="node-field"><div class="field-label">To</div><div class="field-value">${esc(node.to)}</div></div>`;
+    if (node.trigger) html += `<div class="node-field"><div class="field-label">Trigger</div><div class="field-value">${esc(node.trigger)}</div></div>`;
+  }
+
+  return html;
+}
+
+function esc(s) {
+  const d = document.createElement("div");
+  d.textContent = s.trim();
+  return d.innerHTML;
+}
+
+const TYPE_LABELS = {
+  question: "Question",
+  experiment: "Experiment",
+  decision: "Decision",
+  dead_end: "Dead End",
+  pivot: "Pivot"
+};
+
+function renderNode(node) {
+  const hasChildren = node.children && node.children.length > 0;
+  const dagBadge = node.also_depends_on
+    ? `<span class="dag-badge"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M5 3a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm6 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm-3 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg>also: ${node.also_depends_on.join(", ")}</span>`
+    : "";
+
+  const chevronSvg = `<svg class="chevron" viewBox="0 0 16 16" fill="currentColor"><path d="M6.22 3.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06L9.94 8 6.22 4.28a.75.75 0 0 1 0-1.06z"/></svg>`;
+
+  let html = `<div class="node-group ${hasChildren ? "has-children" : ""}">`;
+  html += `<div class="node" onclick="this.classList.toggle('expanded')">`;
+  html += `<div class="node-header">`;
+  html += `<div class="node-indicator ${node.type}"></div>`;
+  html += `<span class="node-id">${node.id}</span>`;
+  html += `<span class="node-title">${esc(node.title)}${dagBadge}</span>`;
+  html += `<span class="node-type ${node.type}">${TYPE_LABELS[node.type]}</span>`;
+  html += chevronSvg;
+  html += `</div>`;
+  html += `<div class="node-body">${renderBody(node)}</div>`;
+  html += `</div>`;
+
+  if (hasChildren) {
+    html += `<div class="children">`;
+    for (const child of node.children) {
+      html += renderNode(child);
+    }
+    html += `</div>`;
+  }
+
+  html += `</div>`;
+  return html;
+}
+
+function render() {
+  renderStats(TREE);
+  const container = document.getElementById("tree");
+  container.innerHTML = TREE.map(renderNode).join("");
+}
+
+render();
+</script>
+</body>
+</html>

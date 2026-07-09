@@ -1,0 +1,103 @@
+---
+# Exploration Tree — test-time-model-adaptation (FOA)
+# Research DAG: nested tree with cross-edges (also_depends_on) forming a DAG.
+# Node types: question | experiment | dead_end | decision | pivot
+
+tree:
+  - id: N01
+    type: question
+    title: "Can test-time adaptation work without backpropagation?"
+    description: >
+      Deep models are often deployed on quantized or hard-coded edge devices
+      (FPGAs, smartphones) where backpropagation is infeasible. Can we achieve
+      competitive TTA using only forward passes and no weight modification?
+    children:
+
+      - id: N02
+        type: experiment
+        title: "Apply CMA-ES directly to model weights (norm layers)"
+        result: "Catastrophic failure — accuracy collapses to 0.1% (exp4, exp5 in Table 9)"
+        evidence: [C04, "Table 9", "§3.1"]
+        children:
+
+          - id: N03
+            type: dead_end
+            title: "CMA-ES on norm layer parameters (high-dimensional)"
+            hypothesis: "CMA-ES can optimize affine parameters of normalization layers for TTA"
+            failure_mode: "CMA-ES cannot handle ultra-high-dimensional optimization (millions of parameters); accuracy collapses to 0.1% with both entropy and Eq.5 fitness"
+            lesson: "CMA requires low-dimensional optimization target; must reduce search space drastically"
+
+          - id: N04
+            type: decision
+            title: "Use low-dimensional prompt embeddings as optimization target"
+            choice: "Insert Np=3 learnable prompt embeddings (2304-dim for ViT-Base) before the first transformer layer; optimize only prompts with CMA-ES"
+            alternatives:
+              - "Optimize full model parameters (infeasible for CMA, O(86M) dim)"
+              - "Optimize only CLS token (too low expressiveness)"
+              - "Use zeroth-order gradient estimation (slow convergence for large models)"
+            evidence: "Visual prompt tuning literature (Jia et al., 2022); CMA tractability requires dim << 10^4; Table 9 exp3/ours confirms prompts work"
+            children:
+
+              - id: N05
+                type: experiment
+                title: "CMA-ES + prompt embeddings + entropy fitness"
+                result: "Still fails — 44.9% accuracy (exp6, Table 9); worse than NoAdapt (55.5%)"
+                evidence: [C04, "Table 9", "§3.1"]
+                children:
+
+                  - id: N06
+                    type: dead_end
+                    title: "Entropy-only fitness for CMA prompt optimization"
+                    hypothesis: "Standard entropy minimization provides reliable fitness signal for CMA in online unsupervised TTA"
+                    failure_mode: "Severely corrupted OOD samples produce highly uncertain predictions; entropy is noisy and inconsistent; CMA converges to trivial/degenerate solutions (44.9% accuracy)"
+                    lesson: "Need a stable fitness function that does not rely solely on noisy per-sample entropy; distribution-level fitness provides better stability"
+
+                  - id: N07
+                    type: decision
+                    title: "Design activation discrepancy fitness function"
+                    choice: "Combine prediction entropy with CLS activation distribution discrepancy (L2 distance in mean/std space) across all N layers — Eq. 5"
+                    alternatives:
+                      - "Entropy-only (shown to fail — dead end N06)"
+                      - "Supervised fitness (requires labels — unavailable in TTA)"
+                      - "Contrastive loss (requires paired data)"
+                    evidence: "Distribution-level fitness circumvents noisy predictions; Table 9 exp3 shows Eq.5 with SGD achieves 64.6% accuracy"
+                    children:
+
+                      - id: N08
+                        type: experiment
+                        title: "CMA + prompts + activation discrepancy fitness (no entropy)"
+                        result: "Activation discrepancy alone: 63.4% accuracy, 9.4% ECE — substantially better than NoAdapt (55.5%)"
+                        evidence: [C05, "Table 5", "§4.3"]
+                        children:
+
+                          - id: N09
+                            type: experiment
+                            title: "Full fitness (entropy + discrepancy) + CMA prompts (no shifting)"
+                            result: "Combined fitness: 63.8% accuracy, 9.9% ECE — marginal improvement over discrepancy alone"
+                            evidence: [C05, "Table 5", "§4.3"]
+                            children:
+
+                              - id: N10
+                                type: decision
+                                title: "Add back-to-source activation shifting for further boost"
+                                choice: "Directly shift final-layer CLS features toward source domain center using online EMA direction — Eqs. 7-9"
+                                alternatives:
+                                  - "No activation shifting (63.8% accuracy)"
+                                  - "Shift all layer features (computationally expensive)"
+                                  - "BN statistics calibration (not applicable to ViT without BN)"
+                                evidence: "Activation shifting alone: 59.1% accuracy (Table 5); combined with full fitness: 66.3% (best); gradient-free and computationally trivial"
+                                children:
+
+                                  - id: N11
+                                    type: experiment
+                                    title: "Full FOA: CMA prompts + combined fitness + activation shifting"
+                                    result: "66.3% accuracy, 3.2% ECE on ImageNet-C — outperforms gradient-based TENT (59.6%) and SAR (62.7%)"
+                                    evidence: [C01, C05, "Table 2", "§4.1"]
+                                    children:
+
+                                      - id: N12
+                                        type: experiment
+                                        title: "FOA on 8-bit quantized ViT"
+                                        result: "63.5% accuracy, 3.8% ECE — surpasses TENT (32-bit, 59.6%) with 208 MB vs 5165 MB memory"
+                                        evidence: [C02, C03, "Table 4", "§4.2"]
+                                        also_depends_on: [N11]

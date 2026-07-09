@@ -1,0 +1,115 @@
+# Exploration Tree — bbox
+# Research DAG: nested tree with cross-edges (also_depends_on) forming a DAG.
+# Node types: question | experiment | dead_end | decision | pivot
+
+tree:
+  - id: N01
+    type: question
+    title: "How can we adapt state-of-the-art black-box LLMs (no parameters, no probabilities) to specific tasks?"
+    description: "GPT-3.5-turbo, GPT-4, PaLM-2, Gemini expose only text-in/text-out APIs. Fine-tuning APIs are opaque, privacy-risky, and costly. No method exists that adapts these LLMs without either their fine-tuning APIs or token probabilities."
+    children:
+
+      - id: N02
+        type: experiment
+        title: "Can grey-box methods (logit combination, kNN-Adapter) work on modern black-box LLMs?"
+        result: "No. GPT-3.5-turbo and PaLM-2 do not expose full token probability distributions. The logprobs API returns only top-5 tokens; the echo parameter was deprecated October 2023."
+        evidence: ["Appendix C", "Table 1", "§2"]
+        children:
+
+          - id: N03
+            type: dead_end
+            title: "Grey-box approaches (CombLM, Proxy-Tuning, kNN-Adapter, IPA) for black-box adaptation"
+            hypothesis: "Token-level probability combination methods could work on recent black-box LLMs"
+            failure_mode: "Output token probabilities are inaccessible in GPT-3.5-turbo, GPT-4, PaLM-2; even top-5 logprobs are insufficient for full vocabulary distribution modeling"
+            lesson: "Must operate purely on text outputs; any method requiring probability distributions is inapplicable"
+
+          - id: N04
+            type: decision
+            title: "Frame black-box LLM adaptation as text-only ranking/scoring problem"
+            choice: "Train a small auxiliary model as an energy-based scorer that distinguishes target-domain from source-domain text using only text inputs and outputs"
+            alternatives:
+              - "Prompt engineering and in-context learning (no persistent adaptation)"
+              - "Fine-tuning via API (Azure-SFT) — opaque, expensive, privacy-risky"
+              - "Retrieval-augmented generation (kNN-Adapter) — still needs probabilities for interpolation"
+            evidence: "Residual EBM formulation (Deng et al., 2020) enables distribution shaping without accessing LLM internals; only text outputs needed"
+            children:
+
+              - id: N05
+                type: question
+                title: "How to train the energy scorer without access to partition function or probabilities?"
+                description: "The normalizing constant Z_theta(x) is intractable; maximum likelihood estimation requires sampling from model distributions."
+                children:
+
+                  - id: N06
+                    type: dead_end
+                    title: "Standard MLE or MCMC for EBM training"
+                    hypothesis: "Direct MLE or MCMC sampling could estimate Z_theta(x) sufficiently"
+                    failure_mode: "Computationally intensive and imprecise; MCMC for discrete text is especially problematic"
+                    lesson: "Noise Contrastive Estimation (NCE) avoids Z_theta entirely by converting density estimation to classification"
+
+                  - id: N07
+                    type: decision
+                    title: "Use ranking-based NCE loss to bypass intractable partition function"
+                    choice: "Minimize KL between parameterized posterior pθ(k|{xk}) and data-to-noise ratio q(k|{xk}); extends binary NCE to ranking over multiple samples"
+                    alternatives:
+                      - "Standard binary NCE (Gutmann & Hyvarinen 2010) — only real vs. noise, no ranking"
+                      - "MLM loss — mask words in ground-truth, train on masked word prediction"
+                      - "Contrastive learning with fixed negatives"
+                    evidence: "Ma & Collins (2018) ranking NCE; optimal solution recovers p_theta(x) = p_data(x)"
+                    children:
+
+                      - id: N08
+                        type: dead_end
+                        title: "MLM loss as adapter training objective"
+                        hypothesis: "Masked language model loss could score text quality by measuring masked word prediction probability"
+                        failure_mode: "MLM loss achieves 61.52%/60.41% on StrategyQA vs NCE 71.62%/71.18% — up to 10% gap; MLM does not effectively capture distributional gap between source and target domains"
+                        lesson: "Ranking-based NCE directly optimizes the distributional distinction needed; MLM is a proxy that doesn't capture the full objective"
+
+                      - id: N09
+                        type: experiment
+                        title: "Validate NCE loss vs MLM loss on StrategyQA and GSM8K"
+                        result: "NCE outperforms MLM by up to 10.10% (StrategyQA 0.1B: 71.62 vs 61.52); consistent advantage across adapter sizes"
+                        evidence: ["C04", "Table 5", "§4.5"]
+                        children:
+
+                          - id: N10
+                            type: question
+                            title: "How to handle training instability from sharp EBM gradients?"
+                            description: "Energy values can diverge, leading to unstable NCE training."
+                            children:
+
+                              - id: N11
+                                type: decision
+                                title: "Apply spectral normalization to the adapter head"
+                                choice: "Normalize the final linear classification layer by its largest singular value; add regularization terms alpha*E[g(y)^2] to the loss"
+                                alternatives:
+                                  - "Gradient clipping alone"
+                                  - "Learning rate reduction"
+                                  - "Layer normalization"
+                                evidence: "Du & Mordatch (2019) demonstrate spectral normalization stabilizes EBM implicit generation"
+                                children: []
+
+  - id: N12
+    type: question
+    title: "How to leverage the trained adapter for inference without probability access?"
+    description: "At inference time, we cannot compute p_theta(y|x) directly since Z_theta is intractable and p_LLM probabilities are unavailable."
+    also_depends_on: [N07]
+    children:
+
+      - id: N13
+        type: decision
+        title: "Use sentence-level beam search: LLM proposes, adapter scores"
+        choice: "Decompose generation into sentence-level steps; LLM generates n candidates per beam, adapter scores partial chains, top-k beams are retained. Final answer = highest adapter-scored complete chain."
+        alternatives:
+          - "Score only complete answers (single-step) — lower accuracy, lower cost"
+          - "Token-level beam search — requires token probabilities, not available"
+          - "Self-consistency majority voting — no adapter guidance, no improvement"
+        evidence: "Sentence-level decomposition balances search efficiency with multi-step reasoning quality; shown to improve ~2.41% per additional beam"
+        children:
+
+          - id: N14
+            type: experiment
+            title: "Validate beam size scaling (k=1,3,5) and iteration scaling (T=0..4)"
+            result: "k=1→5 improves ~2.41% average; T=0 hurts performance (misguided search); T=1 surpasses base; T=3 near-optimal. Full-step (k=3) achieves 5.90% avg. improvement; single-step achieves 3.45%."
+            evidence: ["C07", "C08", "Figure 3", "Table 4", "§4.6"]
+            children: []

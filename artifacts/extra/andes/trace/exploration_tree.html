@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Exploration Tree — andes</title>
+<style>
+  :root {
+    --bg: #fafafa;
+    --card-bg: #ffffff;
+    --border: #e0e0e0;
+    --text: #1a1a1a;
+    --text-secondary: #555;
+    --question: #1565c0;
+    --experiment: #e65100;
+    --decision: #2e7d32;
+    --dead-end: #c62828;
+    --pivot: #6a1b9a;
+    --edge: #bdbdbd;
+    --dag-edge: #e57373;
+    --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--text);
+    padding: 40px 24px 80px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  header {
+    text-align: center;
+    margin-bottom: 48px;
+  }
+
+  header h1 {
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -0.3px;
+    margin-bottom: 6px;
+  }
+
+  header p {
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+
+  .legend {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+    margin-bottom: 40px;
+    flex-wrap: wrap;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+
+  .legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+  }
+
+  .legend-dot.question   { background: var(--question); }
+  .legend-dot.experiment { background: var(--experiment); }
+  .legend-dot.decision   { background: var(--decision); }
+  .legend-dot.dead_end   { background: var(--dead-end); }
+  .legend-dot.pivot      { background: var(--pivot); }
+
+  /* ---- Tree layout ---- */
+
+  .tree {
+    position: relative;
+  }
+
+  .node-group {
+    position: relative;
+    padding-left: 32px;
+  }
+
+  .node-group.has-children > .children::before {
+    content: "";
+    position: absolute;
+    left: 15px;
+    top: 0;
+    bottom: 24px;
+    width: 2px;
+    background: var(--edge);
+  }
+
+  .children {
+    position: relative;
+    margin-top: 0;
+  }
+
+  .children > .node-group::before {
+    content: "";
+    position: absolute;
+    left: -17px;
+    top: 22px;
+    width: 17px;
+    height: 2px;
+    background: var(--edge);
+  }
+
+  .tree > .node-group {
+    padding-left: 0;
+  }
+
+  .tree > .node-group::before { display: none; }
+
+  /* ---- Node card ---- */
+
+  .node {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-bottom: 12px;
+    cursor: pointer;
+    transition: box-shadow 0.15s ease, border-color 0.15s ease;
+    position: relative;
+  }
+
+  .node:hover {
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  }
+
+  .node.expanded {
+    border-color: #999;
+  }
+
+  .node-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .node-indicator {
+    flex-shrink: 0;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-top: 5px;
+  }
+
+  .node-indicator.question   { background: var(--question); }
+  .node-indicator.experiment { background: var(--experiment); }
+  .node-indicator.decision   { background: var(--decision); }
+  .node-indicator.dead_end   { background: var(--dead-end); }
+  .node-indicator.pivot      { background: var(--pivot); }
+
+  .node-id {
+    flex-shrink: 0;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 4px;
+    background: #f0f0f0;
+    color: var(--text-secondary);
+    margin-top: 1px;
+  }
+
+  .node-title {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.4;
+    flex: 1;
+  }
+
+  .node-type {
+    flex-shrink: 0;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 10px;
+    margin-top: 2px;
+  }
+
+  .node-type.question   { background: #e3f2fd; color: var(--question); }
+  .node-type.experiment { background: #fff3e0; color: var(--experiment); }
+  .node-type.decision   { background: #e8f5e9; color: var(--decision); }
+  .node-type.dead_end   { background: #ffebee; color: var(--dead-end); }
+  .node-type.pivot      { background: #f3e5f5; color: var(--pivot); }
+
+  .node-body {
+    display: none;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #f0f0f0;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+  }
+
+  .node.expanded .node-body {
+    display: block;
+  }
+
+  .node-field {
+    margin-bottom: 8px;
+  }
+
+  .node-field:last-child {
+    margin-bottom: 0;
+  }
+
+  .field-label {
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: var(--text);
+    margin-bottom: 2px;
+  }
+
+  .field-value {
+    white-space: pre-wrap;
+  }
+
+  .evidence-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 3px;
+  }
+
+  .evidence-tag {
+    font-size: 11px;
+    padding: 1px 7px;
+    border-radius: 3px;
+    background: #f5f5f5;
+    border: 1px solid #e0e0e0;
+  }
+
+  .alt-list {
+    list-style: none;
+    padding: 0;
+  }
+
+  .alt-list li {
+    position: relative;
+    padding-left: 14px;
+    margin-bottom: 3px;
+  }
+
+  .alt-list li::before {
+    content: "\00d7";
+    position: absolute;
+    left: 0;
+    color: #ccc;
+    font-weight: 700;
+  }
+
+  .dag-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    color: var(--dag-edge);
+    border: 1px solid var(--dag-edge);
+    border-radius: 4px;
+    padding: 1px 6px;
+    margin-left: 8px;
+    font-weight: 600;
+    vertical-align: middle;
+  }
+
+  .dag-badge svg {
+    width: 10px;
+    height: 10px;
+  }
+
+  .chevron {
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    margin-top: 3px;
+    transition: transform 0.15s ease;
+    color: #ccc;
+  }
+
+  .node.expanded .chevron {
+    transform: rotate(90deg);
+    color: #999;
+  }
+
+  .stats {
+    display: flex;
+    justify-content: center;
+    gap: 32px;
+    margin-bottom: 32px;
+    padding: 12px 0;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .stat {
+    text-align: center;
+  }
+
+  .stat-value {
+    font-size: 20px;
+    font-weight: 600;
+  }
+
+  .stat-label {
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Exploration Tree — andes</h1>
+  <p>Research DAG &middot; Andes: Defining and Enhancing Quality-of-Experience in LLM-Based Text Streaming Services</p>
+</header>
+
+<div class="stats" id="stats"></div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot question"></div>Question</div>
+  <div class="legend-item"><div class="legend-dot experiment"></div>Experiment</div>
+  <div class="legend-item"><div class="legend-dot decision"></div>Decision</div>
+  <div class="legend-item"><div class="legend-dot dead_end"></div>Dead End</div>
+  <div class="legend-item"><div class="legend-dot pivot"></div>Pivot</div>
+</div>
+
+<div class="tree" id="tree"></div>
+
+<script>
+const TREE = [
+  {
+    "id": "N01",
+    "type": "question",
+    "title": "What metric should optimize LLM serving for conversational AI?",
+    "description": "Existing LLM serving metrics (throughput, TTFT, TPOT) are widely used, but do they align with actual user experience in text streaming? If not, what is the right metric?",
+    "children": [
+      {
+        "id": "N02",
+        "type": "experiment",
+        "title": "Observe mismatch between TDS and user consumption speed in vLLM",
+        "result": "vLLM's average TDS (11.2 tokens/s) far exceeds human reading speed (4.8 tokens/s) and listening speed (3.3 tokens/s) even under severe load surges. TTFT inflates to 10.4s average under BurstGPT — beyond user patience limits.",
+        "evidence": [
+          "C04",
+          "Figure 3",
+          "Figure 4",
+          "§2.2"
+        ],
+        "children": [
+          {
+            "id": "N04",
+            "type": "decision",
+            "title": "Define QoE formally as deviation from Ideal Consumption Timeline",
+            "choice": "QoE = 1 - S_delay/S_whole, where S_delay measures cumulative delay relative to the ideal timeline and S_whole normalizes to dilute early delays as more tokens are generated.",
+            "alternatives": [
+              "Simple startup delay metric (TTFT only)",
+              "Average delay across all tokens (ignores cascading)",
+              "Percentile TPOT"
+            ],
+            "evidence": "N02's observation that every token's timing matters; four foundational cases (Figure 5) drove the design of the normalization term S_whole.",
+            "children": [
+              {
+                "id": "N05",
+                "type": "decision",
+                "title": "Design preemptive token-level scheduler to maximize QoE",
+                "choice": "Token-level preemptive scheduling where requests are preempted mid-generation based on QoE gain vs resource usage ratio.",
+                "alternatives": [
+                  "Request-level preemption (too coarse for QoE control)",
+                  "FCFS (no preemption — confirmed bad)",
+                  "Fairness-based scheduling (VTC — doesn't account for consumption speed)"
+                ],
+                "evidence": "N02 showed TDS >> consumption speed creates slack; preempting requests with surplus tokens allows serving new arrivals without degrading any user's consumption.",
+                "children": [
+                  {
+                    "id": "N07",
+                    "type": "experiment",
+                    "title": "Attempt exact 3D Dynamic Programming solution",
+                    "result": "3D DP is O(MN²) pseudo-polynomial time. With M in thousands and N in hundreds, per-decision runtime is prohibitively slow for real-time scheduling. The greedy solver is ~20× faster and achieves slightly better QoE due to lower per-quantum latency.",
+                    "evidence": [
+                      "C06",
+                      "Figure 18",
+                      "Appendix C (Algorithm 2)"
+                    ]
+                  },
+                  {
+                    "id": "N08",
+                    "type": "experiment",
+                    "title": "Implement LQSF (Least QoE Slack First) as intermediate baseline",
+                    "result": "LQSF (prioritize requests most at risk of QoE degradation, without resource weighting) shows slight improvement over FCFS but is insufficient. It ignores context length (resource usage), causing high-resource requests to starve others.",
+                    "evidence": [
+                      "C02",
+                      "Figure 15",
+                      "Figure 16",
+                      "§6.3"
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "N06",
+                "type": "decision",
+                "title": "Formulate scheduling as knapsack problem",
+                "choice": "Cast request selection as a 0/1 knapsack where items are requests, weights are context lengths (l_i), and values are QoE gains (dependent on batch size B). Solve for all B in [B_min, B_max].",
+                "alternatives": [
+                  "Simple priority queue without memory constraint",
+                  "RL-based scheduler",
+                  "LP relaxation"
+                ],
+                "evidence": "Memory constraint (KV cache) and compute constraint (batch size → token latency) naturally fit the knapsack structure; the B-dependent value function is the novel variant.",
+                "children": [
+                  {
+                    "id": "N09",
+                    "type": "decision",
+                    "title": "Approximate with greedy packing; add batch size search space pruning",
+                    "choice": "Use O(N log N) greedy packing with priority = QoE gain / l_i. Prune batch size search space to [B_min, B_max]. Trigger scheduler only when KV watermark > 90% or latency exceeds most stringent r_user.",
+                    "alternatives": [
+                      "Explore all B in [1, N] (too slow)",
+                      "Use fixed batch size (loses QoE-B tradeoff insight)"
+                    ],
+                    "evidence": "N07 showed exact DP too slow; priority = gain/l_i naturally preempts memory-heavy requests first and prevents starvation through auto-deprioritization.",
+                    "children": [
+                      {
+                        "id": "N10",
+                        "type": "experiment",
+                        "title": "Discover excessive preemptions degrade QoE — need overhead awareness",
+                        "also_depends_on": [
+                          "N07",
+                          "N08"
+                        ],
+                        "result": "Without overhead awareness, as burst duration increases, the greedy scheduler makes many preemptions. Cumulative overhead (hundreds of ms to seconds per preemption) delays token generation for all ongoing requests, significantly degrading aggregate QoE.",
+                        "evidence": [
+                          "C05",
+                          "Figure 17"
+                        ],
+                        "children": [
+                          {
+                            "id": "N11",
+                            "type": "decision",
+                            "title": "Add Overhead-Aware Refiner to greedy scheduler",
+                            "choice": "Post-process greedy decision with the overhead-aware refiner: for each (admit, preempt) pair, estimate net QoE change = QoE_gain(admit) − Σ QoE_loss(all_ongoing, overhead_latency). Stop at first non-positive net change.",
+                            "alternatives": [
+                              "Fixed preemption rate limit",
+                              "Preemption cooldown timer",
+                              "No overhead correction"
+                            ],
+                            "evidence": "N10 demonstrated necessity. Offline preemption profiling provides accurate overhead estimates (Gujarati et al., 2020 showed DNN serving overhead is predictable).",
+                            "children": [
+                              {
+                                "id": "N12",
+                                "type": "experiment",
+                                "title": "Validate Andes end-to-end on BurstGPT + synthetic traces",
+                                "result": "Andes achieves up to 4.7× QoE improvement, 61% GPU savings, 97% of requests at QoE ≥ 0.95 (vs 75% vLLM), TTFT reduced from 10.5s to 1.8s, peak queue reduced 85%. Results are robust across 4 models, 3 datasets, varying burst intensity/duration, and Poisson arrivals.",
+                                "evidence": [
+                                  "C02",
+                                  "C03",
+                                  "C04",
+                                  "C07",
+                                  "C08",
+                                  "Figure 11",
+                                  "Figure 13",
+                                  "Figure 15",
+                                  "Figure 16",
+                                  "Figure 19",
+                                  "Figure 20"
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "N03",
+        "type": "dead_end",
+        "title": "Can existing metrics (TTFT, P90/P99 TPOT) fully characterize user experience?",
+        "hypothesis": "TTFT and average/P90/P99 TPOT together are sufficient to capture user experience.",
+        "failure_mode": "TPOT misses mid-stream pauses (Figure 5d) where both TTFT and last-token latency are normal but the user experiences a long pause in the middle. Cascading delays from early tokens are also invisible to average TPOT.",
+        "lesson": "A metric spanning the full token consumption timeline is necessary; this motivated the QoE definition."
+      }
+    ]
+  }
+];
+
+function collectAll(nodes) {
+  let out = [];
+  for (const n of nodes) {
+    out.push(n);
+    if (n.children) out = out.concat(collectAll(n.children));
+  }
+  return out;
+}
+
+function renderStats(tree) {
+  const all = collectAll(tree);
+  const types = {};
+  all.forEach(n => { types[n.type] = (types[n.type] || 0) + 1; });
+  const maxDepth = (function getDepth(nodes, d) {
+    let m = d;
+    for (const n of nodes) {
+      if (n.children) m = Math.max(m, getDepth(n.children, d + 1));
+    }
+    return m;
+  })(tree, 1);
+
+  const el = document.getElementById("stats");
+  el.innerHTML = `
+    <div class="stat"><div class="stat-value">${all.length}</div><div class="stat-label">Nodes</div></div>
+    <div class="stat"><div class="stat-value">${maxDepth}</div><div class="stat-label">Max Depth</div></div>
+    <div class="stat"><div class="stat-value">${types.decision || 0}</div><div class="stat-label">Decisions</div></div>
+    <div class="stat"><div class="stat-value">${types.experiment || 0}</div><div class="stat-label">Experiments</div></div>
+    <div class="stat"><div class="stat-value">${types.dead_end || 0}</div><div class="stat-label">Dead Ends</div></div>
+  `;
+}
+
+function renderEvidence(ev) {
+  if (!ev) return "";
+  const items = Array.isArray(ev) ? ev : [ev];
+  if (items.length === 1 && typeof items[0] === "string" && items[0].length > 40) {
+    return `<div class="node-field"><div class="field-label">Evidence</div><div class="field-value">${esc(items[0])}</div></div>`;
+  }
+  return `<div class="node-field"><div class="field-label">Evidence</div><div class="evidence-tags">${items.map(i => `<span class="evidence-tag">${esc(String(i))}</span>`).join("")}</div></div>`;
+}
+
+function renderAlternatives(alts) {
+  if (!alts || alts.length === 0) return "";
+  return `<div class="node-field"><div class="field-label">Rejected Alternatives</div><ul class="alt-list">${alts.map(a => `<li>${esc(a)}</li>`).join("")}</ul></div>`;
+}
+
+function renderBody(node) {
+  let html = "";
+  const t = node.type;
+
+  if (t === "question" && node.description)
+    html += `<div class="node-field"><div class="field-label">Description</div><div class="field-value">${esc(node.description)}</div></div>`;
+
+  if (t === "experiment") {
+    if (node.result) html += `<div class="node-field"><div class="field-label">Result</div><div class="field-value">${esc(node.result)}</div></div>`;
+    html += renderEvidence(node.evidence);
+  }
+
+  if (t === "decision") {
+    if (node.choice) html += `<div class="node-field"><div class="field-label">Choice</div><div class="field-value">${esc(node.choice)}</div></div>`;
+    html += renderAlternatives(node.alternatives);
+    html += renderEvidence(node.evidence);
+  }
+
+  if (t === "dead_end") {
+    if (node.hypothesis) html += `<div class="node-field"><div class="field-label">Hypothesis</div><div class="field-value">${esc(node.hypothesis)}</div></div>`;
+    if (node.failure_mode) html += `<div class="node-field"><div class="field-label">Failure Mode</div><div class="field-value">${esc(node.failure_mode)}</div></div>`;
+    if (node.lesson) html += `<div class="node-field"><div class="field-label">Lesson</div><div class="field-value">${esc(node.lesson)}</div></div>`;
+  }
+
+  if (t === "pivot") {
+    if (node.from) html += `<div class="node-field"><div class="field-label">From</div><div class="field-value">${esc(node.from)}</div></div>`;
+    if (node.to) html += `<div class="node-field"><div class="field-label">To</div><div class="field-value">${esc(node.to)}</div></div>`;
+    if (node.trigger) html += `<div class="node-field"><div class="field-label">Trigger</div><div class="field-value">${esc(node.trigger)}</div></div>`;
+  }
+
+  return html;
+}
+
+function esc(s) {
+  const d = document.createElement("div");
+  d.textContent = s.trim();
+  return d.innerHTML;
+}
+
+const TYPE_LABELS = {
+  question: "Question",
+  experiment: "Experiment",
+  decision: "Decision",
+  dead_end: "Dead End",
+  pivot: "Pivot"
+};
+
+function renderNode(node) {
+  const hasChildren = node.children && node.children.length > 0;
+  const dagBadge = node.also_depends_on
+    ? `<span class="dag-badge"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M5 3a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm6 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm-3 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg>also: ${node.also_depends_on.join(", ")}</span>`
+    : "";
+
+  const chevronSvg = `<svg class="chevron" viewBox="0 0 16 16" fill="currentColor"><path d="M6.22 3.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06L9.94 8 6.22 4.28a.75.75 0 0 1 0-1.06z"/></svg>`;
+
+  let html = `<div class="node-group ${hasChildren ? "has-children" : ""}">`;
+  html += `<div class="node" onclick="this.classList.toggle('expanded')">`;
+  html += `<div class="node-header">`;
+  html += `<div class="node-indicator ${node.type}"></div>`;
+  html += `<span class="node-id">${node.id}</span>`;
+  html += `<span class="node-title">${esc(node.title)}${dagBadge}</span>`;
+  html += `<span class="node-type ${node.type}">${TYPE_LABELS[node.type]}</span>`;
+  html += chevronSvg;
+  html += `</div>`;
+  html += `<div class="node-body">${renderBody(node)}</div>`;
+  html += `</div>`;
+
+  if (hasChildren) {
+    html += `<div class="children">`;
+    for (const child of node.children) {
+      html += renderNode(child);
+    }
+    html += `</div>`;
+  }
+
+  html += `</div>`;
+  return html;
+}
+
+function render() {
+  renderStats(TREE);
+  const container = document.getElementById("tree");
+  container.innerHTML = TREE.map(renderNode).join("");
+}
+
+render();
+</script>
+</body>
+</html>

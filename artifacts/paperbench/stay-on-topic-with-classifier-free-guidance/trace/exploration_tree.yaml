@@ -1,0 +1,109 @@
+---
+# Exploration Tree — stay-on-topic-with-classifier-free-guidance
+# Research DAG: nested tree with cross-edges (also_depends_on) forming a DAG.
+# Node types: question | experiment | dead_end | decision | pivot
+
+tree:
+  - id: N01
+    type: question
+    title: "Can CFG from text-to-image be applied to language models?"
+    description: "Text-to-image CFG requires conditioning dropout training. Do LMs need the same? Can logit-space arithmetic yield prompt adherence without any retraining?"
+    children:
+
+      - id: N02
+        type: experiment
+        title: "Test if LMs naturally support unconditional generation"
+        result: "Yes — autoregressive LMs can drop the prompt prefix naturally; last token of prompt serves as an in-distribution unconditional starting point"
+        evidence: ["§2.2", "Eq. 6", "Eq. 7"]
+        children:
+
+          - id: N03
+            type: decision
+            title: "Choose latent space for CFG: hidden states vs logits"
+            choice: "Logit space (pre-softmax log-probabilities)"
+            alternatives:
+              - "Hidden state space (requires network editing [9])"
+              - "Embedding space (requires decoder inversion)"
+            evidence: "Logit space has linear relationship with last hidden layer; architecture-agnostic; avoids network editing"
+            children:
+
+              - id: N04
+                type: decision
+                title: "Choose unconditional prefix: BOS token vs last prompt token"
+                choice: "Last token of the initial prompt"
+                alternatives:
+                  - "Beginning-of-sequence (BOS) token"
+                  - "Empty/padding token"
+                evidence: "Last prompt token is in-distribution for autoregressive generation; better approximates marginal distribution"
+                children:
+
+                  - id: N05
+                    type: experiment
+                    title: "Zero-shot NLP benchmarks: GPT-2, Pythia, LLaMA with gamma=1.5"
+                    result: "CFG improves 7/9 benchmarks consistently; LLaMA-7B achieves 81% on Lambada vs PaLM-540B SOTA 77.9%; ARC-c and WinoGrande inconsistent"
+                    evidence: ["C01", "Figure 2 (Tables 2a/2b)", "§3.1"]
+                    children:
+
+                      - id: N06
+                        type: experiment
+                        title: "FLOPs analysis: CFG vs 2x model size"
+                        result: "5/9 tasks: statistically insignificant difference at p=0.01 (ANCOVA); 2 tasks favor CFG, 2 favor vanilla"
+                        evidence: ["C02", "Table 4 (ANCOVA)", "Figure 11", "§4"]
+                        children: []
+
+                      - id: N07
+                        type: dead_end
+                        title: "ARC-challenge and WinoGrande do not improve with CFG"
+                        hypothesis: "CFG would uniformly improve all zero-shot benchmarks"
+                        failure_mode: "ARC-c and WinoGrande show inconsistent or negative results at gamma=1.5; exact reason unknown"
+                        lesson: "CFG is not universally beneficial; task-specific properties (adversarial construction in WinoGrande, complex reasoning in ARC-c) may resist prompt-adherence boosting"
+
+              - id: N08
+                type: experiment
+                title: "CoT reasoning: CFG on GSM8K and AQuA"
+                result: "Low gamma increases valid-answer rate and accuracy; high gamma maintains low invalid rate but accuracy drops"
+                evidence: ["C03", "Figure 3", "§3.2"]
+                children:
+
+                  - id: N09
+                    type: dead_end
+                    title: "Applying CFG to full CoT chain (wp + wcot) degrades quality"
+                    hypothesis: "Upweighting the full chain including reasoning steps would improve accuracy"
+                    failure_mode: "Not formally tested but acknowledged as future work; current design only upweights wp"
+                    lesson: "CFG should target only the task prompt wp, not the reasoning chain wcot; leaving the chain free improves quality"
+
+              - id: N10
+                type: experiment
+                title: "Code generation on HumanEval with CodeGen models"
+                result: "Low CFG (gamma<=1.5) increases pass@1; high CFG decreases pass@100 (reduces diversity)"
+                evidence: ["C04", "Table 2", "Tables 5/6/7", "§3.3"]
+                children:
+
+                  - id: N11
+                    type: dead_end
+                    title: "CodeGen-16B-mono omitted due to compute constraints"
+                    hypothesis: "Larger models would show same CFG trends"
+                    failure_mode: "Compute budget insufficient; 16B model requires too many GPU-hours"
+                    lesson: "Hardware constraints limited evaluation to 350M/2B/6B; pattern may generalize but unverified"
+
+              - id: N12
+                type: experiment
+                title: "Negative prompting for chatbot assistant tasks (GPT4All)"
+                result: "75% human preference for system-prompt following at gamma=3; user-prompt relevance undegraded (52%) at gamma=3"
+                evidence: ["C05", "Figure 5", "§3.4"]
+                also_depends_on: [N04]
+                children: []
+
+      - id: N13
+        type: experiment
+        title: "Entropy analysis: does CFG reduce sampling entropy?"
+        result: "CFG (gamma=1.5) reduces mean entropy from 5.4 to 4.7; comparable to instruction-tuned model entropy"
+        evidence: ["C06", "Figure 6a", "§5.1"]
+        children:
+
+          - id: N14
+            type: dead_end
+            title: "Hypothesis: CFG and instruction tuning have similar effects on vocabulary"
+            hypothesis: "CFG top-p vocabulary distribution would substantially overlap with instruction-tuned model"
+            failure_mode: "Top-p=0.9 overlap is less than 30%; CFG and instruction-tuned models use different token sets despite similar entropies"
+            lesson: "Similar entropy does not imply similar vocabulary distribution; CFG and instruction tuning are complementary, not equivalent"

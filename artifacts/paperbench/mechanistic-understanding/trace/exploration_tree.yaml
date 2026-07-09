@@ -1,0 +1,109 @@
+# Exploration Tree — mechanistic-understanding
+# Research DAG: nested tree with cross-edges (also_depends_on) forming a DAG.
+# Node types: question | experiment | dead_end | decision | pivot
+
+tree:
+  - id: N01
+    type: question
+    title: "How does DPO mechanistically reduce toxicity in GPT2?"
+    description: "What internal model changes does DPO make, and why can aligned models be jailbroken?"
+    children:
+
+      - id: N02
+        type: question
+        title: "How is toxicity represented in GPT2's internals?"
+        description: "Can we identify specific weights or directions corresponding to toxic content?"
+        children:
+
+          - id: N03
+            type: experiment
+            title: "Train linear toxicity probe on Jigsaw dataset"
+            result: "W_Toxic achieves 94% validation accuracy on last-layer averaged residual streams"
+            evidence: [C01, "§3.1", "Table 1"]
+            children:
+
+              - id: N04
+                type: experiment
+                title: "Find MLP value vectors with high cosine similarity to W_Toxic"
+                result: "Top-128 value vectors (MLP.vToxic) project onto highly toxic tokens in vocabulary space"
+                evidence: [C01, "Table 1", "§3.2"]
+                children:
+
+                  - id: N05
+                    type: decision
+                    title: "How many toxic vectors N to select?"
+                    choice: "N=128 value vectors"
+                    alternatives:
+                      - "N=64 (too few dimensions)"
+                      - "N=256 (diminishing returns, includes non-toxic vectors)"
+                    evidence: "Similar results for various N values (footnote 2, §3.1)"
+                    children:
+
+                      - id: N06
+                        type: experiment
+                        title: "SVD decomposition of MLP.vToxic to find basis vectors"
+                        result: "SVD.U_Toxic[0,1,2] capture distinct toxicity dimensions: profanity, insults, gendered content"
+                        evidence: [C01, "Table 1", "§3.1"]
+                        children: []
+
+                  - id: N07
+                    type: experiment
+                    title: "Validate toxic vectors via residual stream subtraction"
+                    result: "Subtracting W_Toxic, MLP.v19, or SVD.U_Toxic[0] reduces toxicity; top-1 token shifts from toxic to neutral"
+                    evidence: [C02, "Table 2", "Table 3", "§3.3"]
+                    children:
+
+                      - id: N08
+                        type: dead_end
+                        title: "Subtraction intervention at single layer sufficient for alignment?"
+                        hypothesis: "Subtracting toxic vectors might achieve full alignment comparable to DPO"
+                        failure_mode: "Subtraction reduces toxicity but less than DPO (0.245–0.305 vs. 0.208); perplexity also increases more for same toxicity reduction"
+                        lesson: "Single-vector subtraction is a blunt instrument; DPO learns a distributed, minimal-norm bypass that better preserves language quality"
+
+      - id: N09
+        type: experiment
+        title: "Apply DPO to GPT2-medium with PPLM-generated toxic/nontoxic pairs"
+        result: "GPT2DPO achieves toxicity=0.208, PPL=23.34, F1=0.195 — best among all methods"
+        evidence: [C03, "Table 2", "§4", "§5"]
+        children:
+
+          - id: N10
+            type: decision
+            title: "How to construct negative (toxic) samples for DPO?"
+            choice: "PPLM with W_Toxic as attribute classifier on Wikitext-2 prompts"
+            alternatives:
+              - "Manual curation (too expensive for 24,576 pairs)"
+              - "Filter existing toxic datasets (domain mismatch with Wikitext-2 positive samples)"
+              - "GPT2 with high-temperature sampling (not reliably toxic)"
+            evidence: "§4.2: PPLM allows controlled attribute-guided generation using learned W_Toxic"
+            children:
+
+              - id: N11
+                type: experiment
+                title: "Analyze parameter changes: cosine similarity and norm difference"
+                result: "All parameters show cosine sim >0.99 and norm diff <1e-5 (unembedding <1e-3)"
+                evidence: [C04, "§5.1"]
+                children:
+
+                  - id: N12
+                    type: experiment
+                    title: "Measure mean activations of MLP.vToxic before/after DPO"
+                    result: "Drop in activations for all top-5 toxic vectors in GPT2DPO vs. GPT2"
+                    evidence: [C03, "Figure 2", "§5.2"]
+                    also_depends_on: [N04]
+                    children:
+
+                      - id: N13
+                        type: experiment
+                        title: "Analyze residual stream shift δx and cosine sim with δMLP.v"
+                        result: "δMLP.v antipodal to δx due to negative GeLU activations; shift distributed across early layers"
+                        evidence: [C05, "Figure 4", "Figure 5", "§5.2"]
+                        children:
+
+                          - id: N14
+                            type: experiment
+                            title: "Un-align GPT2DPO by scaling top-7 MLP.kToxic by 10×"
+                            result: "Toxicity reverts to 0.458 (near GPT2=0.453); PPL=23.30, F1=0.195 unchanged"
+                            evidence: [C06, "Table 4", "§5.3"]
+                            also_depends_on: [N04]
+                            children: []

@@ -1,0 +1,129 @@
+---
+# Exploration Tree — all-in-one simulation-based inference (Simformer)
+# Research DAG: nested tree with cross-edges (also_depends_on) forming a DAG.
+# Node types: question | experiment | dead_end | decision | pivot
+
+tree:
+  - id: N01
+    type: question
+    title: "Can a single amortized model perform all SBI inference tasks?"
+    description: "Is it possible to train a single neural network that can sample any conditional of the joint distribution p(theta, x), including posterior, likelihood, and arbitrary parameter/data conditionals, without requiring retraining for each specific task?"
+    children:
+
+      - id: N02
+        type: experiment
+        title: "Test whether standard amortized methods can be generalized to all conditionals"
+        result: "NPE, NLE, NRE each specialize to one conditional; no existing method handles arbitrary conditionals within a single network"
+        evidence: ["O1", "O3", "§1"]
+        children:
+
+          - id: N03
+            type: decision
+            title: "Choose generative model for joint distribution p(theta, x)"
+            choice: "Score-based diffusion model trained on joint distribution with random condition masks"
+            alternatives:
+              - "Normalizing flows (fast sampling but fixed posterior/likelihood target)"
+              - "VAE-based approaches (limited expressiveness)"
+              - "GANs (training instability, no density evaluation)"
+            evidence: "Diffusion models can be conditioned post-hoc via score modification; score decomposes additively for i.i.d. data (Geffner et al., 2023)"
+            children:
+
+              - id: N04
+                type: question
+                title: "What neural architecture can handle variable-length token sequences with dependency masks?"
+                description: "Need architecture that (1) processes any subset of variables, (2) encodes known dependency structure, (3) supports function-valued parameters"
+                children:
+
+                  - id: N05
+                    type: decision
+                    title: "Choose transformer over MLP for score network"
+                    choice: "Encoder-only transformer with attention mask encoding dependency structure (Weilbach et al., 2023)"
+                    alternatives:
+                      - "Conditional MLP (NPSE baseline — fixed input size, no structured attention)"
+                      - "Graph Neural Network (requires fixed graph at inference)"
+                      - "Recurrent networks (sequential bias, not permutation invariant)"
+                    evidence: "Transformers natively handle variable-length sequences; attention masks can encode graphical model structure; Weilbach et al. (2023) demonstrated this for structured diffusion models"
+                    children:
+
+                      - id: N06
+                        type: experiment
+                        title: "Validate Simformer tokenizer design for SBI"
+                        result: "Tokenizing each variable as (id_embed, value_repeat, metadata_fourier, cond_state_embed) allows flexible conditioning on arbitrary subsets; random condition masks during training provide all-in-one capability"
+                        evidence: ["C03", "§3.1", "Fig 2"]
+                        children:
+
+                          - id: N07
+                            type: experiment
+                            title: "Benchmark Simformer (dense mask) against NPE on SBIBM tasks"
+                            result: "Simformer outperforms NPE on 3/4 tasks; requires ~10x fewer simulations on average; sharp C2ST improvement at >50 reverse SDE steps"
+                            evidence: ["C01", "C02", "Fig 4a", "Fig A7"]
+                            children:
+
+                              - id: N08
+                                type: decision
+                                title: "Validate structured attention masks for efficiency gains"
+                                choice: "Undirected and directed attention masks based on simulator graphical model; dynamic mask update (Webb et al., 2018) for directed case"
+                                alternatives:
+                                  - "Fixed dense attention mask (simpler but ignores structure)"
+                                  - "Masking MLP weights (MADE-style — not dynamically adaptable)"
+                                evidence: "Structured masks substantially improve performance on Linear Gaussian (fully factorized) and SLCP (4 i.i.d. obs); directed mask requires algorithmic update per condition"
+                                children:
+
+                                  - id: N09
+                                    type: experiment
+                                    title: "Validate arbitrary conditional estimation (Tree, HMM tasks)"
+                                    result: "Simformer accurately models all 100 randomly sampled conditionals per task when trained on 10^5 simulations; training on all conditionals does not hurt posterior-only performance"
+                                    evidence: ["C03", "C06", "Fig 4b"]
+                                    children:
+
+                                      - id: N10
+                                        type: experiment
+                                        title: "Test Simformer on Lotka-Volterra with unstructured/missing data"
+                                        result: "Simformer handles irregular observations (4 prey, then 9 additional predator); posterior predictives realistic; C2ST posterior < 0.65 at 10^5 sims"
+                                        evidence: ["C04", "Fig 5"]
+                                        also_depends_on: ["N06"]
+                                        children:
+
+                                          - id: N11
+                                            type: experiment
+                                            title: "Test Simformer on SIRD with infinite-dimensional (function-valued) contact rate"
+                                            result: "Simformer correctly recovers time-varying contact rate with appropriate uncertainty; handles parameter conditioning (scenario B) with well-calibrated expected coverage"
+                                            evidence: ["C04", "Fig 6", "Fig A13"]
+                                            children:
+
+                                              - id: N12
+                                                type: question
+                                                title: "Can Simformer condition on intervals (not just exact values)?"
+                                                description: "Energy-efficient parameter identification requires conditioning on inequality constraints (energy < threshold), which cannot be done with standard conditioning"
+                                                children:
+
+                                                  - id: N13
+                                                    type: decision
+                                                    title: "Use guided diffusion with sigmoid-penalized constraint function"
+                                                    choice: "General guidance (Bansal et al., 2023) with s(t)=1/sigma(t)^2 and optional self-recurrence r; constraint c(x)=x-u for upper bound"
+                                                    alternatives:
+                                                      - "RePaint method (Lugmayr et al., 2022) — only applies to normal conditioning, not general constraints"
+                                                      - "Classifier guidance (Dhariwal & Nichol, 2021) — requires separately trained classifier"
+                                                      - "Hard rejection sampling — exponentially inefficient in high dimensions"
+                                                    evidence: "Bansal et al. (2023) demonstrated universal guidance; self-recurrence r=5 markedly improves accuracy at 5x cost (Fig A15, A16)"
+                                                    children:
+
+                                                      - id: N14
+                                                        type: experiment
+                                                        title: "Validate guided diffusion on Hodgkin-Huxley with energy constraint"
+                                                        result: "Energy-constrained posterior significantly constrains gNa, gK; energy of predictive samples lies below 10% quantile threshold; voltage traces remain consistent with observations"
+                                                        evidence: ["C05", "Fig 7", "Fig A15"]
+
+      - id: N03b
+        type: dead_end
+        title: "Training solely on posterior mask as an ablation"
+        hypothesis: "Training only on posterior mask (like NPSE) should achieve best posterior C2ST since it specializes"
+        failure_mode: "Training on all conditionals achieves similar or better posterior C2ST compared to posterior-only training; no meaningful gain from specialization"
+        lesson: "The all-in-one training objective is 'free' — estimating all conditionals does not hurt and can even help (e.g., SLCP where simple likelihood structure benefits posterior estimation)"
+
+      - id: N03c
+        type: dead_end
+        title: "Attempting strict conditional independence enforcement with undirected graphs"
+        hypothesis: "Undirected attention masks would enforce exact conditional independencies between variables"
+        failure_mode: "Undirected graphs connect all nodes within components given enough transformer layers; cannot enforce specific independencies beyond disconnected components (only directed graphs can)"
+        lesson: "Undirected masks improve efficiency via soft structural biases but cannot guarantee independence; directed masks provide exact structure at t=0 but need dynamic updates and have limitations at t>0"

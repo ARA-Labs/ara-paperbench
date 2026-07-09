@@ -1,0 +1,124 @@
+# Exploration Tree — fre (Frans et al., 2024)
+# Research DAG: nested tree with cross-edges (also_depends_on) forming a DAG.
+# Node types: question | experiment | dead_end | decision | pivot
+
+tree:
+  - id: N01
+    type: question
+    title: "Can a generalist agent be pre-trained zero-shot from unlabeled offline data?"
+    description: "The central question: given only state-action trajectories (no reward labels),
+      can we pre-train a single policy that can immediately solve any new reward-specified task
+      at test time using a tiny sample of reward annotations, without any fine-tuning?"
+    children:
+
+      - id: N02
+        type: experiment
+        title: "Do successor feature methods generalize to arbitrary reward functions?"
+        result: "No — SF/FB methods are limited to the linear span of pre-defined state features.
+          They fail on directional, simplex, and path tasks that require nonlinear reward representations."
+        evidence: [C02, "Table 1", "§2 Related Work"]
+        children:
+
+          - id: N03
+            type: dead_end
+            title: "Use linear reward structure (SF/FB) for zero-shot generalization"
+            hypothesis: "A linearized value function over learned features can cover the full space of downstream rewards"
+            failure_mode: "Tasks outside the linear span of features (directional movement, random simplex rewards,
+              structured path tasks) receive near-zero performance; the approach is fundamentally limited to linear reward families."
+            lesson: "General zero-shot RL requires moving beyond linear reward structure;
+              we need a functional representation that can encode arbitrary reward functions."
+
+          - id: N04
+            type: decision
+            title: "Encode reward functions directly by their functional output on states"
+            choice: "Learn a latent z from (state, reward) samples that compresses the reward function
+              using a permutation-invariant encoder + information bottleneck"
+            alternatives:
+              - "SF/FB: linearized value functions over pre-specified features"
+              - "Goal-conditioned RL: restrict to goal-reaching reward family"
+              - "Meta-RL: require compartmentalized per-task datasets (not available)"
+            evidence: "The functional form of any η can be approximated by a lookup table over
+              (state, reward) pairs; encoding this set provides a universal task descriptor."
+            children:
+
+              - id: N05
+                type: experiment
+                title: "Can a VAE over (state, reward) sets encode diverse reward functions?"
+                result: "Yes — a transformer VAE trained with an information bottleneck loss learns
+                  compact latent representations that accurately decode rewards on held-out states."
+                evidence: [C01, "Figure 3", "§4.1", "Eq. 6"]
+                children:
+
+                  - id: N06
+                    type: decision
+                    title: "Choose encoder architecture: transformer vs. RNN vs. DeepSets"
+                    choice: "Permutation-invariant transformer (no causal mask, no positional encoding)
+                      with 4 layers, 256 hidden dim, mean pooling"
+                    alternatives:
+                      - "RNN/LSTM: would impose a sequential ordering on the unordered set"
+                      - "DeepSets: simpler but less expressive than full attention"
+                      - "Deterministic neural process: no information bottleneck regularization"
+                    evidence: "Permutation invariance is required since (state, reward) pairs are an
+                      unordered set; transformers with full attention provide this naturally."
+                    children:
+
+                      - id: N07
+                        type: experiment
+                        title: "What prior reward distribution should FRE train on?"
+                        result: "A mixture of singleton goal-reaching, random linear, and random MLP
+                          rewards (each 1/3) provides broad coverage without domain knowledge."
+                        evidence: [C04, "Table 4", "§4.2", "§5.3"]
+                        children:
+
+                          - id: N08
+                            type: dead_end
+                            title: "Use purely random functions (e.g., white noise) as reward prior"
+                            hypothesis: "Maximally diverse random rewards would span all possible tasks"
+                            failure_mode: "No Free Lunch theorem: purely random functions produce
+                              incompressible representations; the encoder cannot learn useful structure."
+                            lesson: "The prior needs structured (but domain-agnostic) components;
+                              goal-reaching and polynomial-like functions provide useful inductive biases."
+
+                          - id: N09
+                            type: decision
+                            title: "Use uniform mixture of three random reward families (FRE-all)"
+                            choice: "1/3 singleton goal-reaching (HER), 1/3 sparse random linear, 1/3 random 2-layer MLP"
+                            alternatives:
+                              - "FRE-goals only: specializes to goal-reaching, fails on other tasks"
+                              - "FRE-lin only: specializes to directional, fails on goal-reaching"
+                              - "FRE-mlp only: covers complex rewards but struggles with sparse goal rewards"
+                              - "Adversarial reward generation: too complex, adds hyperparameters"
+                            evidence: "Table 4: FRE-all achieves highest total score across all
+                              AntMaze task families compared to any single-family or pairwise mixture."
+                            children:
+
+                              - id: N10
+                                type: decision
+                                title: "Strided vs. joint training of encoder and policy"
+                                choice: "Strided: train FRE encoder-decoder to convergence, then freeze
+                                  encoder and train IQL policy with frozen z"
+                                alternatives:
+                                  - "Joint end-to-end training: unstable due to non-stationarity
+                                    of TD targets when encoder changes"
+                                  - "Alternating updates: partial stability improvement but still
+                                    non-stationary"
+                                evidence: "Empirical finding: joint training leads to unstable Q-value
+                                  estimation; freezing encoder ensures stationary reward-to-z mapping."
+                                children:
+
+                                  - id: N11
+                                    type: experiment
+                                    title: "Main zero-shot comparison on AntMaze, ExORL, Kitchen"
+                                    result: "FRE (FRE-all) achieves competitive or superior performance
+                                      vs. FB, SF, GC-IQL, GC-BC, OPAL across all domain/task combinations."
+                                    evidence: [C01, C02, C03, "Table 1", "§5.2"]
+                                    children:
+
+                                      - id: N12
+                                        type: experiment
+                                        title: "Domain knowledge augmentation (FRE-hint)"
+                                        result: "Augmenting the prior with domain-specific reward families
+                                          (directional for AntMaze, velocity for ExORL) further improves
+                                          performance on targeted tasks without algorithmic changes."
+                                        evidence: [C05, "Figure 6", "§5.4"]
+                                        also_depends_on: [N09]

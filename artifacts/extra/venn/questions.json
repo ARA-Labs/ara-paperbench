@@ -1,0 +1,36 @@
+{
+  "paper_id": "2312.08298",
+  "paper_title": "Venn: Resource Management for Collaborative Learning Jobs",
+  "questions": [
+    {
+      "id": "2312.08298_Q1",
+      "claim_id": "C01",
+      "question": "Reproduce: Across five workload types (Even, Small, Large, Low, High) in event-driven simulation with 50 jobs and Poisson arrival (30-min average inter-arrival), Venn achieves average JCT speedups of 1.87×, 1.78×, 1.72×, 1.88×, and 1.63× respectively over optimized random matching.",
+      "success_criteria": "Directional: Venn's average JCT speedup over random matching falls below 1.63× on any of the five standard workloads under the same experimental setup.",
+      "experiment_id": "E01",
+      "setup": "- Model: ResNet-18 (He et al., 2016) and MobileNet-V2 (Sandler et al., 2018) for real experiments; simulation uses job demand traces from Figure 8b\n  - Hardware: Event-driven simulator (large scale); real CL testbed (small scale)\n  - Dataset: FEMNIST (Cohen et al., 2017) for real experiments; FedScale device traces (Lai et al., 2021a) + AI Benchmark (Ignatov et al., 2019) for simulation\n  - System: 50 concurrent CL jobs (simulation); 20 concurrent jobs (real); Poisson arrivals with 30-min average inter-arrival; 5 workload types: Even (all jobs), Small (below-average demand), Large (above-average demand), Low (below-average per-round demand), High (above-average per-round demand); device eligibility stratified into 4 categories (General, Compute-Rich, Memory-Rich, High-Performance)",
+      "procedure": "1. Deploy Venn, FIFO, SRSF, and optimized random matching as schedulers in the event-driven simulator.\n  2. Load the FedScale + AI Benchmark device traces to emulate heterogeneous device check-in patterns.\n  3. Sample CL jobs from the job demand trace according to each workload scenario (Even/Small/Large/Low/High).\n  4. Run each scheduler over the full job trace and record per-job JCT (scheduling delay + response collection time).\n  5. Compute average JCT speedup for each scheduler relative to the optimized random matching baseline.\n  6. Report speedups as in Table 1.",
+      "expected_results": "- Even: FIFO=1.38×, SRSF=1.69×, Venn=1.87×\n  - Small: FIFO=1.48×, SRSF=1.68×, Venn=1.78×\n  - Large: FIFO=1.64×, SRSF=1.57×, Venn=1.72×\n  - Low: FIFO=1.55×, SRSF=1.66×, Venn=1.88×\n  - High: FIFO=1.42×, SRSF=1.41×, Venn=1.63×"
+    },
+    {
+      "id": "2312.08298_Q2",
+      "claim_id": "C02",
+      "question": "Reproduce: The IRS scheduling component alone (Venn w/o matching) achieves 1.79× average JCT improvement in the Low workload; without scheduling (Venn w/o sched / FIFO), improvement is only 1.62×. Under High workload, IRS yields 1.63× and matching adds no further gain.",
+      "success_criteria": "Directional: Removing the IRS scheduling component does not reduce average JCT improvement by more than 5% relative to full Venn in any tested workload.",
+      "experiment_id": "E02",
+      "setup": "- Model: Same as E01 (simulation)\n  - Hardware: Event-driven simulator\n  - Dataset: FedScale + AI Benchmark device traces\n  - System: Low workload and High workload scenarios from E01; compare four variants: Random (baseline), FIFO, Venn w/o sched (only matching + FIFO), Venn w/o match (only IRS scheduling), Venn (full)",
+      "procedure": "1. Run Low workload with all four variants and record average JCT improvement over random matching.\n  2. Run High workload with all four variants and record average JCT improvement over random matching.\n  3. Report results as in Figure 11 (two bar charts).",
+      "expected_results": "- Low workload: Random=1.0, FIFO=1.55, Venn w/o sched=1.62, Venn w/o match=1.79, Venn=1.88\n  - High workload: Random=1.0, FIFO=1.42, Venn w/o sched=1.42, Venn w/o match=1.63, Venn=1.63"
+    },
+    {
+      "id": "2312.08298_Q3",
+      "claim_id": "C03",
+      "question": "Reproduce: The matching component alone (Venn w/o sched) achieves 1.62× JCT improvement in the Low workload versus FIFO's 1.55×, but under High workload both Venn w/o sched and FIFO achieve 1.42× — matching provides no benefit when contention is high.",
+      "success_criteria": "Directional: The matching component provides statistically significant JCT improvement over FIFO in the High contention workload.",
+      "experiment_id": "E02",
+      "setup": "- Model: Same as E01 (simulation)\n  - Hardware: Event-driven simulator\n  - Dataset: FedScale + AI Benchmark device traces\n  - System: Low workload and High workload scenarios from E01; compare four variants: Random (baseline), FIFO, Venn w/o sched (only matching + FIFO), Venn w/o match (only IRS scheduling), Venn (full)",
+      "procedure": "1. Run Low workload with all four variants and record average JCT improvement over random matching.\n  2. Run High workload with all four variants and record average JCT improvement over random matching.\n  3. Report results as in Figure 11 (two bar charts).",
+      "expected_results": "- Low workload: Random=1.0, FIFO=1.55, Venn w/o sched=1.62, Venn w/o match=1.79, Venn=1.88\n  - High workload: Random=1.0, FIFO=1.42, Venn w/o sched=1.42, Venn w/o match=1.63, Venn=1.63"
+    }
+  ]
+}

@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Exploration Tree — bam</title>
+<style>
+  :root {
+    --bg: #fafafa;
+    --card-bg: #ffffff;
+    --border: #e0e0e0;
+    --text: #1a1a1a;
+    --text-secondary: #555;
+    --question: #1565c0;
+    --experiment: #e65100;
+    --decision: #2e7d32;
+    --dead-end: #c62828;
+    --pivot: #6a1b9a;
+    --edge: #bdbdbd;
+    --dag-edge: #e57373;
+    --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--text);
+    padding: 40px 24px 80px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  header {
+    text-align: center;
+    margin-bottom: 48px;
+  }
+
+  header h1 {
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -0.3px;
+    margin-bottom: 6px;
+  }
+
+  header p {
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+
+  .legend {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+    margin-bottom: 40px;
+    flex-wrap: wrap;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+
+  .legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+  }
+
+  .legend-dot.question   { background: var(--question); }
+  .legend-dot.experiment { background: var(--experiment); }
+  .legend-dot.decision   { background: var(--decision); }
+  .legend-dot.dead_end   { background: var(--dead-end); }
+  .legend-dot.pivot      { background: var(--pivot); }
+
+  /* ---- Tree layout ---- */
+
+  .tree {
+    position: relative;
+  }
+
+  .node-group {
+    position: relative;
+    padding-left: 32px;
+  }
+
+  .node-group.has-children > .children::before {
+    content: "";
+    position: absolute;
+    left: 15px;
+    top: 0;
+    bottom: 24px;
+    width: 2px;
+    background: var(--edge);
+  }
+
+  .children {
+    position: relative;
+    margin-top: 0;
+  }
+
+  .children > .node-group::before {
+    content: "";
+    position: absolute;
+    left: -17px;
+    top: 22px;
+    width: 17px;
+    height: 2px;
+    background: var(--edge);
+  }
+
+  .tree > .node-group {
+    padding-left: 0;
+  }
+
+  .tree > .node-group::before { display: none; }
+
+  /* ---- Node card ---- */
+
+  .node {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-bottom: 12px;
+    cursor: pointer;
+    transition: box-shadow 0.15s ease, border-color 0.15s ease;
+    position: relative;
+  }
+
+  .node:hover {
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  }
+
+  .node.expanded {
+    border-color: #999;
+  }
+
+  .node-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .node-indicator {
+    flex-shrink: 0;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-top: 5px;
+  }
+
+  .node-indicator.question   { background: var(--question); }
+  .node-indicator.experiment { background: var(--experiment); }
+  .node-indicator.decision   { background: var(--decision); }
+  .node-indicator.dead_end   { background: var(--dead-end); }
+  .node-indicator.pivot      { background: var(--pivot); }
+
+  .node-id {
+    flex-shrink: 0;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 4px;
+    background: #f0f0f0;
+    color: var(--text-secondary);
+    margin-top: 1px;
+  }
+
+  .node-title {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.4;
+    flex: 1;
+  }
+
+  .node-type {
+    flex-shrink: 0;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 10px;
+    margin-top: 2px;
+  }
+
+  .node-type.question   { background: #e3f2fd; color: var(--question); }
+  .node-type.experiment { background: #fff3e0; color: var(--experiment); }
+  .node-type.decision   { background: #e8f5e9; color: var(--decision); }
+  .node-type.dead_end   { background: #ffebee; color: var(--dead-end); }
+  .node-type.pivot      { background: #f3e5f5; color: var(--pivot); }
+
+  .node-body {
+    display: none;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #f0f0f0;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+  }
+
+  .node.expanded .node-body {
+    display: block;
+  }
+
+  .node-field {
+    margin-bottom: 8px;
+  }
+
+  .node-field:last-child {
+    margin-bottom: 0;
+  }
+
+  .field-label {
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: var(--text);
+    margin-bottom: 2px;
+  }
+
+  .field-value {
+    white-space: pre-wrap;
+  }
+
+  .evidence-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 3px;
+  }
+
+  .evidence-tag {
+    font-size: 11px;
+    padding: 1px 7px;
+    border-radius: 3px;
+    background: #f5f5f5;
+    border: 1px solid #e0e0e0;
+  }
+
+  .alt-list {
+    list-style: none;
+    padding: 0;
+  }
+
+  .alt-list li {
+    position: relative;
+    padding-left: 14px;
+    margin-bottom: 3px;
+  }
+
+  .alt-list li::before {
+    content: "\00d7";
+    position: absolute;
+    left: 0;
+    color: #ccc;
+    font-weight: 700;
+  }
+
+  .dag-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    color: var(--dag-edge);
+    border: 1px solid var(--dag-edge);
+    border-radius: 4px;
+    padding: 1px 6px;
+    margin-left: 8px;
+    font-weight: 600;
+    vertical-align: middle;
+  }
+
+  .dag-badge svg {
+    width: 10px;
+    height: 10px;
+  }
+
+  .chevron {
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    margin-top: 3px;
+    transition: transform 0.15s ease;
+    color: #ccc;
+  }
+
+  .node.expanded .chevron {
+    transform: rotate(90deg);
+    color: #999;
+  }
+
+  .stats {
+    display: flex;
+    justify-content: center;
+    gap: 32px;
+    margin-bottom: 32px;
+    padding: 12px 0;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .stat {
+    text-align: center;
+  }
+
+  .stat-value {
+    font-size: 20px;
+    font-weight: 600;
+  }
+
+  .stat-label {
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Exploration Tree — bam</h1>
+  <p>Research DAG &middot; Batch and Match: Black-Box Variational Inference with a Score-Based Divergence</p>
+</header>
+
+<div class="stats" id="stats"></div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot question"></div>Question</div>
+  <div class="legend-item"><div class="legend-dot experiment"></div>Experiment</div>
+  <div class="legend-item"><div class="legend-dot decision"></div>Decision</div>
+  <div class="legend-item"><div class="legend-dot dead_end"></div>Dead End</div>
+  <div class="legend-item"><div class="legend-dot pivot"></div>Pivot</div>
+</div>
+
+<div class="tree" id="tree"></div>
+
+<script>
+const TREE = [
+  {
+    "id": "N01",
+    "type": "question",
+    "title": "Can BBVI be improved by replacing ELBO with a score-based divergence?",
+    "description": "ELBO-based BBVI (ADVI) converges slowly due to high-variance gradients and sensitivity to learning rates. Can we design an alternative divergence that enables faster, more stable optimization for Gaussian variational families?",
+    "children": [
+      {
+        "id": "N02",
+        "type": "experiment",
+        "title": "Design score-based divergence with desirable properties",
+        "result": "D(q;p) = E_q[||∇log(q/p)||²_{Cov(q)}] satisfies non-negativity, equality condition, and affine invariance. Computable for unnormalized p via score oracle only.",
+        "evidence": [
+          "C01",
+          "Theorem A.3",
+          "Theorem A.4",
+          "§2.2"
+        ],
+        "children": [
+          {
+            "id": "N03",
+            "type": "decision",
+            "title": "Choice of weighting matrix in Fisher-type divergence",
+            "choice": "Use M = Cov(q) (data-dependent, adapts to variational distribution)",
+            "alternatives": [
+              "Fixed M = I (standard Fisher divergence) — not affine invariant",
+              "Fixed M = constant matrix — affine invariant only for specific M",
+              "M = precision matrix Gamma_q^{-1} of q — equivalent to Cov(q) for Gaussians"
+            ],
+            "evidence": "Theorem A.4 shows M = Cov(q) is the unique choice ensuring affine invariance via Γ_q = [Cov(q)]^{-1} for Gaussians",
+            "children": [
+              {
+                "id": "N04",
+                "type": "question",
+                "title": "Can D(q;p) be efficiently optimized over Gaussian family Q?",
+                "description": "The score-based divergence is defined. Can we find a closed-form optimizer, avoiding stochastic gradient descent?",
+                "children": [
+                  {
+                    "id": "N05",
+                    "type": "dead_end",
+                    "title": "Direct Monte Carlo minimization of D(q;p)",
+                    "hypothesis": "Minimize Monte Carlo estimate of D(q;p) via reparameterization trick and SGD",
+                    "failure_mode": "Reparameterization-based gradient of D̂_q(q;p) couples sampling distribution with optimization variable; leads to gradient-based method that does not exploit Gaussian structure. Same sensitivity issues as ADVI.",
+                    "lesson": "Need to decouple sampling from optimization by fixing the sampling distribution at q_t (biased estimator), then find analytical optimizer of the resulting objective."
+                  },
+                  {
+                    "id": "N06",
+                    "type": "decision",
+                    "title": "Use biased estimator D̂_{q_t}(q;p) + KL regularizer for proximal update",
+                    "choice": "Fix sampling distribution at current q_t; add KL(q_t;q) regularizer to penalize large updates; minimize analytically",
+                    "alternatives": [
+                      "Euclidean distance regularizer (standard SPP) — no closed form for Gaussian family",
+                      "Wasserstein metric regularizer (Lambert et al., 2022) — proximal step not in closed form",
+                      "No regularizer (GSM limit) — unstable for non-Gaussian targets"
+                    ],
+                    "evidence": "KL divergence between Gaussians has a standard closed form; combined with score-matching term yields quadratic matrix equation with known solution",
+                    "children": [
+                      {
+                        "id": "N07",
+                        "type": "experiment",
+                        "title": "Derive closed-form solution to L_BaM(q) = D̂_{q_t}(q;p) + (2/λ)KL(q_t;q)",
+                        "result": "Stationarity condition for Σ yields quadratic matrix equation ΣUΣ + Σ = V with closed-form PD solution Σ = 2V[I + (I+4UV)^{1/2}]^{-1}. Mean updates follow linearly.",
+                        "evidence": [
+                          "C02",
+                          "Appendix C",
+                          "Lemma B.1",
+                          "Lemma B.2",
+                          "§3.1"
+                        ],
+                        "children": [
+                          {
+                            "id": "N08",
+                            "type": "experiment",
+                            "title": "Prove convergence of BaM for Gaussian targets (Theorem 3.1)",
+                            "result": "For Gaussian target in infinite-batch limit, normalized errors decay exponentially: ||ε_t|| ≤ (1-δ)^t||ε_0|| for all λ>0 and any initialization. Convergence rate δ = λβ/(1+λ) where β reflects initialization quality.",
+                            "evidence": [
+                              "C04",
+                              "Theorem 3.1",
+                              "Appendix D",
+                              "§3.2"
+                            ],
+                            "children": [
+                              {
+                                "id": "N09",
+                                "type": "decision",
+                                "title": "Proof strategy: sandwiching inequality for normalized covariance",
+                                "choice": "Introduce auxiliary matrices H_{t+1} ⪯ J_{t+1} ⪯ K_{t+1} that share eigenvectors with J_t, enabling scalar analysis via joint diagonalizability",
+                                "alternatives": [
+                                  "Direct spectral analysis of J_{t+1} recursion — complicated by εε^T outer product term",
+                                  "Lyapunov function approach — difficult to construct explicit function"
+                                ],
+                                "evidence": "Lemma D.7 (joint diagonalizability) + Lemma B.4 (monotonicity of quadratic equation solutions) together enable the sandwich"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "id": "N10",
+                    "type": "experiment",
+                    "title": "Verify BaM recovers GSM as B=1, λ→∞ special case",
+                    "result": "In this limit, BaM updates match exactly GSM updates (Eqs. 42, 23 of Modi et al. 2023). Confirms BaM strictly generalizes GSM with principled regularization.",
+                    "evidence": [
+                      "C03",
+                      "Appendix C.3"
+                    ],
+                    "also_depends_on": [
+                      "N06"
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "N11",
+        "type": "experiment",
+        "title": "Empirical evaluation: Gaussian and non-Gaussian targets",
+        "result": "BaM with large batch sizes converges orders of magnitude faster than ADVI in gradient evaluations. GSM competitive at B=2 but does not benefit from larger B. For non-Gaussian: BaM with decaying λ_t=BD/(t+1) outperforms ADVI; GSM diverges at s=1.8.",
+        "evidence": [
+          "C05",
+          "C06",
+          "Figure 5.1",
+          "Figure 5.2",
+          "§5.1"
+        ],
+        "also_depends_on": [
+          "N07"
+        ],
+        "children": [
+          {
+            "id": "N12",
+            "type": "dead_end",
+            "title": "Constant learning rate for non-Gaussian targets",
+            "hypothesis": "Constant λ_t = BD works for non-Gaussian targets as well as Gaussian",
+            "failure_mode": "Constant λ_t does not converge for non-Gaussian targets; algorithm oscillates. Decaying λ_t = BD/(t+1) is required (verified in Figure E.5).",
+            "lesson": "Non-Gaussian targets require decaying regularization schedule; constant schedule valid only when target is Gaussian or very close to Gaussian."
+          }
+        ]
+      }
+    ]
+  }
+];
+
+function collectAll(nodes) {
+  let out = [];
+  for (const n of nodes) {
+    out.push(n);
+    if (n.children) out = out.concat(collectAll(n.children));
+  }
+  return out;
+}
+
+function renderStats(tree) {
+  const all = collectAll(tree);
+  const types = {};
+  all.forEach(n => { types[n.type] = (types[n.type] || 0) + 1; });
+  const maxDepth = (function getDepth(nodes, d) {
+    let m = d;
+    for (const n of nodes) {
+      if (n.children) m = Math.max(m, getDepth(n.children, d + 1));
+    }
+    return m;
+  })(tree, 1);
+
+  const el = document.getElementById("stats");
+  el.innerHTML = `
+    <div class="stat"><div class="stat-value">${all.length}</div><div class="stat-label">Nodes</div></div>
+    <div class="stat"><div class="stat-value">${maxDepth}</div><div class="stat-label">Max Depth</div></div>
+    <div class="stat"><div class="stat-value">${types.decision || 0}</div><div class="stat-label">Decisions</div></div>
+    <div class="stat"><div class="stat-value">${types.experiment || 0}</div><div class="stat-label">Experiments</div></div>
+    <div class="stat"><div class="stat-value">${types.dead_end || 0}</div><div class="stat-label">Dead Ends</div></div>
+  `;
+}
+
+function renderEvidence(ev) {
+  if (!ev) return "";
+  const items = Array.isArray(ev) ? ev : [ev];
+  if (items.length === 1 && typeof items[0] === "string" && items[0].length > 40) {
+    return `<div class="node-field"><div class="field-label">Evidence</div><div class="field-value">${esc(items[0])}</div></div>`;
+  }
+  return `<div class="node-field"><div class="field-label">Evidence</div><div class="evidence-tags">${items.map(i => `<span class="evidence-tag">${esc(String(i))}</span>`).join("")}</div></div>`;
+}
+
+function renderAlternatives(alts) {
+  if (!alts || alts.length === 0) return "";
+  return `<div class="node-field"><div class="field-label">Rejected Alternatives</div><ul class="alt-list">${alts.map(a => `<li>${esc(a)}</li>`).join("")}</ul></div>`;
+}
+
+function renderBody(node) {
+  let html = "";
+  const t = node.type;
+
+  if (t === "question" && node.description)
+    html += `<div class="node-field"><div class="field-label">Description</div><div class="field-value">${esc(node.description)}</div></div>`;
+
+  if (t === "experiment") {
+    if (node.result) html += `<div class="node-field"><div class="field-label">Result</div><div class="field-value">${esc(node.result)}</div></div>`;
+    html += renderEvidence(node.evidence);
+  }
+
+  if (t === "decision") {
+    if (node.choice) html += `<div class="node-field"><div class="field-label">Choice</div><div class="field-value">${esc(node.choice)}</div></div>`;
+    html += renderAlternatives(node.alternatives);
+    html += renderEvidence(node.evidence);
+  }
+
+  if (t === "dead_end") {
+    if (node.hypothesis) html += `<div class="node-field"><div class="field-label">Hypothesis</div><div class="field-value">${esc(node.hypothesis)}</div></div>`;
+    if (node.failure_mode) html += `<div class="node-field"><div class="field-label">Failure Mode</div><div class="field-value">${esc(node.failure_mode)}</div></div>`;
+    if (node.lesson) html += `<div class="node-field"><div class="field-label">Lesson</div><div class="field-value">${esc(node.lesson)}</div></div>`;
+  }
+
+  if (t === "pivot") {
+    if (node.from) html += `<div class="node-field"><div class="field-label">From</div><div class="field-value">${esc(node.from)}</div></div>`;
+    if (node.to) html += `<div class="node-field"><div class="field-label">To</div><div class="field-value">${esc(node.to)}</div></div>`;
+    if (node.trigger) html += `<div class="node-field"><div class="field-label">Trigger</div><div class="field-value">${esc(node.trigger)}</div></div>`;
+  }
+
+  return html;
+}
+
+function esc(s) {
+  const d = document.createElement("div");
+  d.textContent = s.trim();
+  return d.innerHTML;
+}
+
+const TYPE_LABELS = {
+  question: "Question",
+  experiment: "Experiment",
+  decision: "Decision",
+  dead_end: "Dead End",
+  pivot: "Pivot"
+};
+
+function renderNode(node) {
+  const hasChildren = node.children && node.children.length > 0;
+  const dagBadge = node.also_depends_on
+    ? `<span class="dag-badge"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M5 3a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm6 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm-3 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg>also: ${node.also_depends_on.join(", ")}</span>`
+    : "";
+
+  const chevronSvg = `<svg class="chevron" viewBox="0 0 16 16" fill="currentColor"><path d="M6.22 3.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06L9.94 8 6.22 4.28a.75.75 0 0 1 0-1.06z"/></svg>`;
+
+  let html = `<div class="node-group ${hasChildren ? "has-children" : ""}">`;
+  html += `<div class="node" onclick="this.classList.toggle('expanded')">`;
+  html += `<div class="node-header">`;
+  html += `<div class="node-indicator ${node.type}"></div>`;
+  html += `<span class="node-id">${node.id}</span>`;
+  html += `<span class="node-title">${esc(node.title)}${dagBadge}</span>`;
+  html += `<span class="node-type ${node.type}">${TYPE_LABELS[node.type]}</span>`;
+  html += chevronSvg;
+  html += `</div>`;
+  html += `<div class="node-body">${renderBody(node)}</div>`;
+  html += `</div>`;
+
+  if (hasChildren) {
+    html += `<div class="children">`;
+    for (const child of node.children) {
+      html += renderNode(child);
+    }
+    html += `</div>`;
+  }
+
+  html += `</div>`;
+  return html;
+}
+
+function render() {
+  renderStats(TREE);
+  const container = document.getElementById("tree");
+  container.innerHTML = TREE.map(renderNode).join("");
+}
+
+render();
+</script>
+</body>
+</html>

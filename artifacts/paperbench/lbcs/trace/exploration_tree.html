@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Exploration Tree — lbcs</title>
+<style>
+  :root {
+    --bg: #fafafa;
+    --card-bg: #ffffff;
+    --border: #e0e0e0;
+    --text: #1a1a1a;
+    --text-secondary: #555;
+    --question: #1565c0;
+    --experiment: #e65100;
+    --decision: #2e7d32;
+    --dead-end: #c62828;
+    --pivot: #6a1b9a;
+    --edge: #bdbdbd;
+    --dag-edge: #e57373;
+    --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--text);
+    padding: 40px 24px 80px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  header {
+    text-align: center;
+    margin-bottom: 48px;
+  }
+
+  header h1 {
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -0.3px;
+    margin-bottom: 6px;
+  }
+
+  header p {
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+
+  .legend {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+    margin-bottom: 40px;
+    flex-wrap: wrap;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+
+  .legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+  }
+
+  .legend-dot.question   { background: var(--question); }
+  .legend-dot.experiment { background: var(--experiment); }
+  .legend-dot.decision   { background: var(--decision); }
+  .legend-dot.dead_end   { background: var(--dead-end); }
+  .legend-dot.pivot      { background: var(--pivot); }
+
+  /* ---- Tree layout ---- */
+
+  .tree {
+    position: relative;
+  }
+
+  .node-group {
+    position: relative;
+    padding-left: 32px;
+  }
+
+  .node-group.has-children > .children::before {
+    content: "";
+    position: absolute;
+    left: 15px;
+    top: 0;
+    bottom: 24px;
+    width: 2px;
+    background: var(--edge);
+  }
+
+  .children {
+    position: relative;
+    margin-top: 0;
+  }
+
+  .children > .node-group::before {
+    content: "";
+    position: absolute;
+    left: -17px;
+    top: 22px;
+    width: 17px;
+    height: 2px;
+    background: var(--edge);
+  }
+
+  .tree > .node-group {
+    padding-left: 0;
+  }
+
+  .tree > .node-group::before { display: none; }
+
+  /* ---- Node card ---- */
+
+  .node {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-bottom: 12px;
+    cursor: pointer;
+    transition: box-shadow 0.15s ease, border-color 0.15s ease;
+    position: relative;
+  }
+
+  .node:hover {
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  }
+
+  .node.expanded {
+    border-color: #999;
+  }
+
+  .node-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .node-indicator {
+    flex-shrink: 0;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-top: 5px;
+  }
+
+  .node-indicator.question   { background: var(--question); }
+  .node-indicator.experiment { background: var(--experiment); }
+  .node-indicator.decision   { background: var(--decision); }
+  .node-indicator.dead_end   { background: var(--dead-end); }
+  .node-indicator.pivot      { background: var(--pivot); }
+
+  .node-id {
+    flex-shrink: 0;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 4px;
+    background: #f0f0f0;
+    color: var(--text-secondary);
+    margin-top: 1px;
+  }
+
+  .node-title {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.4;
+    flex: 1;
+  }
+
+  .node-type {
+    flex-shrink: 0;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 10px;
+    margin-top: 2px;
+  }
+
+  .node-type.question   { background: #e3f2fd; color: var(--question); }
+  .node-type.experiment { background: #fff3e0; color: var(--experiment); }
+  .node-type.decision   { background: #e8f5e9; color: var(--decision); }
+  .node-type.dead_end   { background: #ffebee; color: var(--dead-end); }
+  .node-type.pivot      { background: #f3e5f5; color: var(--pivot); }
+
+  .node-body {
+    display: none;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #f0f0f0;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+  }
+
+  .node.expanded .node-body {
+    display: block;
+  }
+
+  .node-field {
+    margin-bottom: 8px;
+  }
+
+  .node-field:last-child {
+    margin-bottom: 0;
+  }
+
+  .field-label {
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: var(--text);
+    margin-bottom: 2px;
+  }
+
+  .field-value {
+    white-space: pre-wrap;
+  }
+
+  .evidence-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 3px;
+  }
+
+  .evidence-tag {
+    font-size: 11px;
+    padding: 1px 7px;
+    border-radius: 3px;
+    background: #f5f5f5;
+    border: 1px solid #e0e0e0;
+  }
+
+  .alt-list {
+    list-style: none;
+    padding: 0;
+  }
+
+  .alt-list li {
+    position: relative;
+    padding-left: 14px;
+    margin-bottom: 3px;
+  }
+
+  .alt-list li::before {
+    content: "\00d7";
+    position: absolute;
+    left: 0;
+    color: #ccc;
+    font-weight: 700;
+  }
+
+  .dag-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    color: var(--dag-edge);
+    border: 1px solid var(--dag-edge);
+    border-radius: 4px;
+    padding: 1px 6px;
+    margin-left: 8px;
+    font-weight: 600;
+    vertical-align: middle;
+  }
+
+  .dag-badge svg {
+    width: 10px;
+    height: 10px;
+  }
+
+  .chevron {
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    margin-top: 3px;
+    transition: transform 0.15s ease;
+    color: #ccc;
+  }
+
+  .node.expanded .chevron {
+    transform: rotate(90deg);
+    color: #999;
+  }
+
+  .stats {
+    display: flex;
+    justify-content: center;
+    gap: 32px;
+    margin-bottom: 32px;
+    padding: 12px 0;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .stat {
+    text-align: center;
+  }
+
+  .stat-value {
+    font-size: 20px;
+    font-weight: 600;
+  }
+
+  .stat-label {
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Exploration Tree — lbcs</h1>
+  <p>Research DAG &middot; Refined Coreset Selection: Towards Minimal Coreset Size under Model Performance Constraints</p>
+</header>
+
+<div class="stats" id="stats"></div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot question"></div>Question</div>
+  <div class="legend-item"><div class="legend-dot experiment"></div>Experiment</div>
+  <div class="legend-item"><div class="legend-dot decision"></div>Decision</div>
+  <div class="legend-item"><div class="legend-dot dead_end"></div>Dead End</div>
+  <div class="legend-item"><div class="legend-dot pivot"></div>Pivot</div>
+</div>
+
+<div class="tree" id="tree"></div>
+
+<script>
+const TREE = [
+  {
+    "id": "N01",
+    "type": "question",
+    "title": "Can we find the smallest coreset that maintains model performance, without fixing the size in advance?",
+    "description": "All prior coreset selection methods fix the size k before selection and optimize only model performance. Can a method jointly minimize coreset size and preserve accuracy with a clear priority structure?",
+    "children": [
+      {
+        "id": "N02",
+        "type": "experiment",
+        "title": "Direct application of fixed-size bilevel selection (Eq. 3)",
+        "result": "f1(m) is minimized effectively, but f2(m) remains near the predefined k across all outer iterations. Size is not reduced.",
+        "evidence": [
+          "C01",
+          "Figure 1a-b",
+          "§2.1"
+        ],
+        "children": [
+          {
+            "id": "N03",
+            "type": "dead_end",
+            "title": "Simply run fixed-size bilevel selection at multiple k values",
+            "hypothesis": "Run Eq. 3 at many k values; pick the smallest k achieving acceptable f1 — this solves RCS.",
+            "failure_mode": "Requires expert assistance to determine which k values to try; not adaptive; performance is suboptimal compared to joint optimization.",
+            "lesson": "Multi-attempt approaches are inefficient and require manual k selection, motivating the need for automatic joint optimization."
+          },
+          {
+            "id": "N04",
+            "type": "experiment",
+            "title": "Weighted combination of f1 and f2 (Eq. 4, λ=0.5)",
+            "result": "f2(m) collapses to near zero (dominant gradient √n term) while f1(m) remains large — worse than Eq. 3 alone.",
+            "evidence": [
+              "C01",
+              "Figure 1c-d",
+              "§2.1",
+              "Appendix C.2"
+            ],
+            "children": [
+              {
+                "id": "N05",
+                "type": "dead_end",
+                "title": "Tune λ < 0.5 to give f1 higher weight",
+                "hypothesis": "Setting λ < 0.5 will implicitly prioritize f1 over f2.",
+                "failure_mode": "Gradient norms of f1 and f2 differ by dataset, network, and task — no universal λ exists. Scale mismatch is intractable.",
+                "lesson": "Weighted combination cannot represent strict lexicographic priority; the scale of the two objectives is not controllable."
+              },
+              {
+                "id": "N06",
+                "type": "pivot",
+                "from": "Weighted objective (scalarization)",
+                "to": "Lexicographic bilevel optimization",
+                "trigger": "Realization (Shi et al. 2020) that lexicographic preferences cannot be represented as weighted objectives; need a priority-based formulation.",
+                "children": [
+                  {
+                    "id": "N07",
+                    "type": "decision",
+                    "title": "Formalize priority order as lexicographic preference over F(m) = [f1, f2]",
+                    "choice": "Use lexicographic preference (Fishburn 1975): minimize f1 first; minimize f2 only within the region M*_1 where f1 is near-optimal (within ε).",
+                    "alternatives": [
+                      "Pareto-front exploration (multi-objective methods): expensive and finds many suboptimal solutions",
+                      "Constraint-based: fix f1 ≤ threshold, minimize f2 — requires knowing the threshold a priori"
+                    ],
+                    "evidence": "Theorem of Shi et al. (2020) on non-representability of lexicographic preferences as weighted sums; alignment with practitioner needs.",
+                    "children": [
+                      {
+                        "id": "N08",
+                        "type": "experiment",
+                        "title": "Implement LexiFlow as the black-box outer optimizer for lexicographic bilevel problem",
+                        "result": "LexiFlow with lexicographic comparisons reduces both f1 and f2 simultaneously; f2 shrinks below k while f1 stays within ε of optimum.",
+                        "evidence": [
+                          "C01",
+                          "C03",
+                          "Table 1",
+                          "§5.1"
+                        ],
+                        "children": [
+                          {
+                            "id": "N09",
+                            "type": "experiment",
+                            "title": "LBCS vs. 7 baselines on F-MNIST, SVHN, CIFAR-10",
+                            "result": "LBCS achieves smaller coresets with equal or better accuracy than all baselines across all tested k and datasets.",
+                            "evidence": [
+                              "C01",
+                              "C02",
+                              "Table 2",
+                              "Table 3",
+                              "§5.2"
+                            ],
+                            "children": [
+                              {
+                                "id": "N10",
+                                "type": "experiment",
+                                "title": "LBCS robustness under 30%, 50% label noise and class imbalance on F-MNIST",
+                                "result": "LBCS consistently outperforms all baselines under imperfect supervision; ε compromise reduces overfitting.",
+                                "evidence": [
+                                  "C04",
+                                  "Figure 2",
+                                  "§5.3"
+                                ]
+                              },
+                              {
+                                "id": "N11",
+                                "type": "experiment",
+                                "title": "LBCS on ImageNet-1k with grouping trick (G=100)",
+                                "result": "LBCS achieves best Top-5 accuracy at both 70% and 80% predefined ratios, with optimized ratios 68.53% and 77.82% respectively.",
+                                "evidence": [
+                                  "C05",
+                                  "Table 4",
+                                  "§5.4"
+                                ]
+                              },
+                              {
+                                "id": "N12",
+                                "type": "decision",
+                                "title": "Ablation on search time T and initialization strategy",
+                                "choice": "Use T=500 as default; offer LBCS+Moderate as variant with Moderate-based warm initialization.",
+                                "alternatives": [
+                                  "T=2000 — converges but unnecessary overhead after ~T=500",
+                                  "Random initialization only — LBCS+Moderate achieves slightly better accuracy"
+                                ],
+                                "evidence": "Table 7 (appendix): accuracy plateaus around T=500; Table 5 (appendix section 6): LBCS+Moderate improves over vanilla LBCS."
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+];
+
+function collectAll(nodes) {
+  let out = [];
+  for (const n of nodes) {
+    out.push(n);
+    if (n.children) out = out.concat(collectAll(n.children));
+  }
+  return out;
+}
+
+function renderStats(tree) {
+  const all = collectAll(tree);
+  const types = {};
+  all.forEach(n => { types[n.type] = (types[n.type] || 0) + 1; });
+  const maxDepth = (function getDepth(nodes, d) {
+    let m = d;
+    for (const n of nodes) {
+      if (n.children) m = Math.max(m, getDepth(n.children, d + 1));
+    }
+    return m;
+  })(tree, 1);
+
+  const el = document.getElementById("stats");
+  el.innerHTML = `
+    <div class="stat"><div class="stat-value">${all.length}</div><div class="stat-label">Nodes</div></div>
+    <div class="stat"><div class="stat-value">${maxDepth}</div><div class="stat-label">Max Depth</div></div>
+    <div class="stat"><div class="stat-value">${types.decision || 0}</div><div class="stat-label">Decisions</div></div>
+    <div class="stat"><div class="stat-value">${types.experiment || 0}</div><div class="stat-label">Experiments</div></div>
+    <div class="stat"><div class="stat-value">${types.dead_end || 0}</div><div class="stat-label">Dead Ends</div></div>
+  `;
+}
+
+function renderEvidence(ev) {
+  if (!ev) return "";
+  const items = Array.isArray(ev) ? ev : [ev];
+  if (items.length === 1 && typeof items[0] === "string" && items[0].length > 40) {
+    return `<div class="node-field"><div class="field-label">Evidence</div><div class="field-value">${esc(items[0])}</div></div>`;
+  }
+  return `<div class="node-field"><div class="field-label">Evidence</div><div class="evidence-tags">${items.map(i => `<span class="evidence-tag">${esc(String(i))}</span>`).join("")}</div></div>`;
+}
+
+function renderAlternatives(alts) {
+  if (!alts || alts.length === 0) return "";
+  return `<div class="node-field"><div class="field-label">Rejected Alternatives</div><ul class="alt-list">${alts.map(a => `<li>${esc(a)}</li>`).join("")}</ul></div>`;
+}
+
+function renderBody(node) {
+  let html = "";
+  const t = node.type;
+
+  if (t === "question" && node.description)
+    html += `<div class="node-field"><div class="field-label">Description</div><div class="field-value">${esc(node.description)}</div></div>`;
+
+  if (t === "experiment") {
+    if (node.result) html += `<div class="node-field"><div class="field-label">Result</div><div class="field-value">${esc(node.result)}</div></div>`;
+    html += renderEvidence(node.evidence);
+  }
+
+  if (t === "decision") {
+    if (node.choice) html += `<div class="node-field"><div class="field-label">Choice</div><div class="field-value">${esc(node.choice)}</div></div>`;
+    html += renderAlternatives(node.alternatives);
+    html += renderEvidence(node.evidence);
+  }
+
+  if (t === "dead_end") {
+    if (node.hypothesis) html += `<div class="node-field"><div class="field-label">Hypothesis</div><div class="field-value">${esc(node.hypothesis)}</div></div>`;
+    if (node.failure_mode) html += `<div class="node-field"><div class="field-label">Failure Mode</div><div class="field-value">${esc(node.failure_mode)}</div></div>`;
+    if (node.lesson) html += `<div class="node-field"><div class="field-label">Lesson</div><div class="field-value">${esc(node.lesson)}</div></div>`;
+  }
+
+  if (t === "pivot") {
+    if (node.from) html += `<div class="node-field"><div class="field-label">From</div><div class="field-value">${esc(node.from)}</div></div>`;
+    if (node.to) html += `<div class="node-field"><div class="field-label">To</div><div class="field-value">${esc(node.to)}</div></div>`;
+    if (node.trigger) html += `<div class="node-field"><div class="field-label">Trigger</div><div class="field-value">${esc(node.trigger)}</div></div>`;
+  }
+
+  return html;
+}
+
+function esc(s) {
+  const d = document.createElement("div");
+  d.textContent = s.trim();
+  return d.innerHTML;
+}
+
+const TYPE_LABELS = {
+  question: "Question",
+  experiment: "Experiment",
+  decision: "Decision",
+  dead_end: "Dead End",
+  pivot: "Pivot"
+};
+
+function renderNode(node) {
+  const hasChildren = node.children && node.children.length > 0;
+  const dagBadge = node.also_depends_on
+    ? `<span class="dag-badge"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M5 3a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm6 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm-3 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg>also: ${node.also_depends_on.join(", ")}</span>`
+    : "";
+
+  const chevronSvg = `<svg class="chevron" viewBox="0 0 16 16" fill="currentColor"><path d="M6.22 3.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06L9.94 8 6.22 4.28a.75.75 0 0 1 0-1.06z"/></svg>`;
+
+  let html = `<div class="node-group ${hasChildren ? "has-children" : ""}">`;
+  html += `<div class="node" onclick="this.classList.toggle('expanded')">`;
+  html += `<div class="node-header">`;
+  html += `<div class="node-indicator ${node.type}"></div>`;
+  html += `<span class="node-id">${node.id}</span>`;
+  html += `<span class="node-title">${esc(node.title)}${dagBadge}</span>`;
+  html += `<span class="node-type ${node.type}">${TYPE_LABELS[node.type]}</span>`;
+  html += chevronSvg;
+  html += `</div>`;
+  html += `<div class="node-body">${renderBody(node)}</div>`;
+  html += `</div>`;
+
+  if (hasChildren) {
+    html += `<div class="children">`;
+    for (const child of node.children) {
+      html += renderNode(child);
+    }
+    html += `</div>`;
+  }
+
+  html += `</div>`;
+  return html;
+}
+
+function render() {
+  renderStats(TREE);
+  const container = document.getElementById("tree");
+  container.innerHTML = TREE.map(renderNode).join("");
+}
+
+render();
+</script>
+</body>
+</html>

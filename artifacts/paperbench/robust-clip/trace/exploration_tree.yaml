@@ -1,0 +1,112 @@
+# Exploration Tree — robust-clip
+# Research DAG: nested tree with cross-edges (also_depends_on) forming a DAG.
+# Node types: question | experiment | dead_end | decision | pivot
+
+tree:
+  - id: N01
+    type: question
+    title: "How can we make CLIP-based LVLMs robust to adversarial vision attacks?"
+    description: "LVLMs like LLaVA and OpenFlamingo share CLIP as a frozen vision encoder. Can a single robust CLIP replacement make all downstream LVLMs robust without retraining them?"
+    children:
+
+      - id: N02
+        type: experiment
+        title: "Characterize vulnerability of original CLIP and CLIP-based LVLMs"
+        result: "Original CLIP achieves 0% robust accuracy at ε=2/255 across all zero-shot datasets. CLIP-based LLaVA is vulnerable to 100% of targeted attacks at ε=2/255 and ε=4/255."
+        evidence: [C02, "Table 4 ℓ∞=2/255 row", "Table 3 CLIP column", "§4.1"]
+        children:
+
+          - id: N03
+            type: question
+            title: "Can supervised adversarial fine-tuning of CLIP (TeCoA) solve the problem?"
+            description: "TeCoA (Mao et al. 2023) uses ImageNet cross-entropy loss on CLIP zero-shot logits for adversarial training."
+            children:
+
+              - id: N04
+                type: experiment
+                title: "Evaluate TeCoA on LVLM downstream tasks and zero-shot classification"
+                result: "TeCoA achieves robustness but drops clean average zero-shot accuracy from 73.1% to 60.0% (TeCoA2) and 54.2% (TeCoA4). LVLM captioning (COCO) drops from 115.5 to 98.4 (TeCoA2) and 88.3 (TeCoA4)."
+                evidence: [C01, "Table 4 clean row", "Table 1 LLaVA clean column"]
+                children:
+
+                  - id: N05
+                    type: dead_end
+                    title: "TeCoA cosine-similarity loss ignores radial embedding direction"
+                    hypothesis: "Cross-entropy on cosine similarities would produce a broadly useful robust encoder"
+                    failure_mode: "Cosine similarity is invariant to radial rescaling: the loss can be minimized while arbitrarily distorting the unnormalized embedding, which LVLMs use directly. Mean clean embedding loss of 236.9 (TeCoA2) vs 0.0 (CLIP)."
+                    lesson: "Need a loss that explicitly preserves the unnormalized embedding, not just its direction on the hypersphere. Led to the FARE embedding preservation objective."
+
+                  - id: N06
+                    type: dead_end
+                    title: "TeCoA trained only on ImageNet class labels — poor generalization"
+                    hypothesis: "ImageNet class text embeddings would provide sufficient coverage for robust generalization"
+                    failure_mode: "Fine-tuning only on 1000 ImageNet classes causes heavy distortion for unseen classes. Average zero-shot drop of 13.1% (TeCoA2) vs CLIP on 13 non-ImageNet datasets."
+                    lesson: "Supervised fine-tuning creates a gap between in-distribution (ImageNet) and out-of-distribution (everything else) performance. Motivates a label-free approach."
+
+          - id: N07
+            type: decision
+            title: "Choose fine-tuning objective: unsupervised embedding preservation"
+            choice: "Minimize max_{||z-x||∞≤ε} ||phi(z) - phi_Org(x)||²₂ — preserve unnormalized embeddings under adversarial perturbation, no labels"
+            alternatives:
+              - "Contrastive loss (SimCLR-style, Kim et al. 2020, Jiang et al. 2020): requires label-free contrastive pairs but does not preserve original embedding for zero-shot transfer"
+              - "BYOL-style self-supervised adversarial training (Gowal et al. 2020): requires linear head for classification, cannot be used zero-shot"
+              - "TeCoA supervised loss: fails as shown in N05, N06"
+            evidence: "Preserving ||phi(z) - phi_Org(x)||₂ → 0 drives phi(x) → phi_Org(x) on clean inputs (zero-shot preserved) AND forces phi(z) ≈ phi_Org(x) under adversarial z (robustness). Theorem 3.1 formalizes the connection to cosine similarity preservation."
+            children:
+
+              - id: N08
+                type: experiment
+                title: "Ablation: class token vs all tokens in FARE loss"
+                result: "Using only the class token for FARE loss achieves comparable downstream LVLM performance to using all tokens, while requiring less memory and compute."
+                evidence: ["Appendix B.1"]
+                children:
+
+                  - id: N09
+                    type: decision
+                    title: "Use class token only for FARE loss computation"
+                    choice: "Compute FARE loss on class token output of ViT-L/14 only"
+                    alternatives:
+                      - "All token outputs: higher memory/compute, no improvement"
+                    evidence: "Early experiments (Appendix B.1)"
+                    children: []
+
+              - id: N10
+                type: experiment
+                title: "Ablate ℓ₁ vs squared ℓ₂ norm in FARE loss"
+                result: "ℓ₁ and ℓ₂² yield essentially the same performance (48.6/33.7/21.9 vs 48.6/33.9/21.9 on avg. zero-shot clean/2/4). ℓ₂² chosen for theoretical connection to cosine similarity."
+                evidence: ["Table 9", "Appendix B.4"]
+                children:
+
+                  - id: N11
+                    type: decision
+                    title: "Use squared ℓ₂ norm for FARE loss"
+                    choice: "||phi(z) - phi_Org(x)||²₂ using squared ℓ₂ norm"
+                    alternatives:
+                      - "ℓ₁ norm: comparable empirically, but sparse residuals have no theoretical motivation here"
+                    evidence: "Table 9 ablation; theoretical connection: ||u/||u||₂ - v/||v||₂||²₂ = 2 - 2cos(u,v)"
+                    children: []
+
+              - id: N12
+                type: experiment
+                title: "Ablate learning rate and weight decay (ViT-B/32 proxy)"
+                result: "LR=1e-5 yields +4.2% clean zero-shot performance vs LR=1e-4 at cost of ~5% lower ImageNet robustness. WD has negligible impact. LR=1e-5, WD=1e-4 chosen."
+                evidence: ["Table 8", "Appendix B.3"]
+                children:
+
+                  - id: N13
+                    type: decision
+                    title: "Select LR=1e-5, WD=1e-4 for FARE fine-tuning"
+                    choice: "Peak LR = 1e-5, weight decay = 1e-4, cosine schedule with 7% warmup"
+                    alternatives:
+                      - "LR=1e-4: +5% ImageNet robustness but -4.2% zero-shot generalization — violates FARE's goal"
+                      - "LR=1e-5, WD=1e-3: identical to WD=1e-4 (no sensitivity)"
+                    evidence: "Table 8 ablation; primary goal is preserving generalization to non-ImageNet tasks"
+                    children: []
+
+      - id: N14
+        type: experiment
+        title: "Final evaluation: FARE vs TeCoA on all downstream tasks"
+        also_depends_on: [N07, N09, N11, N13]
+        result: "FARE2 and FARE4 outperform TeCoA2/TeCoA4 on average LVLM performance (Table 1), targeted attack robustness (Table 3), zero-shot classification on 13 non-ImageNet datasets (Table 4), hallucination (Table 5), and chain-of-thought (Table 6). Both FARE and TeCoA comparably reduce jailbreaking (Table 7)."
+        evidence: [C01, C02, C03, C04, C05, C06, C07, "Tables 1-7"]
+        children: []

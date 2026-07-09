@@ -1,0 +1,23 @@
+# Environment
+
+- **Python**: Not specified in paper
+- **Framework**: PyTorch (version not specified)
+- **Hardware**: Single NVIDIA GeForce GTX 1080 Ti GPU (for linear probing experiments)
+- **Key dependencies**:
+  - torch (version not specified)
+  - torchvision (for loading VM checkpoints)
+  - open_clip (https://github.com/mlfoundations/open_clip, for OpenCLIP VLMs)
+  - clip (https://github.com/openai/CLIP, for CLIP VLMs)
+  - nltk (for WordNet access via NLTK corpus)
+  - numpy
+  - scikit-learn (for K-means clustering and correlation metrics)
+  - scipy (for Pearson, Kendall, Spearman correlations)
+- **Random seeds**: Not specified in paper
+- **Datasets required**:
+  - ImageNet (ILSVRC 2012): ID dataset; ~1.28M train, 50K val images
+  - ImageNet-v2: OOD (mild shift); recollection of ImageNet
+  - ImageNet-Sketch (ImageNet-S): OOD (sketch style)
+  - ImageNet-Rendition (ImageNet-R): OOD (artistic renditions)
+  - ImageNet-Adversarial (ImageNet-A): OOD (adversarial natural images)
+  - ObjectNet: OOD (controlled bias, novel viewpoints and backgrounds)
+  - WordNet: via NLTK (download: nltk.download('wordnet'))

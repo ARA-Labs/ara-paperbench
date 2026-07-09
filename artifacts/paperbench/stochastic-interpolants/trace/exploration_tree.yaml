@@ -1,0 +1,98 @@
+# Exploration Tree — stochastic-interpolants
+# Research DAG: nested tree with cross-edges (also_depends_on) forming a DAG.
+# Node types: question | experiment | dead_end | decision | pivot
+
+tree:
+  - id: N01
+    type: question
+    title: "Can we adapt the base density to the target in stochastic interpolants?"
+    description: "Standard flow/diffusion models use a data-agnostic Gaussian base. Can we design the base distribution ρ₀ to be correlated with the target ρ₁, and still train efficiently?"
+    children:
+
+      - id: N02
+        type: experiment
+        title: "Is the quadratic regression objective valid for dependent couplings?"
+        result: "Yes — Theorem 3.1 proves the velocity b_t(x) = E(İ_t|I_t=x) uniquely minimizes the quadratic loss for ANY coupling with correct marginals."
+        evidence: [C01, "Theorem 3.1", "§3.1"]
+        children:
+
+          - id: N03
+            type: decision
+            title: "Adopt dependent coupling framework with same training loss"
+            choice: "Use ρ(x₀,x₁) = ρ₁(x₁)ρ₀(x₀|x₁); keep the quadratic regression loss unchanged"
+            alternatives:
+              - "Learn the coupling jointly with the velocity (Lee et al., 2023) — introduces inference-time bias"
+              - "Use mini-batch OT (Tong/Pooladian 2023) — uninformative at large dataset scale"
+              - "Use Schrödinger bridges (De Bortoli 2021) — requires expensive iterative SDE solving"
+            evidence: "Theorem 3.1 guarantees validity; Table 1 summarizes coupling taxonomy"
+            children:
+
+              - id: N04
+                type: question
+                title: "What is the best form for ρ₀(x₀|x₁) in inverse problems?"
+                description: "Given that the coupling can be arbitrary, how should we design x₀ = m(x₁) + σζ for inpainting and super-resolution?"
+                children:
+
+                  - id: N05
+                    type: experiment
+                    title: "Transport cost bound analysis for designed couplings"
+                    result: "For x₀ = m(x₁) + σζ with αₜ=1-t, βₜ=t: E[|İₜ|²] = dσ² << 2E[|x₁|²]+dσ² (independent bound). Dependent coupling strictly reduces transport cost."
+                    evidence: [C02, "Proposition 3.1", "§3.3"]
+                    children:
+
+                      - id: N06
+                        type: decision
+                        title: "Use task-specific corruption m(x₁) as mean of base distribution"
+                        choice: "x₀ = m(x₁) + σζ where m is the task-appropriate degradation (masking for inpainting, downsampling+upsampling for super-res)"
+                        alternatives:
+                          - "Use x₀ = x₁ + σζ (noisy copy) for all tasks — valid but not task-specific"
+                          - "Use Gaussian base N(0, I) — simple but high transport cost"
+                        evidence: "Transport cost bound in Proposition 3.1; simpler trajectories in Figure 2"
+                        children:
+
+                          - id: N07
+                            type: experiment
+                            title: "Inpainting on ImageNet-256 with dependent coupling"
+                            result: "FID-50k=1.13 (dependent) vs 1.35 (uncoupled baseline). Dependent coupling outperforms."
+                            evidence: [C03, "Table 2", "§4.1"]
+                            children:
+
+                              - id: N08
+                                type: decision
+                                title: "Mask velocity output to enforce structural constraint"
+                                choice: "Zero out velocity on known (unmasked) pixels; use αₜ=t, βₜ=1-t so İₜ=0 on known pixels"
+                                alternatives:
+                                  - "Let network predict velocity everywhere — wastes capacity predicting zero"
+                                  - "Use replacement method (Ho et al. 2022b) — requires inference-time correction"
+                                evidence: "§4.1: İₜ = 0 on unmasked pixels structurally; output masking enforces this"
+                                children: []
+
+                          - id: N09
+                            type: experiment
+                            title: "Super-resolution on ImageNet 64×64→256×256"
+                            result: "FID-50k train=2.13, valid=2.05. New SOTA surpassing I²SB (2.70 valid)."
+                            evidence: [C04, "Table 3", "§4.2"]
+                            also_depends_on: [N06]
+                            children: []
+
+      - id: N10
+        type: dead_end
+        title: "Learned coupling qφ(x₀|x₁) with independent sampling at inference"
+        hypothesis: "Learning the coupling jointly with the velocity could capture complex coupling structure without requiring knowledge of m(x₁)"
+        failure_mode: "At inference, must sample from the true coupling ρ₀(x₀|x₁) but Lee et al. (2023) sample from ρ₀=N(0,I), introducing bias. The marginal of the learned coupling may not equal ρ₀."
+        lesson: "Consistent inference requires sampling from the actual learned/designed coupling, not a surrogate. Our approach uses the explicitly designed coupling at both training and inference."
+
+      - id: N11
+        type: dead_end
+        title: "Mini-batch OT coupling for large-scale ImageNet training"
+        hypothesis: "Running OT over mini-batches of ImageNet could build informative couplings automatically"
+        failure_mode: "For large datasets, mini-batch OT estimates are computed on tiny subsets of the full distribution, making the coupling uninformative about the true population-level structure."
+        lesson: "Task-designed couplings (knowing m(x₁) analytically) are more reliable than mini-batch approximations at scale."
+
+  - id: N12
+    type: experiment
+    title: "Qualitative GMM-to-GMM transport: coupling vs conditioning"
+    result: "Dependent coupling → simple non-crossing trajectories. Independent coupling → complex crossing trajectories with auxiliary modes. Conditional velocity → factorized flows per class."
+    evidence: [C05, "Figure 2", "§3"]
+    also_depends_on: [N05]
+    children: []

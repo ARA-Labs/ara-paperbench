@@ -1,0 +1,99 @@
+---
+# Exploration Tree — semantic-self-consistency
+# Research DAG: nested tree with cross-edges (also_depends_on) forming a DAG.
+# Node types: question | experiment | dead_end | decision | pivot
+
+tree:
+  - id: N01
+    type: question
+    title: "Can reasoning-path semantics improve self-consistency beyond majority vote?"
+    description: "Standard self-consistency discards all reasoning-path content. Can embedding the full chain-of-thought and weighting responses by semantic consistency improve accuracy?"
+    children:
+
+      - id: N02
+        type: experiment
+        title: "Baseline self-consistency vs. top-prob sampling"
+        result: "SC baseline consistently outperforms top-prob single-sample greedy decoding across all models and datasets"
+        evidence: [C01, "Table 1", "§5.1"]
+        children:
+
+          - id: N03
+            type: decision
+            title: "Choose embedding representation for reasoning paths"
+            choice: "Use [CLS] token from domain-aligned BERT-based featurizer (SciBERT for math, RoBERTa for commonsense)"
+            alternatives:
+              - "Sentence-level average pooling"
+              - "Token-level representations"
+              - "General RoBERTa for all tasks"
+            evidence: "Appendix G.2: SciBERT avg distance 45.281 vs RoBERTa 48.697 on arithmetic tasks"
+            children:
+
+              - id: N04
+                type: experiment
+                title: "Featurizer ablation: SciBERT vs MathBERT vs RoBERTa"
+                result: "SciBERT (45.281) and MathBERT (45.892) produce tighter clusters than RoBERTa (48.697); domain-aligned featurizers preferred"
+                evidence: [C04, "Table 6", "Appendix G.2"]
+                children:
+
+                  - id: N05
+                    type: decision
+                    title: "Design semantic weighting strategy using embeddings"
+                    choice: "Implement two weighting strategies: CPW (centroid distance inverse) and SCW (pairwise cosine similarity)"
+                    alternatives:
+                      - "N-gram overlap weighting"
+                      - "K-means cluster-based weighting"
+                      - "ROUGE-N score weighting"
+                    evidence: "Embedding geometry captures semantic consistency; N-gram methods failed (see N06, N07)"
+                    children:
+
+                      - id: N08
+                        type: experiment
+                        title: "CPW and SCW vs SC baseline on AQuA-RAT, SVAMP, StrategyQA"
+                        result: "SCW outperforms SC baseline on majority of 15 model-dataset pairs; CPW improves on arithmetic but hurts StrategyQA"
+                        evidence: [C01, C02, "Table 1", "§5.1"]
+                        children:
+
+                          - id: N09
+                            type: decision
+                            title: "Add outlier filtering as complementary approach"
+                            choice: "Implement Isolation Forest, KNN, and One-class SVM for pre-vote outlier removal"
+                            alternatives:
+                              - "K-means clustering for outlier identification (tested, rejected)"
+                              - "No outlier removal, rely solely on weighting"
+                            evidence: "Degenerate outputs and hallucinations pollute majority vote; outlier removal in embedding space is lightweight"
+                            children:
+
+                              - id: N10
+                                type: experiment
+                                title: "Outlier removal methods vs SC baseline"
+                                result: "All three methods improve or match SC baseline in majority of conditions; gains consistent at reduced sample sizes; SVM strongest on StrategyQA"
+                                evidence: [C03, "Table 2", "§5.2"]
+                                also_depends_on: [N04]
+
+                  - id: N11
+                    type: experiment
+                    title: "Sequence length and BLEU score correlation with accuracy gains"
+                    result: "Positive correlation between sequence length and accuracy improvement; no significant correlation between BLEU score and accuracy"
+                    evidence: [C05, C06, "Table 3", "Appendix B"]
+                    also_depends_on: [N08]
+
+      - id: N06
+        type: dead_end
+        title: "N-gram weighting (n=2) failed to match baseline"
+        hypothesis: "N-gram overlap between reasoning paths could identify more consistent rationales"
+        failure_mode: "Accuracy dropped significantly below SC baseline; high randomness; higher n values worsened results further (Table 9: Llama 2 AQuA-RAT=15.5, SVAMP=32.8)"
+        lesson: "Surface-level lexical overlap is insufficient for semantic discrimination; embedding-based approaches needed"
+
+      - id: N07
+        type: dead_end
+        title: "K-means clustering showed diminishing returns and high volatility"
+        hypothesis: "Clustering reasoning-path embeddings with k-means could identify the majority correct cluster"
+        failure_mode: "High volatility based on initial cluster placement; silhouette score only 0.41 (moderate); accuracy often below baseline (Table 7: Llama 2 SQA=47.60 vs SC 48.91); unstable across runs (Table 8)"
+        lesson: "K-means is too sensitive to initialization; pairwise distance methods (CPW, SCW) are more stable; k-means may still be useful as a diagnostic tool"
+
+      - id: N12
+        type: dead_end
+        title: "Dimensionality reduction (PCA, t-SNE) did not consistently improve performance"
+        hypothesis: "Reducing embedding dimensionality might improve clustering quality and weighting"
+        failure_mode: "Performance improved only in edge cases; generally unstable; t-SNE better for visualization than for performance improvement (Appendix O)"
+        lesson: "Use raw embeddings without dimensionality reduction for consistent results"

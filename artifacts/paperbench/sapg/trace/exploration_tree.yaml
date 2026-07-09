@@ -1,0 +1,106 @@
+---
+# Exploration Tree — sapg
+# Research DAG: nested tree with cross-edges (also_depends_on) forming a DAG.
+# Node types: question | experiment | dead_end | decision | pivot
+
+tree:
+  - id: N01
+    type: question
+    title: "Can on-policy RL effectively leverage massively parallel GPU simulation?"
+    description: "GPU-driven simulators (IsaacGym) now support tens of thousands of parallel environments. Does simply increasing batch size for PPO yield proportional performance gains, or is there a bottleneck?"
+    children:
+
+      - id: N02
+        type: experiment
+        title: "Measure PPO asymptotic performance vs. batch size"
+        result: "PPO performance saturates and plateaus after ~25,000 environments on Shadow Hand and Allegro Kuka Throw. The performance ceiling is not the task itself — a gap exists."
+        evidence: ["C01", "Figure 2", "§3"]
+        children:
+
+          - id: N03
+            type: decision
+            title: "Identify root cause of PPO batch-size saturation"
+            choice: "IID sampling from Gaussian policy produces redundant data at large scale — most actions cluster near distribution mean"
+            alternatives:
+              - "Optimizer convergence speed is the bottleneck (learning rate too small)"
+              - "Reward sparsity prevents benefit from more data"
+              - "Trust region too conservative at large batch"
+            evidence: "Mathematical analysis of Gaussian sampling concentration; empirical Figure 2"
+            children:
+
+              - id: N04
+                type: question
+                title: "How can we increase diversity of collected data beyond IID sampling?"
+                description: "Given the IID saturation bottleneck, what mechanism can produce more diverse experience from the same N environments?"
+                children:
+
+                  - id: N05
+                    type: dead_end
+                    title: "Population-based training (DexPBT-style) — train multiple policies independently"
+                    hypothesis: "Dividing environments into M groups with different hyperparameters will produce diverse data and better policies"
+                    failure_mode: "Data from sub-optimal policies is wasted — each policy only learns from its own block. The only benefit is hyperparameter selection, not data reuse."
+                    lesson: "Independent multi-policy training is better than single PPO but still wastes valuable trajectory data. Need a mechanism to aggregate all data."
+
+                  - id: N06
+                    type: decision
+                    title: "Use importance sampling to aggregate data from multiple concurrent policies"
+                    choice: "Run M diverse policies concurrently, then use off-policy IS updates to aggregate all collected data into a single improved leader policy"
+                    alternatives:
+                      - "Replay buffer with off-policy corrections (PQL-style)"
+                      - "Distillation from diverse teachers to a single student"
+                      - "Simply increase entropy of a single PPO policy"
+                    evidence: "Off-policy actor-critic literature [5,18]; IS allows using follower data in leader update without violating trust region"
+                    children:
+
+                      - id: N07
+                        type: experiment
+                        title: "Symmetric aggregation: each policy updated with all others' data"
+                        result: "Symmetric scheme significantly underperforms leader-follower SAPG across all tasks. Policies converge in behavior, eliminating data diversity."
+                        evidence: ["C03", "Figure 6", "§6.3"]
+                        children:
+
+                          - id: N08
+                            type: decision
+                            title: "Break symmetry: designate one leader receiving all followers' data"
+                            choice: "Leader-follower asymmetry: π_1 (leader) aggregates IS-weighted data from all followers; followers only use own on-policy data"
+                            alternatives:
+                              - "Symmetric scheme (each updates with all others)"
+                              - "Random subset aggregation (leader randomly samples 1-2 followers)"
+                            evidence: "Symmetric aggregation causes policy convergence (N07 result); asymmetry preserves diversity"
+                            children:
+
+                              - id: N09
+                                type: question
+                                title: "How to ensure follower policies remain diverse from each other and the leader?"
+                                description: "If followers share all backbone parameters, they may collapse to identical behaviors despite separate hanging params"
+                                children:
+
+                                  - id: N10
+                                    type: decision
+                                    title: "Latent conditioning via per-policy hanging parameters ϕ_j"
+                                    choice: "Shared backbone B_θ + C_ψ conditioned on learnable ϕ_j ∈ R^d (d=32 AllegroKuka, d=16 easy tasks)"
+                                    alternatives:
+                                      - "Fully disjoint parameters per policy (no sharing)"
+                                      - "Shared all parameters, different random seeds only"
+                                    evidence: "Fully disjoint policies risk local optima traps; shared backbone enables knowledge transfer while ϕ_j preserves per-policy identity (§4.4)"
+                                    children:
+
+                                      - id: N11
+                                        type: experiment
+                                        title: "Entropy regularization with different coefficients per follower"
+                                        result: "σ=0.005 improves Reorientation by up to 16.5% vs σ=0; σ=0 is optimal for AllegroHand, Regrasping, Throw. ShadowHand benefits from σ=0.005."
+                                        evidence: ["C06", "Figure 6", "§6.3"]
+                                        children:
+
+                                          - id: N12
+                                            type: experiment
+                                            title: "Final SAPG evaluation vs. PPO, DexPBT, PQL on all 6 tasks"
+                                            result: "SAPG achieves 12-66% higher success than DexPBT on hard tasks, >2x on Two Arms Reorientation; comparable or better than PQL on easy tasks"
+                                            evidence: ["C02", "Table 1", "Figure 5", "§6"]
+
+                  - id: N13
+                    type: dead_end
+                    title: "High off-policy ratio: use full follower dataset without subsampling"
+                    hypothesis: "More off-policy data should give more learning signal"
+                    failure_mode: "Off-policy gradients are noisier than on-policy; flooding the update with off-policy data drowns the reliable on-policy signal. Degrades performance on AllegroHand and ShadowHand."
+                    lesson: "Equal 50/50 on/off-policy data split (λ=1 with subsampling) is the right balance."

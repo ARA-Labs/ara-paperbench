@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Exploration Tree — rice</title>
+<style>
+  :root {
+    --bg: #fafafa;
+    --card-bg: #ffffff;
+    --border: #e0e0e0;
+    --text: #1a1a1a;
+    --text-secondary: #555;
+    --question: #1565c0;
+    --experiment: #e65100;
+    --decision: #2e7d32;
+    --dead-end: #c62828;
+    --pivot: #6a1b9a;
+    --edge: #bdbdbd;
+    --dag-edge: #e57373;
+    --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--text);
+    padding: 40px 24px 80px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  header {
+    text-align: center;
+    margin-bottom: 48px;
+  }
+
+  header h1 {
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -0.3px;
+    margin-bottom: 6px;
+  }
+
+  header p {
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+
+  .legend {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+    margin-bottom: 40px;
+    flex-wrap: wrap;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+
+  .legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+  }
+
+  .legend-dot.question   { background: var(--question); }
+  .legend-dot.experiment { background: var(--experiment); }
+  .legend-dot.decision   { background: var(--decision); }
+  .legend-dot.dead_end   { background: var(--dead-end); }
+  .legend-dot.pivot      { background: var(--pivot); }
+
+  /* ---- Tree layout ---- */
+
+  .tree {
+    position: relative;
+  }
+
+  .node-group {
+    position: relative;
+    padding-left: 32px;
+  }
+
+  .node-group.has-children > .children::before {
+    content: "";
+    position: absolute;
+    left: 15px;
+    top: 0;
+    bottom: 24px;
+    width: 2px;
+    background: var(--edge);
+  }
+
+  .children {
+    position: relative;
+    margin-top: 0;
+  }
+
+  .children > .node-group::before {
+    content: "";
+    position: absolute;
+    left: -17px;
+    top: 22px;
+    width: 17px;
+    height: 2px;
+    background: var(--edge);
+  }
+
+  .tree > .node-group {
+    padding-left: 0;
+  }
+
+  .tree > .node-group::before { display: none; }
+
+  /* ---- Node card ---- */
+
+  .node {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-bottom: 12px;
+    cursor: pointer;
+    transition: box-shadow 0.15s ease, border-color 0.15s ease;
+    position: relative;
+  }
+
+  .node:hover {
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  }
+
+  .node.expanded {
+    border-color: #999;
+  }
+
+  .node-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .node-indicator {
+    flex-shrink: 0;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-top: 5px;
+  }
+
+  .node-indicator.question   { background: var(--question); }
+  .node-indicator.experiment { background: var(--experiment); }
+  .node-indicator.decision   { background: var(--decision); }
+  .node-indicator.dead_end   { background: var(--dead-end); }
+  .node-indicator.pivot      { background: var(--pivot); }
+
+  .node-id {
+    flex-shrink: 0;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 4px;
+    background: #f0f0f0;
+    color: var(--text-secondary);
+    margin-top: 1px;
+  }
+
+  .node-title {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.4;
+    flex: 1;
+  }
+
+  .node-type {
+    flex-shrink: 0;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 10px;
+    margin-top: 2px;
+  }
+
+  .node-type.question   { background: #e3f2fd; color: var(--question); }
+  .node-type.experiment { background: #fff3e0; color: var(--experiment); }
+  .node-type.decision   { background: #e8f5e9; color: var(--decision); }
+  .node-type.dead_end   { background: #ffebee; color: var(--dead-end); }
+  .node-type.pivot      { background: #f3e5f5; color: var(--pivot); }
+
+  .node-body {
+    display: none;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #f0f0f0;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+  }
+
+  .node.expanded .node-body {
+    display: block;
+  }
+
+  .node-field {
+    margin-bottom: 8px;
+  }
+
+  .node-field:last-child {
+    margin-bottom: 0;
+  }
+
+  .field-label {
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: var(--text);
+    margin-bottom: 2px;
+  }
+
+  .field-value {
+    white-space: pre-wrap;
+  }
+
+  .evidence-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 3px;
+  }
+
+  .evidence-tag {
+    font-size: 11px;
+    padding: 1px 7px;
+    border-radius: 3px;
+    background: #f5f5f5;
+    border: 1px solid #e0e0e0;
+  }
+
+  .alt-list {
+    list-style: none;
+    padding: 0;
+  }
+
+  .alt-list li {
+    position: relative;
+    padding-left: 14px;
+    margin-bottom: 3px;
+  }
+
+  .alt-list li::before {
+    content: "\00d7";
+    position: absolute;
+    left: 0;
+    color: #ccc;
+    font-weight: 700;
+  }
+
+  .dag-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    color: var(--dag-edge);
+    border: 1px solid var(--dag-edge);
+    border-radius: 4px;
+    padding: 1px 6px;
+    margin-left: 8px;
+    font-weight: 600;
+    vertical-align: middle;
+  }
+
+  .dag-badge svg {
+    width: 10px;
+    height: 10px;
+  }
+
+  .chevron {
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    margin-top: 3px;
+    transition: transform 0.15s ease;
+    color: #ccc;
+  }
+
+  .node.expanded .chevron {
+    transform: rotate(90deg);
+    color: #999;
+  }
+
+  .stats {
+    display: flex;
+    justify-content: center;
+    gap: 32px;
+    margin-bottom: 32px;
+    padding: 12px 0;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .stat {
+    text-align: center;
+  }
+
+  .stat-value {
+    font-size: 20px;
+    font-weight: 600;
+  }
+
+  .stat-label {
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Exploration Tree — rice</h1>
+  <p>Research DAG &middot; RICE: Breaking Through the Training Bottlenecks of Reinforcement Learning with Explanation</p>
+</header>
+
+<div class="stats" id="stats"></div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot question"></div>Question</div>
+  <div class="legend-item"><div class="legend-dot experiment"></div>Experiment</div>
+  <div class="legend-item"><div class="legend-dot decision"></div>Decision</div>
+  <div class="legend-item"><div class="legend-dot dead_end"></div>Dead End</div>
+  <div class="legend-item"><div class="legend-dot pivot"></div>Pivot</div>
+</div>
+
+<div class="tree" id="tree"></div>
+
+<script>
+const TREE = [
+  {
+    "id": "N01",
+    "type": "question",
+    "title": "How to break through DRL training bottlenecks without re-training from scratch?",
+    "description": "Pre-trained DRL agents plateau at sub-optimal performance (local optima, sparse rewards). Re-training is prohibitively expensive (millions of dollars for complex tasks). How can we refine a pre-trained agent efficiently while providing theoretical guarantees?",
+    "children": [
+      {
+        "id": "N02",
+        "type": "experiment",
+        "title": "Evaluate existing refining methods: PPO fine-tuning, StateMask-R, JSRL",
+        "result": "PPO fine-tuning: marginal gains (trapped in local optima). StateMask-R: sometimes degrades performance due to overfitting. JSRL: poor performance due to random frontier selection.",
+        "evidence": [
+          "C02",
+          "Table 1",
+          "§4.3"
+        ],
+        "children": [
+          {
+            "id": "N03",
+            "type": "dead_end",
+            "title": "StateMask-R: fine-tuning exclusively from critical states",
+            "hypothesis": "Starting refining from explanation-identified critical states should help the agent learn correct behavior from those states",
+            "failure_mode": "Overfitting: agent achieves 50.8% evasion from critical states but only 36.2% from default initial states (vs 33.8% baseline). Distribution shift between training and test initial state distributions.",
+            "lesson": "Critical-state-only initialization causes distribution mismatch. Need to mix critical states with default initial states. Led to the mixed initial state distribution idea (N05)."
+          },
+          {
+            "id": "N04",
+            "type": "dead_end",
+            "title": "JSRL: random curriculum frontier selection",
+            "hypothesis": "Using a pre-trained policy as a guide with random exploration frontiers should enable the agent to explore from diverse states",
+            "failure_mode": "Random frontiers do not guarantee positive returns or informative starting points. Cannot guarantee the frontier states are the ones where errors occur. Empirically performs poorly across all 8 environments.",
+            "lesson": "Frontier selection must be guided by understanding which states matter most for the agent's reward. Led to using explanation methods for frontier selection (N06)."
+          },
+          {
+            "id": "N05",
+            "type": "decision",
+            "title": "Adopt mixed initial state distribution to prevent overfitting",
+            "choice": "µ(s) = p·d^ˆπ_ρ(s) + (1-p)·ρ(s) where p ∈ [0.25, 0.5] is optimal",
+            "alternatives": [
+              "p=1 (all critical states): StateMask-R — causes overfitting",
+              "p=0 (all default states): vanilla PPO fine-tuning — cannot escape local optima"
+            ],
+            "evidence": "Table 7 malware case study shows p=mixed achieves 58.4% vs 36.2% (p=1 tested from default). Figure 7 systematic sweep.",
+            "children": [
+              {
+                "id": "N06",
+                "type": "decision",
+                "title": "Use explanation method to select informative exploration frontiers",
+                "choice": "StateMask-based critical state identification: select state with highest P(a^m=0|s)",
+                "alternatives": [
+                  "Random visited state selection (PPO++): no theoretical guarantee on frontier quality",
+                  "Return-based archive (Go-Explore): does not identify why the policy fails",
+                  "Human feedback (Guan et al., 2021): does not scale to large action spaces"
+                ],
+                "evidence": "Table 1 right half: RICE+Ours explanation outperforms RICE+Random across all 8 environments. Claim 1 theoretical analysis.",
+                "children": [
+                  {
+                    "id": "N07",
+                    "type": "experiment",
+                    "title": "Can original StateMask objective be simplified for faster training?",
+                    "result": "Theorem 3.3: η(π̄) ≤ η(π) under Assumption 3.1. So J(θ) = min|η(π)-η(π̄)| simplifies to J(θ) = max η(π̄), enabling vanilla PPO training. 16.8% average speedup (Table 4).",
+                    "evidence": [
+                      "C03",
+                      "Table 4",
+                      "§3.3",
+                      "Theorem 3.3"
+                    ],
+                    "children": [
+                      {
+                        "id": "N08",
+                        "type": "dead_end",
+                        "title": "Naive max η(π̄) leads to trivial solution (never blind)",
+                        "hypothesis": "Simply maximizing η(π̄) via PPO would learn to identify critical steps",
+                        "failure_mode": "The optimal solution to max η(π̄) without constraints is to never blind the agent (always output a^m=0), since blinding can only decrease reward. Mask network degenerates to identity.",
+                        "lesson": "Need explicit incentive to blind. Solution: add bonus reward +α·a^m_t when mask outputs 1. Led to the modified reward formulation (N09)."
+                      },
+                      {
+                        "id": "N09",
+                        "type": "decision",
+                        "title": "Add blinding bonus α·a^m to prevent trivial solution",
+                        "choice": "R'(s,a) = R(s,a) + α·a^m_t where α=0.0001 (all environments)",
+                        "alternatives": [
+                          "Constraint-based approach: enforce minimum blinding rate — more complex to implement",
+                          "Entropy regularization: add entropy bonus to mask distribution"
+                        ],
+                        "evidence": "Figure 9: fidelity scores insensitive to α ∈ {0.01, 0.001, 0.0001}. Table 4: 16.8% efficiency gain vs StateMask.",
+                        "children": [
+                          {
+                            "id": "N10",
+                            "type": "experiment",
+                            "title": "Verify Lemma 3.5: MaskNet sampling ≡ sampling from better policy ˆπ",
+                            "also_depends_on": [
+                              "N06"
+                            ],
+                            "result": "Proved: d^ˆπ_ρ(s,a) = d^π_ρ(s,a)·w(s,a) where w(s,a) ∝ Q^π(s,a). This reweighting corresponds to a policy ˆπ with η(ˆπ) ≥ η(π). Combined with Assumption 3.4, proves the distribution mismatch coefficient ||d^π*/d^ˆπ_ρ||∞ < ||d^π*/d^π_ρ||∞.",
+                            "evidence": [
+                              "C01",
+                              "Lemma 3.5",
+                              "Appendix B.2",
+                              "Theorem 3.6"
+                            ],
+                            "children": [
+                              {
+                                "id": "N11",
+                                "type": "decision",
+                                "title": "Add RND exploration from mixed initial states",
+                                "choice": "R'(s,a) = R(s,a) + λ·|f(s')-f̂(s')|² with λ=0.01 as default",
+                                "alternatives": [
+                                  "Goal-conditional RL exploration (Ren et al., 2019): requires goal specification",
+                                  "Count-based exploration: impractical in large/continuous state spaces",
+                                  "No exploration (fine-tuning only): insufficient for escaping local optima"
+                                ],
+                                "evidence": "Figure 8: λ>0 provides noticeable improvement vs λ=0. Table 7 malware: mixed+exploration (68.2%) >> mixed+no-exploration (58.4%).",
+                                "children": [
+                                  {
+                                    "id": "N12",
+                                    "type": "experiment",
+                                    "title": "Validate RICE generalizes to non-PPO pretrained agents (Experiment IV)",
+                                    "result": "SAC pre-trained Hopper agent refined via GAIL+RICE outperforms SAC fine-tuning, PPO fine-tuning, JSRL, StateMask-R. Switching to PPO-based refining also helps escape bottleneck even without RICE.",
+                                    "evidence": [
+                                      "C06",
+                                      "Figure 3",
+                                      "§4.3"
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+];
+
+function collectAll(nodes) {
+  let out = [];
+  for (const n of nodes) {
+    out.push(n);
+    if (n.children) out = out.concat(collectAll(n.children));
+  }
+  return out;
+}
+
+function renderStats(tree) {
+  const all = collectAll(tree);
+  const types = {};
+  all.forEach(n => { types[n.type] = (types[n.type] || 0) + 1; });
+  const maxDepth = (function getDepth(nodes, d) {
+    let m = d;
+    for (const n of nodes) {
+      if (n.children) m = Math.max(m, getDepth(n.children, d + 1));
+    }
+    return m;
+  })(tree, 1);
+
+  const el = document.getElementById("stats");
+  el.innerHTML = `
+    <div class="stat"><div class="stat-value">${all.length}</div><div class="stat-label">Nodes</div></div>
+    <div class="stat"><div class="stat-value">${maxDepth}</div><div class="stat-label">Max Depth</div></div>
+    <div class="stat"><div class="stat-value">${types.decision || 0}</div><div class="stat-label">Decisions</div></div>
+    <div class="stat"><div class="stat-value">${types.experiment || 0}</div><div class="stat-label">Experiments</div></div>
+    <div class="stat"><div class="stat-value">${types.dead_end || 0}</div><div class="stat-label">Dead Ends</div></div>
+  `;
+}
+
+function renderEvidence(ev) {
+  if (!ev) return "";
+  const items = Array.isArray(ev) ? ev : [ev];
+  if (items.length === 1 && typeof items[0] === "string" && items[0].length > 40) {
+    return `<div class="node-field"><div class="field-label">Evidence</div><div class="field-value">${esc(items[0])}</div></div>`;
+  }
+  return `<div class="node-field"><div class="field-label">Evidence</div><div class="evidence-tags">${items.map(i => `<span class="evidence-tag">${esc(String(i))}</span>`).join("")}</div></div>`;
+}
+
+function renderAlternatives(alts) {
+  if (!alts || alts.length === 0) return "";
+  return `<div class="node-field"><div class="field-label">Rejected Alternatives</div><ul class="alt-list">${alts.map(a => `<li>${esc(a)}</li>`).join("")}</ul></div>`;
+}
+
+function renderBody(node) {
+  let html = "";
+  const t = node.type;
+
+  if (t === "question" && node.description)
+    html += `<div class="node-field"><div class="field-label">Description</div><div class="field-value">${esc(node.description)}</div></div>`;
+
+  if (t === "experiment") {
+    if (node.result) html += `<div class="node-field"><div class="field-label">Result</div><div class="field-value">${esc(node.result)}</div></div>`;
+    html += renderEvidence(node.evidence);
+  }
+
+  if (t === "decision") {
+    if (node.choice) html += `<div class="node-field"><div class="field-label">Choice</div><div class="field-value">${esc(node.choice)}</div></div>`;
+    html += renderAlternatives(node.alternatives);
+    html += renderEvidence(node.evidence);
+  }
+
+  if (t === "dead_end") {
+    if (node.hypothesis) html += `<div class="node-field"><div class="field-label">Hypothesis</div><div class="field-value">${esc(node.hypothesis)}</div></div>`;
+    if (node.failure_mode) html += `<div class="node-field"><div class="field-label">Failure Mode</div><div class="field-value">${esc(node.failure_mode)}</div></div>`;
+    if (node.lesson) html += `<div class="node-field"><div class="field-label">Lesson</div><div class="field-value">${esc(node.lesson)}</div></div>`;
+  }
+
+  if (t === "pivot") {
+    if (node.from) html += `<div class="node-field"><div class="field-label">From</div><div class="field-value">${esc(node.from)}</div></div>`;
+    if (node.to) html += `<div class="node-field"><div class="field-label">To</div><div class="field-value">${esc(node.to)}</div></div>`;
+    if (node.trigger) html += `<div class="node-field"><div class="field-label">Trigger</div><div class="field-value">${esc(node.trigger)}</div></div>`;
+  }
+
+  return html;
+}
+
+function esc(s) {
+  const d = document.createElement("div");
+  d.textContent = s.trim();
+  return d.innerHTML;
+}
+
+const TYPE_LABELS = {
+  question: "Question",
+  experiment: "Experiment",
+  decision: "Decision",
+  dead_end: "Dead End",
+  pivot: "Pivot"
+};
+
+function renderNode(node) {
+  const hasChildren = node.children && node.children.length > 0;
+  const dagBadge = node.also_depends_on
+    ? `<span class="dag-badge"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M5 3a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm6 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm-3 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg>also: ${node.also_depends_on.join(", ")}</span>`
+    : "";
+
+  const chevronSvg = `<svg class="chevron" viewBox="0 0 16 16" fill="currentColor"><path d="M6.22 3.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06L9.94 8 6.22 4.28a.75.75 0 0 1 0-1.06z"/></svg>`;
+
+  let html = `<div class="node-group ${hasChildren ? "has-children" : ""}">`;
+  html += `<div class="node" onclick="this.classList.toggle('expanded')">`;
+  html += `<div class="node-header">`;
+  html += `<div class="node-indicator ${node.type}"></div>`;
+  html += `<span class="node-id">${node.id}</span>`;
+  html += `<span class="node-title">${esc(node.title)}${dagBadge}</span>`;
+  html += `<span class="node-type ${node.type}">${TYPE_LABELS[node.type]}</span>`;
+  html += chevronSvg;
+  html += `</div>`;
+  html += `<div class="node-body">${renderBody(node)}</div>`;
+  html += `</div>`;
+
+  if (hasChildren) {
+    html += `<div class="children">`;
+    for (const child of node.children) {
+      html += renderNode(child);
+    }
+    html += `</div>`;
+  }
+
+  html += `</div>`;
+  return html;
+}
+
+function render() {
+  renderStats(TREE);
+  const container = document.getElementById("tree");
+  container.innerHTML = TREE.map(renderNode).join("");
+}
+
+render();
+</script>
+</body>
+</html>

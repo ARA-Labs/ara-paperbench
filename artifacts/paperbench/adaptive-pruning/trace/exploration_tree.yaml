@@ -1,0 +1,128 @@
+# Exploration Tree — adaptive-pruning (APT)
+# Research DAG: nested tree with cross-edges (also_depends_on) forming a DAG.
+# Node types: question | experiment | dead_end | decision | pivot
+
+tree:
+  - id: N01
+    type: question
+    title: "Can a single method improve both training AND inference efficiency for LM fine-tuning?"
+    description: "Existing PEFT methods (LoRA, AdaLoRA) reduce training costs but leave inference unchanged. Structured pruning improves inference but worsens training. Is there a unified approach?"
+    children:
+
+      - id: N02
+        type: experiment
+        title: "Baseline: Naive combination of LoRA + structured pruning (LoRA+Prune)"
+        result: "Severe performance degradation (84.0/93.0 MNLI/SST2 vs 87.6/94.8 FT) and 6534.6% relative training time — far worse than either approach alone."
+        evidence: [C01, "Table 2", "§1", "§2.3"]
+        children:
+
+          - id: N03
+            type: dead_end
+            title: "Static LoRA ranks + post-training structured pruning (CPET approach)"
+            hypothesis: "Static LoRA adapters can compensate for parameters removed by structured pruning"
+            failure_mode: "Static tuning parameters cannot adapt to the dynamically changing parameter space during pruning; results in noticeable performance loss and extra training costs"
+            lesson: "Tuning parameters must be dynamic and co-adapted with pruning decisions; a new adapter architecture is needed"
+
+          - id: N04
+            type: decision
+            title: "Design choice: dynamic adapter architecture that controls both pruning AND tuning"
+            choice: "APT adapter with binary pruning masks (m_i, m_o) and dynamic rank (r_apt) built over LoRA"
+            alternatives:
+              - "HAdapters / Prefix-tuning (non-linear adapters) — rejected: cannot be merged at inference"
+              - "Separate pruning module without adapter integration — rejected: cannot co-optimize"
+              - "Quantization instead of pruning — rejected: requires specialized hardware support for speedup"
+            evidence: "LoRA mergeability enables zero inference overhead; binary masks enable structured pruning; dynamic rank enables adaptive tuning"
+            children:
+
+              - id: N05
+                type: question
+                title: "How to compute salience for frozen parameters inaccessible in PEFT?"
+                description: "Standard weight-gradient salience (Sanh et al., 2020) requires frozen weight gradients, which are unavailable in PEFT. How to score frozen parameter blocks?"
+                children:
+
+                  - id: N06
+                    type: dead_end
+                    title: "Use only tuning parameter salience (LRP approach)"
+                    hypothesis: "Salience of LoRA matrices W_A, W_B suffices to proxy frozen weight importance"
+                    failure_mode: "Misses frozen weight contribution; leads to sub-optimal block selection; LRP results confirm performance gap vs APT"
+                    lesson: "Block-wise salience must combine both frozen weight proxy and tuning weight salience (Equation 9)"
+
+                  - id: N07
+                    type: experiment
+                    title: "Activation-gradient product as proxy for frozen weight-gradient salience"
+                    result: "Activation × gradient computable from forward/backward hooks; summing over batch reduces memory; provides valid salience proxy."
+                    evidence: ["§4.2", "Equation 4", "Appendix B"]
+                    children:
+
+                      - id: N08
+                        type: question
+                        title: "Does block-level averaging of salience miss outlier parameters?"
+                        description: "Quantization literature (Dettmers et al., 2022) shows outliers are critical for LM capabilities. Will activation-gradient salience alone preserve them?"
+                        children:
+
+                          - id: N09
+                            type: experiment
+                            title: "Ablation: salience with and without kurtosis term for LLaMA pruning"
+                            result: "Removing kurtosis: LLaMA2-7B avg drops from 50.0 to 38.1 at 30% sparsity — a 23.8% degradation. Critical for large LMs."
+                            evidence: [C04, "Table 5", "§5.6"]
+                            children:
+
+                              - id: N10
+                                type: decision
+                                title: "Add kurtosis of activation to salience score (outlier-aware salience)"
+                                choice: "Ŝ(W_{:,j}) = S̃(W_{:,j}) + Kurt(O_{j,:})^{1/2}"
+                                alternatives:
+                                  - "Max activation magnitude instead of kurtosis — not explored in paper"
+                                  - "Standard deviation of activation — would also capture spread but less sensitive to outliers"
+                                evidence: "Kurtosis captures tail heaviness (outlier density); kurtosis ablation shows 24% performance drop for LLaMA"
+                                children: []
+
+              - id: N11
+                type: experiment
+                title: "Block selection: latency-saliency knapsack vs binary search over salience density"
+                result: "Binary search over salience-density-sorted blocks is O(log N) vs full knapsack. Monotone parameter count function enables exact binary search. Equivalent quality."
+                evidence: ["§4.2", "Appendix C", "Algorithm 1"]
+                children:
+
+                  - id: N12
+                    type: decision
+                    title: "Use salience density (salience/param_count) + binary search for block selection"
+                    choice: "Sort blocks by ρ(b) = Ŝ(b)/C(b), binary search for budget-feasible top-i"
+                    alternatives:
+                      - "Full knapsack DP — O(N·C_total) too expensive per training step"
+                      - "Greedy salience threshold — misses parameter count weighting"
+                    evidence: "Parameter count is monotonically increasing in number of retained blocks; enables exact binary search"
+                    children: []
+
+      - id: N13
+        type: experiment
+        title: "Adaptive tuning: static vs dynamic rank growth in salient adapters"
+        result: "APT w/o AT: SST2 93.2, MNLI 84.5 (vs APT: 94.5, 86.4); 16% slower convergence. Dynamic rank growth in top-half salient adapters recovers ~2 points accuracy and speeds training."
+        evidence: [C05, "Table 4", "§5.6"]
+        children:
+
+          - id: N14
+            type: dead_end
+            title: "Uniformly increasing ranks across all adapter layers"
+            hypothesis: "Adding tuning parameters uniformly across all layers recovers pruned model performance equally well"
+            failure_mode: "Uniform rank increase achieves only 84.4 on MNLI (vs 86.4 with salience-based allocation); wastes budget on low-importance layers"
+            lesson: "Tuning budget must be concentrated in task-sensitive layers identified by adapter importance I(H_apt)"
+
+  - id: N15
+    type: experiment
+    title: "Self-distillation: separate teacher vs shared frozen parameters"
+    also_depends_on: [N04]
+    result: "FT teacher: 111.8% memory, 7.9% training speed. APT self-distillation: 70.1% memory, 16.9% training speed. Self-distillation 2× faster and uses ~40% less memory than FT teacher approach."
+    evidence: [C03, "Table 10", "§4.4", "§G"]
+    children:
+
+      - id: N16
+        type: decision
+        title: "Use shared frozen parameters + duplicated tuning layers as teacher (self-distillation)"
+        choice: "Teacher shares frozen weights with student; only tuning layers are duplicated; random layer mapping per epoch from RAIL-KD"
+        alternatives:
+          - "LoRA teacher (separately trained LoRA model): extremely slow training (1.7% speed), 96.1% memory"
+          - "Separate FT teacher: 111.8% training memory — requires extra GPU for teacher model"
+          - "No distillation: faster (20.7% speed) but 1.7 accuracy points worse"
+        evidence: "Shared frozen params avoid doubling ~95% of model memory; self-distillation achieves near-FT-teacher quality at fraction of cost"
+        children: []

@@ -1,0 +1,173 @@
+# Exploration Tree — sequential-neural-score-estimation
+# Research DAG: nested tree with cross-edges (also_depends_on) forming a DAG.
+# Node types: question | experiment | dead_end | decision | pivot
+
+tree:
+  - id: N01
+    type: question
+    title: "Can conditional score-based diffusion models replace normalising flows for SBI?"
+    description: >
+      The central question: given that diffusion models achieve state-of-the-art
+      generative quality and avoid architectural restrictions of normalising flows,
+      can they be used to estimate the posterior score ∇_θ log p(θ|x) in the
+      simulation-based inference setting where the likelihood p(x|θ) is intractable?
+    children:
+
+      - id: N02
+        type: experiment
+        title: "Derive tractable DSM objective for posterior score estimation"
+        result: >
+          Showed that the intractable posterior score matching objective J^SM_post
+          is equivalent to the tractable denoising objective J^DSM_post (Eq. 7),
+          which only requires samples from p(θ)p(x|θ) and closed-form transition scores.
+          This yields NPSE — the amortised non-sequential algorithm.
+        evidence: ["C01", "Eq. 6-7", "Appendix A.1"]
+        children:
+
+          - id: N03
+            type: experiment
+            title: "Validate NPSE (VE/VP SDE) vs NPE on 8 sbibm benchmarks"
+            result: >
+              NPSE-VE and NPSE-VP achieve comparable C2ST to NPE on most tasks.
+              On SLCP and Lotka Volterra (hardest tasks), NPSE variants outperform NPE.
+              VE SDE is better for low-dimensional tasks; VP SDE for high-dimensional.
+            evidence: ["C01", "C05", "Figure 2"]
+            children:
+
+              - id: N04
+                type: decision
+                title: "Should we develop a sequential variant of NPSE?"
+                choice: >
+                  Yes — for a fixed observation x_obs, concentrating simulations near the
+                  posterior reduces simulation cost without sacrificing accuracy (same motivation
+                  as SNPE vs NPE). Develop SNPSE.
+                alternatives:
+                  - "Keep NPSE amortised-only (simpler, no proposal correction needed)"
+                  - "Use MCMC with NPSE score for sequential inference"
+                evidence: "Section 3 motivation; prior sequential SBI success (SNPE, TSNPE)"
+                children:
+
+                  - id: N05
+                    type: question
+                    title: "How to correct for proposal prior mismatch in sequential NPSE?"
+                    description: >
+                      When training on proposal distribution ˜p(θ) instead of prior p(θ),
+                      the DSM objective minimiser learns the proposal posterior score
+                      ∇_θ log ˜p_t(θ_t|x), not the true posterior score. Four approaches
+                      were explored in parallel.
+                    children:
+
+                      - id: N06
+                        type: experiment
+                        title: "SNPSE-A: Post-hoc SIR importance weight correction"
+                        result: >
+                          Works in principle but limited by mismatch between true
+                          proposal posterior ˜p(θ|x_obs) and the learned approximation
+                          ˜p_ψ(θ|x_obs). High variance in practice; only tractable for
+                          ≤2 rounds without approximating the normalising constant.
+                        evidence: ["C03", "Figure 6", "Appendix C.2"]
+                        children:
+
+                          - id: N07
+                            type: dead_end
+                            title: "SNPSE-A limited to 2 rounds without additional approximation"
+                            hypothesis: >
+                              SIR correction would be exact in the limit of infinite samples,
+                              giving a principled sequential algorithm analogous to SNPE-A.
+                            failure_mode: >
+                              For r>2 rounds, computing ˜p^r(θ) requires intractable normalising
+                              constants. Approximate alternatives (KDE, normalising flow) introduce
+                              additional errors. Empirically inferior to TSNPSE on SLCP and GLU.
+                            lesson: >
+                              Importance weight corrections are fundamentally limited by the
+                              approximation gap between true and learned proposal posteriors.
+                              Led to search for correction-free sequential approach.
+
+                      - id: N08
+                        type: experiment
+                        title: "SNPSE-B: Importance-weighted DSM loss"
+                        result: >
+                          Theoretically correct (equivalent to true DSM objective after
+                          reweighting). Practically, importance weights p(θ)/˜p^r(θ) are
+                          high-variance, causing unstable training and poor performance.
+                        evidence: ["C03", "Figure 6", "Appendix C.3"]
+                        children:
+
+                          - id: N09
+                            type: dead_end
+                            title: "SNPSE-B high-variance importance weights degrade training"
+                            hypothesis: >
+                              Reweighting the DSM loss by p(θ)/˜p^r(θ) should recover
+                              the true posterior score, analogous to SNPE-B.
+                            failure_mode: >
+                              Importance weights are high-variance for multi-round proposals,
+                              causing noisy gradient estimates and unstable convergence.
+                              Mirrors the known failure mode of SNPE-B (Lueckmann et al., 2017).
+                            lesson: >
+                              In-loss importance weighting is not robust; confirms that
+                              SNPE-B's instability extends to the score-based setting.
+
+                      - id: N10
+                        type: experiment
+                        title: "SNPSE-C: Score-space correction via proposal prior score"
+                        result: >
+                          Theoretically elegant: parameterises ˜s^r_ψ = s_ψ + ∇log˜p^r_t(θ_t) - ∇log p_t(θ_t)
+                          so that minimising the proposal DSM objective recovers the true posterior score.
+                          Requires approximating ∇log˜p^r_t(θ_t), which compounds errors.
+                          Empirically: C2ST ≈ 1 (complete failure).
+                        evidence: ["C03", "Appendix C.4"]
+                        children:
+
+                          - id: N11
+                            type: dead_end
+                            title: "SNPSE-C: proposal prior score approximation compounds errors fatally"
+                            hypothesis: >
+                              Estimating ∇log˜p^r_t(θ_t) with an auxiliary score network
+                              (trained via Eq. 123) and substituting into the score correction
+                              (Eq. 103) would allow recovering the true posterior score.
+                            failure_mode: >
+                              Training the proposal prior score network requires large samples
+                              and additional iterations. Its approximation error directly
+                              contaminates the posterior score estimate. In practice C2ST ≈ 1.0
+                              on all tested tasks, indicating complete failure.
+                            lesson: >
+                              Score-space corrections require highly accurate auxiliary estimates;
+                              any approximation errors cascade. Avoid approaches that chain
+                              multiple approximate score networks.
+
+                      - id: N12
+                        type: experiment
+                        title: "TSNPSE: Truncated proposals require no correction (Proposition 3.1)"
+                        result: >
+                          If ˜p^r(θ) ∝ p(θ) · I{θ ∈ HPR_ε} with the true posterior support
+                          Θ_obs ⊆ HPR_ε, then ˜p^r(θ) ∝ p(θ) on Θ_obs, and the DSM objective
+                          is minimised by the true posterior score (no correction needed).
+                          Empirically outperforms SNPSE-A, B, C on all tested tasks.
+                        evidence: ["C02", "C03", "C04", "Proposition 3.1", "Figure 3"]
+                        also_depends_on: [N06, N08, N10]
+                        children:
+
+                          - id: N13
+                            type: decision
+                            title: "Adopt TSNPSE as the preferred sequential method"
+                            choice: >
+                              TSNPSE: truncated proposal with rejection sampling
+                              (hypercube pre-rejection + log-density threshold κ),
+                              HPR estimated with ε=5×10⁻⁴ using 20000 ODE samples.
+                            alternatives:
+                              - "SNPSE-A (2-round limitation, SIR correction)"
+                              - "SNPSE-B (importance-weighted loss, high variance)"
+                              - "SNPSE-C (score-space correction, empirically fails)"
+                            evidence: >
+                              Figure 6 comparison; Proposition 3.1 theoretical guarantee;
+                              follows TSNPE's truncation strategy (Deistler et al., 2022a).
+                            children:
+
+                              - id: N14
+                                type: experiment
+                                title: "Validate TSNPSE on 8 benchmarks + Pyloric neuroscience"
+                                result: >
+                                  TSNPSE outperforms SNPE-C and TSNPE on SLCP and Lotka Volterra.
+                                  Results mixed on simpler tasks. Achieves 81% valid summary statistics
+                                  on Pyloric (9 rounds), superior to TSNPE and SNVI.
+                                evidence: ["C02", "C04", "Figure 3", "Figure 4c"]

@@ -1,0 +1,23 @@
+---
+# Environment
+
+- **Python**: Not specified in paper
+- **Framework**: Not specified in paper (PyTorch implied for open-weight models; OpenAI Python SDK for GPT models; sklearn for outlier detection)
+- **Hardware**:
+  - NVIDIA GPU: ~250h total (approx., 15GB memory)
+  - NVIDIA V100: ~50h, 16GB
+  - NVIDIA A100: ~60h, 40GB
+  - NVIDIA TPU v2: ~100h, 32GB
+- **Key dependencies**:
+  - transformers (HuggingFace) — for Llama 2, Llama 3, Mistral, SciBERT, RoBERTa
+  - openai Python SDK — for GPT-3.5, GPT-4o mini
+  - scikit-learn — IsolationForest, KNeighborsClassifier, OneClassSVM
+  - torch — for embedding inference
+  - numpy — for centroid/distance computations
+  - All versions: Not specified in paper
+- **Random seeds**: Not specified in paper
+- **Notes**:
+  - GPT-3.5 and GPT-4o mini require OpenAI API keys (https://openai.com/blog/openai-api)
+  - Mistral 7B: Apache 2.0 license (https://github.com/Mistralai/Mistral-src)
+  - Llama 2 7B and Llama 3 8B: Restricted access via Meta license (https://ai.meta.com/llama/)
+  - SciBERT, RoBERTa, MathBERT: Based on BERT-base (Google Research, Apache 2.0 / MIT)

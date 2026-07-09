@@ -1,0 +1,111 @@
+# Exploration Tree — self-expansion
+# Research DAG: nested tree with cross-edges (also_depends_on) forming a DAG.
+# Node types: question | experiment | dead_end | decision | pivot
+
+tree:
+  - id: N01
+    type: question
+    title: "How to achieve on-demand expansion for PTM-based CL?"
+    description: "Can a PTM-based CL method automatically determine when and where to add new modules, achieving sub-linear growth while maintaining competitive accuracy?"
+    children:
+
+      - id: N02
+        type: experiment
+        title: "Fixed adapter pool (ADAM-style) with first-session-only adaptation"
+        result: "Adapter frozen after Task 1; adapts well to tasks similar to Task 1 but shows insufficient plasticity for highly novel distributions"
+        evidence: [C03, "Table 2: No Exp.", "§4.3"]
+        children:
+
+          - id: N03
+            type: dead_end
+            title: "Fixed single adapter per layer (No Expansion)"
+            hypothesis: "One adapter trained on Task 1 would generalize to all future tasks via the frozen PTM's representations"
+            failure_mode: "Accuracy drops significantly on tasks with large distribution shifts (e.g., ImageNet-A: 61.20% vs SEMA 64.53%); insufficient plasticity for novel patterns"
+            lesson: "Fixed capacity is inadequate; expansion is necessary for diverse task streams"
+
+          - id: N04
+            type: pivot
+            from: "Fixed adapter pool"
+            to: "On-demand expansion: add adapters only when distribution shift is detected"
+            trigger: "Observation that tasks with similar distributions (e.g., cats→dogs) should reuse existing adapters, while tasks with novel patterns (cats→food) require new adapters"
+            children:
+
+              - id: N05
+                type: question
+                title: "How to detect layer-wise distribution shift without class labels?"
+                description: "Need a per-layer novelty detector that works without knowing task identity or class labels"
+                children:
+
+                  - id: N06
+                    type: dead_end
+                    title: "Hard selection via RD reconstruction error for adapter routing"
+                    hypothesis: "Using the RD with lowest reconstruction error to select the single most appropriate adapter (hard routing) would be sufficient"
+                    failure_mode: "Hard selection is unreliable for individual samples; batch-level statistics needed (cf. [55]); limits applicability in CL inference. RD-based routing still works (Table 7, ~2% gap) but underperforms learned soft router"
+                    lesson: "Hard RD routing is a valid but suboptimal strategy; a learned soft router is superior"
+
+                  - id: N07
+                    type: decision
+                    title: "Use AE-based RD with z-score expansion signal"
+                    choice: "Train an autoencoder as the representation descriptor; use z-score of reconstruction error as the expansion trigger; maintain 500-sample running stats buffer"
+                    alternatives:
+                      - "VAE-based RD (mentioned as option; not used in default)"
+                      - "Prototype-distance based novelty detection"
+                      - "Direct reconstruction error thresholding (without z-score normalization)"
+                    evidence: "Z-score normalization removes scale differences across tasks/adapters; Fig. 6 confirms insensitivity to threshold τ in range 1.0-2.0"
+                    children:
+
+                      - id: N08
+                        type: experiment
+                        title: "Expansion threshold sensitivity analysis on ImageNet-A and VTAB"
+                        result: "Accuracy remains stable across τ ∈ [1.0, 2.0] (ImageNet-A) confirming z-score robustness; VTAB shows expected accuracy-efficiency trade-off at very high τ"
+                        evidence: [C03, "Fig. 6", "§4.3"]
+                        children:
+
+                          - id: N09
+                            type: decision
+                            title: "Task-oriented expansion: at most one adapter per layer per task"
+                            choice: "Restrict expansion to CIL task boundaries; add at most one adapter per eligible layer per task; scan shallow-to-deep"
+                            alternatives:
+                              - "Fully online expansion (per sample or per batch)"
+                              - "Expansion at every task regardless of z-score (Expansion by Task)"
+                            evidence: "Task-oriented expansion improves parameter efficiency; expansion-by-task uses more params with lower accuracy (Table 5)"
+                            children:
+
+                              - id: N10
+                                type: experiment
+                                title: "Comparison with Expansion-by-Task variant"
+                                result: "SEMA (on-demand) uses fewer parameters while achieving higher accuracy on CIFAR-100, ImageNet-R, ImageNet-A, VTAB (Table 5)"
+                                evidence: [C02, C03, "Table 5", "Fig. 8"]
+                                also_depends_on: [N07]
+
+      - id: N11
+        type: question
+        title: "How to compose multiple adapters at inference without task ID?"
+        description: "When multiple adapters exist at a layer, how should they be combined for a given input without knowing which task it belongs to?"
+        children:
+
+          - id: N12
+            type: dead_end
+            title: "Average weighting / Random weighting of adapters"
+            hypothesis: "Uniform or random mixing would be sufficient since all adapters contribute useful representations"
+            failure_mode: "Avg. W. degrades significantly (ImageNet-A: 56.88% vs SEMA 64.53%); Rand. W. intermediate but still worse; neither learns to direct samples to the most relevant adapter"
+            lesson: "Adapter composition requires a learned routing function, not just uniform or random mixing"
+
+          - id: N13
+            type: decision
+            title: "Learn expandable soft weighting router jointly with adapters"
+            choice: "Linear(d → K) + Softmax router; only new column of W_mix is trainable when expanding; existing columns frozen"
+            alternatives:
+              - "Average weighting (Avg. W.) — no learned routing"
+              - "Random weighting (Rand. W.) per sample"
+              - "Top-1 hard selection using router weights"
+              - "RD-based hard routing using reconstruction error"
+            evidence: "Table 2 shows learned router outperforms all alternatives on both ImageNet-A and VTAB; Table 7 confirms learned router > RD-based routing"
+            children:
+
+              - id: N14
+                type: experiment
+                title: "Multi-layer expansion range ablation"
+                result: "Expanding layers 10-12 (last 3) provides best accuracy-efficiency tradeoff; layers 9-12 adds more adapters with diminishing returns (Fig. 7)"
+                evidence: [C02, C03, "Fig. 7", "§4.3"]
+                also_depends_on: [N09]

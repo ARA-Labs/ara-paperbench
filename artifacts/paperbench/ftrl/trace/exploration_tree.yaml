@@ -1,0 +1,113 @@
+# Exploration Tree — ftrl
+# Research DAG: nested tree with cross-edges (also_depends_on) forming a DAG.
+# Node types: question | experiment | dead_end | decision | pivot
+
+tree:
+  - id: N01
+    type: question
+    title: "Why does fine-tuning RL models fail to leverage pre-trained knowledge?"
+    description: "RL fine-tuning is substantially less successful than in supervised learning. What is the structural cause, and can it be fixed with existing techniques?"
+    children:
+
+      - id: N02
+        type: experiment
+        title: "Toy 2-state MDP analysis of FPC"
+        result: "Both state coverage gap and imperfect cloning gap cause convergence to suboptimal policies even in 2-state MDPs; FPC is a fundamental property of gradient-based optimization on parametric policies"
+        evidence: ["Figure 9", "Appendix A", "§2"]
+        children:
+
+          - id: N03
+            type: decision
+            title: "Formalize two specific FPC instances: SCG and ICG"
+            choice: "Define State Coverage Gap (pre-trained on FAR only) and Imperfect Cloning Gap (perturbed expert with distribution shift) as the two primary FPC instances"
+            alternatives:
+              - "Treat FPC as a single undifferentiated phenomenon without sub-typing"
+              - "Focus only on the distribution shift explanation without the function approximator interference perspective"
+            evidence: "Toy MDP analysis (N02) shows two distinct parameterization-driven failure modes"
+            children:
+
+              - id: N04
+                type: experiment
+                title: "APPLERETRIEVAL gridworld: verify FPC with linear function approximators"
+                result: "Forgetting increases with M (distance to apple); c parameter controls |b|/|w| ratio governing interference; linear model exhibits FPC confirming it is not a deep learning artifact"
+                evidence: ["Figure 10", "Figure 11", "Appendix A.2"]
+                children:
+
+                  - id: N05
+                    type: decision
+                    title: "Apply continual learning knowledge retention methods to RL fine-tuning"
+                    choice: "Treat FPC as analogous to catastrophic forgetting in continual learning; directly apply EWC, BC, KS, and EM as mitigation methods"
+                    alternatives:
+                      - "Design a new RL-specific retention method"
+                      - "Use curriculum learning to gradually expose FAR states"
+                      - "Use parameter isolation (Progressive Networks) to separate CLOSE and FAR representations"
+                    evidence: "FPC behaves identically to task-switching forgetting in CL; standard CL methods are off-the-shelf solutions"
+                    children:
+
+                      - id: N06
+                        type: experiment
+                        title: "NetHack: Fine-tuning with EWC, BC, KS vs. vanilla FT"
+                        result: "KS achieves ~11K (2× prior SOTA of 5K); BC second best; EWC deteriorates after some training; vanilla FT collapses to ~1K average return"
+                        evidence: ["C01", "C03", "C04", "Figure 3a", "Table 4", "Table 5"]
+                        children:
+
+                          - id: N07
+                            type: experiment
+                            title: "NetHack per-level analysis: Level 4 and Sokoban"
+                            result: "KS and BC maintain/improve Level 4 performance; KS struggles on Sokoban (deep levels not visited online); BC maintains Sokoban score; vanilla FT forgets both; confirms imperfect cloning gap"
+                            evidence: ["C03", "C06", "Figure 5", "Figure 4", "§5"]
+                            children: []
+
+                          - id: N08
+                            type: dead_end
+                            title: "EWC on NetHack: performance deteriorates after initial improvement"
+                            hypothesis: "EWC would maintain performance on FAR states by preventing parameter change on Fisher-important weights"
+                            failure_mode: "EWC is too conservative, eventually preventing the policy from improving on the downstream task; the Fisher diagonal from offline BC data may not accurately reflect online RL importance"
+                            lesson: "EWC is not the best choice for NetHack; still outperforms vanilla FT but is dominated by KS and BC"
+
+                      - id: N09
+                        type: experiment
+                        title: "Montezuma's Revenge: FT with BC and EWC (state coverage gap)"
+                        result: "BC achieves highest return (~6000); EWC converges faster than vanilla FT but saturates lower; Room 7 success rate maintained by BC/EWC but drops sharply for vanilla FT at ~20M steps"
+                        evidence: ["C01", "C02", "C04", "Figure 3b", "Figure 6", "§4, §5"]
+                        children:
+
+                          - id: N10
+                            type: dead_end
+                            title: "Kickstarting fails on Montezuma's Revenge (state coverage gap)"
+                            hypothesis: "KS would maintain Room 7 performance because it prevents the policy from deviating from π*"
+                            failure_mode: "KS applies KL on CLOSE states (Rooms 1-6) where π* was never trained; forcing KL(π*(s_CLOSE) ‖ πθ(s_CLOSE)) corrupts CLOSE learning because π* has no meaningful distribution on CLOSE states"
+                            lesson: "KS fundamentally cannot be used for state coverage gap; BC is the right choice because it uses a static pre-training buffer that only contains FAR state examples"
+
+                      - id: N11
+                        type: experiment
+                        title: "RoboticSequence: FT with BC, EM, EWC on 4-stage robotic sequence"
+                        result: "BC achieves ~80% overall success; EM close second; EWC above vanilla FT; vanilla FT ≈ from scratch; FAR stages collapse to 0% success within 100K steps under vanilla FT"
+                        evidence: ["C01", "C02", "C04", "Figure 3c", "Figure 7", "Figure 8", "§4, §5"]
+                        also_depends_on: [N03]
+                        children:
+
+                          - id: N12
+                            type: experiment
+                            title: "Log-likelihood and PCA analysis: irreversibility of forgetting"
+                            result: "Log-likelihood of pre-trained expert trajectories collapses at 100K steps (success → 0%); even after re-learning at ~4M steps (success >80%), log-likelihoods don't recover to original values; policy is qualitatively different after fine-tuning"
+                            evidence: ["C06", "Figure 8", "Figure 20", "Appendix F"]
+                            children: []
+
+                          - id: N13
+                            type: dead_end
+                            title: "Kickstarting fails on RoboticSequence (state coverage gap)"
+                            hypothesis: "KS would help maintain FAR stage performance while learning hammer/push"
+                            failure_mode: "Same failure mode as Montezuma's Revenge: KS forces KL on CLOSE states (hammer, push) where π* was only pre-trained on FAR stages; impossible to compute meaningful KL"
+                            lesson: "KS is strictly limited to imperfect cloning gap scenarios; documentation of this limitation is a key contribution of the paper"
+
+                      - id: N14
+                        type: decision
+                        title: "Method recommendation: use BC as default, KS for imperfect cloning gap"
+                        choice: "BC is the robust default; KS for imperfect cloning gap (NetHack); EM when off-policy algorithm available; EWC as computationally cheapest fallback"
+                        alternatives:
+                          - "Always use BC regardless of FPC type"
+                          - "Use EWC as the universal default (cheapest)"
+                          - "Design an automatic FPC-type detector to switch methods"
+                        evidence: "Empirical results across 3 environments; theoretical analysis of KS failure mode on SCG (N10, N13)"
+                        children: []

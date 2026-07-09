@@ -1,0 +1,97 @@
+# Exploration Tree — bam (arXiv:2402.14758v2)
+# Research DAG: nested tree with cross-edges (also_depends_on) forming a DAG.
+# Node types: question | experiment | dead_end | decision | pivot
+
+tree:
+  - id: N01
+    type: question
+    title: "Can BBVI be improved by replacing ELBO with a score-based divergence?"
+    description: "ELBO-based BBVI (ADVI) converges slowly due to high-variance gradients and sensitivity to learning rates. Can we design an alternative divergence that enables faster, more stable optimization for Gaussian variational families?"
+    children:
+
+      - id: N02
+        type: experiment
+        title: "Design score-based divergence with desirable properties"
+        result: "D(q;p) = E_q[||∇log(q/p)||²_{Cov(q)}] satisfies non-negativity, equality condition, and affine invariance. Computable for unnormalized p via score oracle only."
+        evidence: [C01, "Theorem A.3", "Theorem A.4", "§2.2"]
+        children:
+
+          - id: N03
+            type: decision
+            title: "Choice of weighting matrix in Fisher-type divergence"
+            choice: "Use M = Cov(q) (data-dependent, adapts to variational distribution)"
+            alternatives:
+              - "Fixed M = I (standard Fisher divergence) — not affine invariant"
+              - "Fixed M = constant matrix — affine invariant only for specific M"
+              - "M = precision matrix Gamma_q^{-1} of q — equivalent to Cov(q) for Gaussians"
+            evidence: "Theorem A.4 shows M = Cov(q) is the unique choice ensuring affine invariance via Γ_q = [Cov(q)]^{-1} for Gaussians"
+            children:
+
+              - id: N04
+                type: question
+                title: "Can D(q;p) be efficiently optimized over Gaussian family Q?"
+                description: "The score-based divergence is defined. Can we find a closed-form optimizer, avoiding stochastic gradient descent?"
+                children:
+
+                  - id: N05
+                    type: dead_end
+                    title: "Direct Monte Carlo minimization of D(q;p)"
+                    hypothesis: "Minimize Monte Carlo estimate of D(q;p) via reparameterization trick and SGD"
+                    failure_mode: "Reparameterization-based gradient of D̂_q(q;p) couples sampling distribution with optimization variable; leads to gradient-based method that does not exploit Gaussian structure. Same sensitivity issues as ADVI."
+                    lesson: "Need to decouple sampling from optimization by fixing the sampling distribution at q_t (biased estimator), then find analytical optimizer of the resulting objective."
+
+                  - id: N06
+                    type: decision
+                    title: "Use biased estimator D̂_{q_t}(q;p) + KL regularizer for proximal update"
+                    choice: "Fix sampling distribution at current q_t; add KL(q_t;q) regularizer to penalize large updates; minimize analytically"
+                    alternatives:
+                      - "Euclidean distance regularizer (standard SPP) — no closed form for Gaussian family"
+                      - "Wasserstein metric regularizer (Lambert et al., 2022) — proximal step not in closed form"
+                      - "No regularizer (GSM limit) — unstable for non-Gaussian targets"
+                    evidence: "KL divergence between Gaussians has a standard closed form; combined with score-matching term yields quadratic matrix equation with known solution"
+                    children:
+
+                      - id: N07
+                        type: experiment
+                        title: "Derive closed-form solution to L_BaM(q) = D̂_{q_t}(q;p) + (2/λ)KL(q_t;q)"
+                        result: "Stationarity condition for Σ yields quadratic matrix equation ΣUΣ + Σ = V with closed-form PD solution Σ = 2V[I + (I+4UV)^{1/2}]^{-1}. Mean updates follow linearly."
+                        evidence: [C02, "Appendix C", "Lemma B.1", "Lemma B.2", "§3.1"]
+                        children:
+
+                          - id: N08
+                            type: experiment
+                            title: "Prove convergence of BaM for Gaussian targets (Theorem 3.1)"
+                            result: "For Gaussian target in infinite-batch limit, normalized errors decay exponentially: ||ε_t|| ≤ (1-δ)^t||ε_0|| for all λ>0 and any initialization. Convergence rate δ = λβ/(1+λ) where β reflects initialization quality."
+                            evidence: [C04, "Theorem 3.1", "Appendix D", "§3.2"]
+                            children:
+
+                              - id: N09
+                                type: decision
+                                title: "Proof strategy: sandwiching inequality for normalized covariance"
+                                choice: "Introduce auxiliary matrices H_{t+1} ⪯ J_{t+1} ⪯ K_{t+1} that share eigenvectors with J_t, enabling scalar analysis via joint diagonalizability"
+                                alternatives:
+                                  - "Direct spectral analysis of J_{t+1} recursion — complicated by εε^T outer product term"
+                                  - "Lyapunov function approach — difficult to construct explicit function"
+                                evidence: "Lemma D.7 (joint diagonalizability) + Lemma B.4 (monotonicity of quadratic equation solutions) together enable the sandwich"
+
+                  - id: N10
+                    type: experiment
+                    title: "Verify BaM recovers GSM as B=1, λ→∞ special case"
+                    result: "In this limit, BaM updates match exactly GSM updates (Eqs. 42, 23 of Modi et al. 2023). Confirms BaM strictly generalizes GSM with principled regularization."
+                    evidence: [C03, "Appendix C.3"]
+                    also_depends_on: [N06]
+
+      - id: N11
+        type: experiment
+        title: "Empirical evaluation: Gaussian and non-Gaussian targets"
+        result: "BaM with large batch sizes converges orders of magnitude faster than ADVI in gradient evaluations. GSM competitive at B=2 but does not benefit from larger B. For non-Gaussian: BaM with decaying λ_t=BD/(t+1) outperforms ADVI; GSM diverges at s=1.8."
+        evidence: [C05, C06, "Figure 5.1", "Figure 5.2", "§5.1"]
+        also_depends_on: [N07]
+        children:
+
+          - id: N12
+            type: dead_end
+            title: "Constant learning rate for non-Gaussian targets"
+            hypothesis: "Constant λ_t = BD works for non-Gaussian targets as well as Gaussian"
+            failure_mode: "Constant λ_t does not converge for non-Gaussian targets; algorithm oscillates. Decaying λ_t = BD/(t+1) is required (verified in Figure E.5)."
+            lesson: "Non-Gaussian targets require decaying regularization schedule; constant schedule valid only when target is Gaussian or very close to Gaussian."

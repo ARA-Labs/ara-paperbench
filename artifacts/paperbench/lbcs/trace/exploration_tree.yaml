@@ -1,0 +1,90 @@
+# Exploration Tree — lbcs
+# Research DAG: nested tree with cross-edges (also_depends_on) forming a DAG.
+# Node types: question | experiment | dead_end | decision | pivot
+
+tree:
+  - id: N01
+    type: question
+    title: "Can we find the smallest coreset that maintains model performance, without fixing the size in advance?"
+    description: "All prior coreset selection methods fix the size k before selection and optimize only model performance. Can a method jointly minimize coreset size and preserve accuracy with a clear priority structure?"
+    children:
+
+      - id: N02
+        type: experiment
+        title: "Direct application of fixed-size bilevel selection (Eq. 3)"
+        result: "f1(m) is minimized effectively, but f2(m) remains near the predefined k across all outer iterations. Size is not reduced."
+        evidence: [C01, "Figure 1a-b", "§2.1"]
+        children:
+
+          - id: N03
+            type: dead_end
+            title: "Simply run fixed-size bilevel selection at multiple k values"
+            hypothesis: "Run Eq. 3 at many k values; pick the smallest k achieving acceptable f1 — this solves RCS."
+            failure_mode: "Requires expert assistance to determine which k values to try; not adaptive; performance is suboptimal compared to joint optimization."
+            lesson: "Multi-attempt approaches are inefficient and require manual k selection, motivating the need for automatic joint optimization."
+
+          - id: N04
+            type: experiment
+            title: "Weighted combination of f1 and f2 (Eq. 4, λ=0.5)"
+            result: "f2(m) collapses to near zero (dominant gradient √n term) while f1(m) remains large — worse than Eq. 3 alone."
+            evidence: [C01, "Figure 1c-d", "§2.1", "Appendix C.2"]
+            children:
+
+              - id: N05
+                type: dead_end
+                title: "Tune λ < 0.5 to give f1 higher weight"
+                hypothesis: "Setting λ < 0.5 will implicitly prioritize f1 over f2."
+                failure_mode: "Gradient norms of f1 and f2 differ by dataset, network, and task — no universal λ exists. Scale mismatch is intractable."
+                lesson: "Weighted combination cannot represent strict lexicographic priority; the scale of the two objectives is not controllable."
+
+              - id: N06
+                type: pivot
+                from: "Weighted objective (scalarization)"
+                to: "Lexicographic bilevel optimization"
+                trigger: "Realization (Shi et al. 2020) that lexicographic preferences cannot be represented as weighted objectives; need a priority-based formulation."
+                children:
+
+                  - id: N07
+                    type: decision
+                    title: "Formalize priority order as lexicographic preference over F(m) = [f1, f2]"
+                    choice: "Use lexicographic preference (Fishburn 1975): minimize f1 first; minimize f2 only within the region M*_1 where f1 is near-optimal (within ε)."
+                    alternatives:
+                      - "Pareto-front exploration (multi-objective methods): expensive and finds many suboptimal solutions"
+                      - "Constraint-based: fix f1 ≤ threshold, minimize f2 — requires knowing the threshold a priori"
+                    evidence: "Theorem of Shi et al. (2020) on non-representability of lexicographic preferences as weighted sums; alignment with practitioner needs."
+                    children:
+
+                      - id: N08
+                        type: experiment
+                        title: "Implement LexiFlow as the black-box outer optimizer for lexicographic bilevel problem"
+                        result: "LexiFlow with lexicographic comparisons reduces both f1 and f2 simultaneously; f2 shrinks below k while f1 stays within ε of optimum."
+                        evidence: [C01, C03, "Table 1", "§5.1"]
+                        children:
+
+                          - id: N09
+                            type: experiment
+                            title: "LBCS vs. 7 baselines on F-MNIST, SVHN, CIFAR-10"
+                            result: "LBCS achieves smaller coresets with equal or better accuracy than all baselines across all tested k and datasets."
+                            evidence: [C01, C02, "Table 2", "Table 3", "§5.2"]
+                            children:
+
+                              - id: N10
+                                type: experiment
+                                title: "LBCS robustness under 30%, 50% label noise and class imbalance on F-MNIST"
+                                result: "LBCS consistently outperforms all baselines under imperfect supervision; ε compromise reduces overfitting."
+                                evidence: [C04, "Figure 2", "§5.3"]
+
+                              - id: N11
+                                type: experiment
+                                title: "LBCS on ImageNet-1k with grouping trick (G=100)"
+                                result: "LBCS achieves best Top-5 accuracy at both 70% and 80% predefined ratios, with optimized ratios 68.53% and 77.82% respectively."
+                                evidence: [C05, "Table 4", "§5.4"]
+
+                              - id: N12
+                                type: decision
+                                title: "Ablation on search time T and initialization strategy"
+                                choice: "Use T=500 as default; offer LBCS+Moderate as variant with Moderate-based warm initialization."
+                                alternatives:
+                                  - "T=2000 — converges but unnecessary overhead after ~T=500"
+                                  - "Random initialization only — LBCS+Moderate achieves slightly better accuracy"
+                                evidence: "Table 7 (appendix): accuracy plateaus around T=500; Table 5 (appendix section 6): LBCS+Moderate improves over vanilla LBCS."

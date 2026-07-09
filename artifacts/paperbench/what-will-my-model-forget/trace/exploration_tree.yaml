@@ -1,0 +1,95 @@
+# Exploration Tree — what-will-my-model-forget
+# Research DAG: nested tree with cross-edges (also_depends_on) forming a DAG.
+# Node types: question | experiment | dead_end | decision | pivot
+
+tree:
+  - id: N01
+    type: question
+    title: "Can we predict which upstream examples will be forgotten during model refinement?"
+    description: "When fine-tuning a PTLM on a single error, can we forecast which upstream pretraining examples will lose correct predictions, without running expensive inference on all upstream examples with the updated model?"
+    children:
+
+      - id: N02
+        type: experiment
+        title: "Examine what happens to logit scores during model refinement"
+        result: "Logit changes in the online learning example partially transfer to upstream examples via the NTK; found 'logit-change transfer' phenomenon empirically (Figure 2a)"
+        evidence: ["Figure 2(a)", "Section 3.2", "§2.2"]
+        children:
+
+          - id: N03
+            type: decision
+            title: "Use NTK-based derivation to formalize logit-change transfer"
+            choice: "Derive Equation 2: logit change of xj ≈ Θ(xj,xi)Θ⁻¹(xi,xi) × logit change of xi, using first-order Taylor expansion"
+            alternatives:
+              - "Empirically fit a regression from logit change of xi to xj without theoretical backing"
+              - "Use gradient inner products directly (computationally expensive)"
+            evidence: "NTK theory (Lee et al. 2019) provides exact formulation; gradients for LM heads are just representations, making it tractable"
+            children:
+
+              - id: N04
+                type: experiment
+                title: "Test exact NTK-based forecasting (Fixed Logit) for head-only fine-tuning"
+                result: "Fixed logit-based forecasting (Eqn. 2) achieves F1=69.57 on BART0/Head and 68.37 on FLAN-T5/Head — competitive with representation-based on FLAN-T5/Head"
+                evidence: ["C03", "Table 1", "§5.1"]
+                children:
+
+                  - id: N05
+                    type: dead_end
+                    title: "Attempt to apply full NTK for LoRA/Full FT settings"
+                    hypothesis: "The full NTK Θ(xj,xi) can be computed efficiently for LoRA/Full FT to improve forecasting"
+                    failure_mode: "Requires TV backward passes per example — prohibitively expensive (TV ≈ 50K × 50 = 2.5M dimensions); Novak et al. 2022 confirms this is intractable for large LMs"
+                    lesson: "Must approximate the NTK with a trainable low-rank kernel to handle LoRA/Full FT settings"
+
+                  - id: N06
+                    type: decision
+                    title: "Approximate full NTK with trainable low-rank kernel h(xj,yj)h(xi,yi)^T"
+                    choice: "Replace Θ(xj,xi)Θ⁻¹(xi,xi) with trainable kernel Θ̃ = h(xj,yj)h(xi,yi)^T ∈ R^{T×T}, where h is a PTLM + 2-layer MLP"
+                    alternatives:
+                      - "Use gradient checkpointing to compute full NTK (still O(TV) per example)"
+                      - "Skip logit-based forecasting entirely and go straight to representation-based"
+                    evidence: "Low-dimensional gradient subspace assumption (consistent with Farajtabar et al. 2020, Saha et al. 2021)"
+                    children:
+
+                      - id: N07
+                        type: experiment
+                        title: "Test trainable logit-based forecasting on BART0 Full FT"
+                        result: "Trainable logit F1=57.15 vs threshold 55.75 on BART0/Full FT — improves over threshold, suggesting kernel approximation captures some dynamics"
+                        evidence: ["C03", "Table 1", "§5.1"]
+                        children:
+
+                          - id: N08
+                            type: dead_end
+                            title: "Apply trainable logit-based forecasting to FLAN-T5 LoRA/Full FT"
+                            hypothesis: "The trainable kernel Θ̃ will generalize from BART0 to FLAN-T5 since both are instruction-tuned seq2seq models"
+                            failure_mode: "F1 drops to 36.54 (LoRA) and 40.91 (Full FT) vs threshold 43.93 and 48.43 — significantly below threshold. FLAN-T5's logit dynamics are too complex for the simplified kernel."
+                            lesson: "Logit-change transfer cannot be captured by a simplified kernel for all model types. Need a model-agnostic approach."
+
+      - id: N09
+        type: pivot
+        from: "Interpretable logit-based forecasting (model-specific)"
+        to: "Black-box representation-based forecasting (model-agnostic)"
+        trigger: "Trainable logit-based model fails on FLAN-T5; need a method that works across model families without relying on logit dynamics"
+        children:
+
+          - id: N10
+            type: experiment
+            title: "Test representation-based forecasting with inner products of learned encodings"
+            result: "Representation-based forecasting achieves best F1 in 7/8 configurations: 79.32 (BART0/Head), 67.19 (BART0/Full FT), 67.81 (FLAN-T5Large/Head), 48.66 (LoRA), 51.51 (Full FT), 65.93 (T53B/Head), 42.99 (T53B/LoRA)"
+            evidence: ["C01", "Table 1", "§5.1"]
+            also_depends_on: [N08]
+            children:
+
+              - id: N11
+                type: experiment
+                title: "Ablate frequency prior from representation-based forecasting"
+                result: "Removing frequency prior consistently reduces F1 across all 8 configurations (e.g., 79.32→77.92 on BART0/Head, 51.51→50.38 on FLAN-T5Large/Full FT)"
+                evidence: ["C02", "Table 1", "w/o Prior rows", "§5.1"]
+                children: []
+
+              - id: N12
+                type: experiment
+                title: "Validate practical utility via targeted replay (Tables 3, 4)"
+                result: "Representation-based replay reduces EM Drop from 9.274% to 1.634% on BART0/Full FT and from 5.463% to 0.301% on FLAN-T5Large/LoRA — significantly better than random replay and competitive CL baselines MIR, OCS"
+                evidence: ["C04", "Table 3", "Table 4", "§5.2"]
+                also_depends_on: [N10]
+                children: []
