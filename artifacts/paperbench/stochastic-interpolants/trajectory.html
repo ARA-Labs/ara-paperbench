@@ -1,0 +1,2514 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ARA Trajectory</title>
+<!--
+  ARA Trajectory Viewer — canonical self-contained scaffold for the `research-visualizer` skill.
+
+  HOW THE SKILL USES THIS FILE
+  ----------------------------
+  The rendering logic below is FIXED. The agent does NOT rewrite it. The agent only:
+    1. Parses the ARA into one ARA_DATA object (schema in references/binding.md).
+    2. base64-inlines every referenced figure .png into node.result.figures[].img.
+    3. Replaces ONLY the JSON between the BEGIN/END markers in the <script id="ara-data"> block.
+    4. Writes the result to <ara>/trajectory.html (or --output).
+  Everything is inline (no CDN, no fetch, no server) so the output is one portable file.
+
+  INJECTION CONTRACT
+  ------------------
+  - Replace exactly the lines between  __ARA_DATA_BEGIN__  and  __ARA_DATA_END__.
+  - The payload MUST be valid JSON (it is read with JSON.parse).
+  - JSON must not contain the literal substring "</script>"; escape any "<" in inlined
+    markdown/text as "<" to be safe.
+  - The demo payload shipped here renders a 3-node sample so the bare template opens and
+    shows every node state (experiment, dead_end, isolated). The skill overwrites it.
+-->
+<style>
+  /* Research Visualizer — "field notebook of a machine scientist".
+     Cool archival vellum + ink; monospace is the machine-readout voice for
+     structure / IDs / data, a humanist serif carries the reasoning prose. The
+     signature is a traced trajectory spine that forks at branches and is struck
+     through at dead ends. Type is read from glyph + label; colour is reserved
+     for true epistemic status (teal = chrome, green = supported, amber =
+     tentative, clay-red = dead end) — never decoration. */
+  :root{
+    /* paper & ink — deliberately cool vellum, NOT warm cream */
+    --bg:#e9ece4; --panel:#f4f6f0; --panel2:#e3e7dd; --line:#ccd3c7; --ink:#1b2420;
+    --muted:#67726a; --faint:#8a948b; --accent:#0e6b62; --accent-ink:#0a4f48; --chip:#e6eae0;
+    --ok:#3a6a39; --warn:#a6402c; --tentative:#8a6310; --glyph-bg:#e0e5da; --glyph-ink:#4a544c;
+    --sel-bg:#e3ede7; --code-bg:#eaeee6; --reason-bg:#f4f6f0;
+    --iso-line:#b7c0ae; --iso-bg:#e5eadf; --iso-ink:#5f6b58;
+    --scrim:rgba(20,28,24,.42); --shadow:rgba(20,28,24,.16);
+    --add-bg:#e0ebdb; --add-ink:#2f5a2e; --del-bg:#f1e0da; --del-ink:#8c3623; --hunk:#67726a;
+    --spine:#c3ccbd; --grid:rgba(27,36,32,.05);
+    /* legacy type vars retained so any leftover hooks resolve */
+    --q:var(--glyph-bg); --exp:var(--glyph-bg); --dec:var(--glyph-bg); --piv:var(--glyph-bg); --ins:var(--glyph-bg); --def:var(--glyph-bg); --dead:var(--warn);
+    /* type roles: a serif reads the prose, monospace reads the machine */
+    --serif:ui-serif,"New York","Iowan Old Style",Palatino,Georgia,serif;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--bg);color:var(--ink);font:14px/1.65 var(--sans);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  code,pre,.mono{font-family:var(--mono)}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+
+  /* ---- masthead ---- */
+  header{padding:20px 24px 14px;border-bottom:1px solid var(--line);background:var(--panel)}
+  header .title{font-family:var(--serif);font-size:23px;font-weight:600;margin:0;letter-spacing:-.012em}
+  header .sub{font-family:var(--mono);color:var(--muted);font-size:11.5px;margin-top:5px;letter-spacing:.01em}
+  header details{margin-top:10px;color:var(--ink)}
+  header summary{cursor:pointer;color:var(--accent-ink);font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em}
+  .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:16px}
+  .toolbar input[type=search],.toolbar select{background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:6px 10px;font-size:13px;font-family:var(--sans)}
+  .toolbar input[type=search]{min-width:230px}
+  .toolbar input[type=search]:focus,.toolbar select:focus{border-color:var(--accent);outline:none}
+  .toolbar label{color:var(--muted);font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.06em;display:flex;gap:6px;align-items:center}
+  .btn{background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:6px 11px;font-size:12.5px;font-family:var(--mono);cursor:pointer;transition:border-color .12s,color .12s,background .12s}
+  .btn:hover{border-color:var(--accent);color:var(--accent-ink)}
+  .btn.primary{border-color:var(--accent);color:#fff;background:var(--accent)}
+  .btn.primary:hover{background:var(--accent-ink)}
+  .spacer{flex:1}
+  .count{color:var(--muted);font-family:var(--mono);font-size:11px;letter-spacing:.04em;padding-left:10px;border-left:1px solid var(--line)}
+
+  main{display:grid;grid-template-columns:minmax(300px,36%) 1fr;height:calc(100% - 0px);min-height:0}
+  #map{overflow:auto;border-right:1px solid var(--line);padding:18px 12px 56px;background:var(--bg);
+    background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+    background-size:24px 24px;background-position:-1px -1px}
+  #detail{overflow:auto;padding:26px 32px 80px;background:var(--bg)}
+
+  /* ---- process map: the trajectory spine is the signature ---- */
+  .node{position:relative;display:flex;gap:10px;align-items:flex-start;padding:7px 9px;border-radius:6px;cursor:pointer;border:1px solid transparent}
+  .node:hover{background:var(--panel2)}
+  .node.sel{background:var(--sel-bg);border-color:var(--accent)}
+  .node.deptarget{background:var(--sel-bg);outline:1px dashed var(--accent);outline-offset:-1px}
+  .node.dim{opacity:.32}
+  .node .glyph{flex:none;width:20px;height:20px;border-radius:5px;display:grid;place-items:center;font-family:var(--mono);font-size:11px;font-weight:700;color:var(--glyph-ink);background:var(--glyph-bg);border:1px solid var(--line);margin-top:1px}
+  .node.sel .glyph{border-color:var(--accent);color:var(--accent-ink)}
+  .node .nid{color:var(--muted);font-size:10.5px;font-family:var(--mono);letter-spacing:.02em}
+  .node .ntitle{font-size:13px;line-height:1.45}
+  .node.dead .ntitle{color:var(--warn);text-decoration:line-through;text-decoration-color:rgba(166,64,44,.45)}
+  .node .meta{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  /* the spine + branch connectors: nested steps trace back to their parent */
+  .kid{margin-left:19px;border-left:2px solid var(--spine);padding-left:14px}
+  .kid>.node::before{content:"";position:absolute;left:-14px;top:14px;width:10px;height:2px;background:var(--spine)}
+  .kid>.node.sel::before{background:var(--accent)}
+  .isobox{border:1px dashed var(--iso-line);border-radius:8px;margin:12px 2px;padding:6px 4px;background:var(--iso-bg)}
+  .isobox .isohdr{color:var(--iso-ink);font-family:var(--mono);font-size:10px;padding:3px 8px 7px;text-transform:uppercase;letter-spacing:.1em}
+  .dep{color:var(--muted);font-size:10px;font-family:var(--mono);border:1px solid var(--line);border-radius:4px;padding:0 5px}
+
+  .glyph.dead_end{background:var(--warn);color:#fff;border-color:var(--warn)}
+
+  /* ---- detail pane ---- */
+  .dhead{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-bottom:2px}
+  .badge{font-family:var(--mono);font-size:10px;font-weight:700;border-radius:4px;padding:3px 9px;color:var(--glyph-ink);background:var(--glyph-bg);border:1px solid var(--line);text-transform:uppercase;letter-spacing:.08em}
+  .badge.dead_end{background:var(--warn);color:#fff;border-color:var(--warn)}
+  .pill{font-family:var(--mono);font-size:10px;border:1px solid var(--line);border-radius:20px;padding:2px 9px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+  .pill.explicit{border-color:var(--ok);color:var(--ok)} .pill.inferred{border-color:var(--tentative);color:var(--tentative)}
+  .pill.iso{border-color:var(--iso-line);color:var(--iso-ink)}
+  .dtitle{font-family:var(--serif);font-size:25px;font-weight:600;margin:12px 0 6px;letter-spacing:-.012em;line-height:1.28}
+  .did{color:var(--muted);font-family:var(--mono);font-size:11.5px}
+
+  .block{border:1px solid var(--line);border-radius:7px;margin:15px 0;background:var(--panel)}
+  .block>summary{cursor:pointer;padding:11px 15px;font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);list-style:none;display:flex;align-items:center;gap:8px}
+  .block>summary::-webkit-details-marker{display:none}
+  .block>summary:hover{color:var(--accent-ink)}
+  .block>summary .tag{margin-left:auto;color:var(--faint);font-size:10.5px;font-weight:400;font-family:var(--mono);text-transform:none;letter-spacing:0}
+  .block .body{padding:4px 16px 16px}
+  /* the primary reasoning block: the agent's thinking, set as typeset prose */
+  .block.reason{border-left:3px solid var(--accent);background:var(--reason-bg)}
+  .block.reason>summary{color:var(--accent-ink)}
+  .block.reason .lead{font-family:var(--serif);font-size:17px;line-height:1.7;color:var(--ink)}
+  .didwhat{color:var(--muted);font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.09em;margin:16px 0 4px}
+  .lead{font-family:var(--serif);color:#2a322c;font-size:16px;line-height:1.7}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:11px}
+  .chip{background:var(--chip);border:1px solid var(--line);border-radius:4px;padding:2px 8px;font-size:11px;color:#46504a;font-family:var(--mono)}
+  .chip.ext{color:var(--muted)}
+
+  .claim{border:1px solid var(--line);border-left:2px solid var(--accent);border-radius:0 6px 6px 0;padding:11px 13px;margin:11px 0;background:var(--panel2)}
+  .claim h4{margin:0 0 6px;font-family:var(--mono);font-size:12px}
+  .claim .kv{font-size:13px;line-height:1.6;margin:4px 0;color:#3a423c}
+  .claim .kv b{color:var(--muted);font-weight:600;font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em}
+  .status{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.05em;border-radius:4px;padding:1px 7px;border:1px solid var(--line)}
+  .status.supported{color:var(--ok);border-color:var(--ok)}
+  .status.refuted{color:var(--warn);border-color:var(--warn)}
+  .status.hypothesis{color:var(--tentative);border-color:var(--tentative)}
+  .prov{font-size:11px;color:var(--iso-ink);font-family:var(--mono)}
+
+  .quote{border-left:3px solid var(--accent);background:var(--panel);border-radius:0 6px 6px 0;padding:9px 13px;margin:9px 0;font-size:13.5px;line-height:1.6;color:#2a322c}
+  .quote .ref{color:var(--muted);font-size:10.5px;font-family:var(--mono);margin-top:5px}
+  figure{margin:14px 0}
+  figure img{max-width:100%;border:1px solid var(--line);border-radius:5px;background:#fff;padding:6px}
+  figcaption{color:var(--muted);font-family:var(--mono);font-size:11px;margin-top:7px}
+
+  table.md{border-collapse:collapse;width:100%;font-family:var(--mono);font-size:12px;margin:10px 0}
+  table.md th,table.md td{border:1px solid var(--line);padding:5px 9px;text-align:left}
+  table.md th{background:var(--panel2);color:var(--ink);font-weight:700;text-transform:uppercase;font-size:10.5px;letter-spacing:.04em}
+  pre.snip{background:var(--code-bg);border:1px solid var(--line);border-radius:6px;padding:10px 12px;overflow:auto;font-size:12px;color:var(--ink);white-space:pre-wrap}
+
+  .ptr{font-size:13px;margin:7px 0}
+  .ptr .path{font-family:var(--mono);color:#46504a}
+  .truncated{color:var(--muted);font-size:11.5px;font-style:italic}
+  .empty{color:var(--muted);font-size:13px}
+  .none{color:var(--muted);padding:40px 24px;text-align:center;font-family:var(--mono);font-size:12px;letter-spacing:.02em}
+  kbd{background:var(--panel2);border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 5px;font-family:var(--mono);font-size:11px}
+
+  /* ---- enrichment layers (all inert unless the data is present) ---- */
+  .layerbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+  .lbtn .cnt{color:var(--muted);font-size:10.5px}
+  .chiplabel{color:var(--muted);font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.08em;margin:12px 0 3px}
+  .chip.jump{cursor:pointer}
+  .chip.jump:hover{border-color:var(--accent);color:var(--accent-ink)}
+  .chip.dangle{color:#9aa49b;text-decoration:line-through;cursor:not-allowed}
+  .chip.infer{border-style:dashed}
+  .chip-built{border-color:var(--ok);color:var(--ok)}
+  .chip-rej{border-color:var(--warn);color:var(--warn)}
+  .chip-recipe{border-color:var(--accent);color:var(--accent-ink)}
+  .nmark{color:var(--muted);font-size:10px;margin-left:5px;font-family:var(--mono)}
+  .rel{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.05em;border-radius:4px;padding:2px 8px;color:var(--glyph-ink);background:var(--glyph-bg);font-weight:700}
+  .rel.bounds,.rel.refutes{background:var(--warn);color:#fff}
+  .rel.neutral{background:var(--chip);color:var(--ink);border:1px solid var(--line);font-weight:400}
+  .ribbon{border-left:3px solid var(--accent);background:var(--panel2);border-radius:0 6px 6px 0;padding:9px 13px;margin:9px 0;color:#3a423c;font-size:13px;line-height:1.6}
+  .warn{border-left:3px solid var(--warn);background:var(--del-bg);border-radius:0 6px 6px 0;padding:9px 13px;margin:9px 0;font-size:13px;line-height:1.6}
+  .muted{color:var(--muted);font-size:11.5px}
+  .math{font-family:var(--serif);font-style:italic}
+  .gterm{border-bottom:1px dashed var(--accent);cursor:help}
+  #gpop{position:fixed;max-width:360px;background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:11px 13px;z-index:60;box-shadow:0 8px 28px var(--shadow);font-size:13px;line-height:1.55;display:none}
+  #gpop h5{margin:0 0 5px;font-family:var(--mono);font-size:12px;text-transform:uppercase;letter-spacing:.05em}
+  #gpop .gp-open{color:var(--accent);cursor:pointer;font-family:var(--mono);font-size:11px;margin-top:7px;display:inline-block}
+  .ov{position:fixed;inset:0;z-index:50}
+  .ov[hidden]{display:none}
+  .ov-scrim{position:absolute;inset:0;background:var(--scrim)}
+  .ov-sheet{position:relative;margin:5vh auto;max-width:920px;max-height:86vh;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 16px 48px var(--shadow)}
+  .ov-head{position:sticky;top:0;display:flex;gap:10px;align-items:center;padding:13px 17px;border-bottom:1px solid var(--line);background:var(--panel);z-index:1}
+  .ov-head #ov-title{font-family:var(--mono);font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.09em;color:var(--accent-ink)}
+  .ov-head input[type=search]{flex:1;max-width:260px;background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:5px 10px;font-size:13px}
+  .ov-body{padding:10px 17px 26px}
+  .ov-body .spacer{flex:1}
+  .card{border:1px solid var(--line);border-radius:6px;padding:11px 13px;margin:11px 0;background:var(--panel2)}
+  .card h4{margin:0 0 6px;font-family:var(--mono);font-size:12px}
+  .card .sub{color:var(--muted);font-family:var(--mono);font-size:10.5px}
+  .grey{opacity:.5}
+
+  /* responsive: stack the two panes on a narrow screen */
+  @media (max-width:720px){
+    main{grid-template-columns:1fr;grid-template-rows:42vh 1fr}
+    #map{border-right:none;border-bottom:1px solid var(--line)}
+    #detail{padding:20px 18px 64px}
+    .dtitle{font-size:21px}
+  }
+  /* honour reduced-motion */
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<header>
+  <h1 class="title" id="h-title">ARA Trajectory</h1>
+  <div class="sub" id="h-sub"></div>
+  <details id="h-abstract-wrap"><summary>Abstract</summary><div class="lead" id="h-abstract"></div></details>
+  <div class="toolbar">
+    <input type="search" id="q" placeholder="search steps…" autocomplete="off" />
+    <label>type
+      <select id="ftype"><option value="">all</option></select>
+    </label>
+    <label><input type="checkbox" id="fdead" /> dead ends only</label>
+    <span class="spacer"></span>
+    <button class="btn" id="rprev" title="previous (←)">‹</button>
+    <button class="btn primary" id="rplay">▶ Replay</button>
+    <button class="btn" id="rnext" title="next (→)">›</button>
+    <span class="count" id="rstat"></span>
+  </div>
+  <div class="layerbar" id="layerbar">
+    <button class="btn lbtn" data-panel="context" hidden>◧ Context</button>
+    <button class="btn lbtn" data-panel="glossary" hidden>▤ Glossary <span class="cnt"></span></button>
+    <button class="btn lbtn" data-panel="dependencies" hidden>⇄ Dependencies <span class="cnt"></span></button>
+    <button class="btn lbtn" data-panel="recipes" hidden>▦ Recipes <span class="cnt"></span></button>
+  </div>
+</header>
+
+<main>
+  <aside id="map"></aside>
+  <section id="detail"><div class="none">Select a step on the left, or press <kbd>▶ Replay</kbd>.</div></section>
+</main>
+
+<!-- v1.1: one shared modal overlay for the Context/Glossary/Dependencies/Recipes panels, + a glossary popover. Both inert unless their data is present. -->
+<div id="overlay" class="ov" hidden role="dialog" aria-modal="true">
+  <div class="ov-scrim" data-close></div>
+  <div class="ov-sheet">
+    <div class="ov-head"><span id="ov-title"></span>
+      <input type="search" id="ov-q" placeholder="filter…" hidden autocomplete="off" />
+      <span class="spacer"></span>
+      <button class="btn" id="ov-close" data-close>✕ <kbd>Esc</kbd></button>
+    </div>
+    <div class="ov-body" id="ov-body"></div>
+  </div>
+</div>
+<div id="gpop"></div>
+
+<!-- The skill replaces ONLY the JSON between the two markers below. -->
+<script id="ara-data" type="application/json">
+/* __ARA_DATA_BEGIN__ */
+{
+  "meta": {
+    "title": "Stochastic Interpolants with Data-Dependent Couplings",
+    "authors": [
+      "Michael S. Albergo",
+      "Mark Goldstein",
+      "Nicholas M. Boffi",
+      "Rajesh Ranganath",
+      "Eric Vanden-Eijnden"
+    ],
+    "year": "2024",
+    "venue": "Proceedings of the 41st International Conference on Machine Learning (ICML 2024)",
+    "ara_dir": "stochastic-interpolants",
+    "abstract": "Generative models inspired by dynamical transport of measure — such as flows and diffusions — construct a continuous-time map between two probability densities. Conventionally, one of these is the target density, only accessible through samples, while the other is taken as a simple base density that is data-agnostic. In this work, using the framework of stochastic interpolants, we formalize how to couple the base and the target densities, whereby samples from the base are computed conditionally given samples from the target in a way that is different from (but does not preclude) incorporating information about class labels or continuous embeddings. This enables us to construct dynamical transport maps that serve as conditional generative models. We show that these transport maps can be learned by solving a simple square loss regression problem analogous to the standard independent setting. We demonstrate the usefulness of constructing dependent couplings in practice through experiments in super-resolution and in-painting."
+  },
+  "order": [
+    "N01",
+    "N02",
+    "N03",
+    "N04",
+    "N05",
+    "N06",
+    "N07",
+    "N08",
+    "N09",
+    "N10",
+    "N11",
+    "N12"
+  ],
+  "nodes": [
+    {
+      "id": "N01",
+      "type": "question",
+      "parent": null,
+      "title": "Can we adapt the base density to the target in stochastic interpolants?",
+      "body": "Standard flow/diffusion models use a data-agnostic Gaussian base. Can we design the base distribution ρ₀ to be correlated with the target ρ₁, and still train efficiently?",
+      "thinking": "Diffusion and flow-based generative models typically start from noise: they draw an initial 'base' sample from a plain Gaussian distribution that has nothing to do with the actual data they are trying to generate (the 'target' distribution). This opening question challenges that convention: what if the starting point were instead deliberately correlated with, i.e. dependent on, the target sample it is meant to produce? The catch is that any such change must still let the model be trained with the same efficient, simulation-free procedure used today. This question sets the agenda for the whole paper: find a principled way to couple base and target, and prove it does not break training.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [],
+      "built_on": [],
+      "rejected_here": [],
+      "concepts": [],
+      "recipe_refs": []
+    },
+    {
+      "id": "N02",
+      "type": "experiment",
+      "parent": "N01",
+      "title": "Is the quadratic regression objective valid for dependent couplings?",
+      "body": "Yes — Theorem 3.1 proves the velocity b_t(x) = E(İ_t|I_t=x) uniquely minimizes the quadratic loss for ANY coupling with correct marginals.",
+      "thinking": "Before designing anything concrete, the authors check whether the standard training recipe still holds once the base sample x0 is no longer drawn independently of the target x1. They prove (Theorem 3.1) that the same simple squared-error ('quadratic') regression loss still has a unique solution, the velocity field defined as the expected instantaneous rate of change of the interpolating path, no matter what joint coupling ρ(x0,x1) is used, so long as its marginals are correct. This is the theoretical green light: researchers are free to engineer more informative pairings between base and target without inventing a new training algorithm. Table 1 catalogs the menu of coupling choices this opens up, from the standard independent Gaussian base to the new 'dependent-coupling' design pursued in this paper.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [
+        "Theorem 3.1",
+        "§3.1"
+      ],
+      "why": [
+        {
+          "id": "C01",
+          "title": "Quadratic regression remains valid for dependent couplings",
+          "statement": "The velocity field bₜ(x) = E(İₜ|Iₜ=x) is the unique minimizer of the quadratic objective Lb(b̂) = ∫E[|b̂ₜ(Iₜ)|² - 2İₜ·b̂ₜ(Iₜ)]dt for ANY joint density ρ(x₀,x₁) with the correct marginals—dependent or independent.",
+          "status": "supported",
+          "conditions": "",
+          "falsification": "Find a dependent coupling for which the minimizer of Lb is not bₜ(x) = E(İₜ|Iₜ=x), or for which the transport equation (5) fails to hold.",
+          "dependencies": [],
+          "provenance": null
+        }
+      ],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [
+          {
+            "id": "table1_couplings",
+            "caption": "Table 1: Couplings",
+            "markdown": "| Coupling PDF ρ(x₀, x₁) | Base PDF | Description |\n|---|---|---|\n| ρ₁(x₁)ρ₀(x₀) | x₀ ~ N(0, Id) | Independent |\n| ρ(x₀\\|x₁)ρ₁(x₁) | x₀ ~ qφ(x₀\\|x₁) | Learned conditional |\n| mb-OT(x₁, x₀) | x₀ ~ N(0, Id) | Minibatch OT |\n| ρ₁(x₁)ρ₀(x₀\\|x₁) | x₀ ~ ρ₀(x₀\\|x₁) | **Dependent-coupling (this work)** |"
+          }
+        ],
+        "data": []
+      },
+      "verified_by": [
+        {
+          "id": "E01",
+          "title": "Theoretical validation of regression objective under dependent coupling",
+          "run": "",
+          "setup": "Model: Analytical / Gaussian mixture model (no neural network)\nHardware: CPU\nDataset: 2D Gaussian mixture model (GMM) with 3 modes\nSystem: Stochastic interpolant with dependent coupling ρ(x₀,x₁)=ρ₁(x₁)ρ₀(x₀|x₁)",
+          "metrics": "Visual comparison of probability flow trajectories; expected kinetic energy E[|İₜ|²] at each time t."
+        }
+      ],
+      "artifact": [
+        {
+          "name": "stochastic-interpolants implementation",
+          "pointer": "src/execution/ (3 files): inpainting.py, stochastic_interpolant.py, superresolution.py",
+          "what": "transcribed source code pointer index (not an external run-store pointer)"
+        }
+      ],
+      "built_on": [
+        {
+          "rw_id": "RW01",
+          "name": "Albergo & Vanden-Eijnden, 2022",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW02",
+          "name": "Albergo et al., 2023",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW03",
+          "name": "Lipman et al., 2022",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW07",
+          "name": "Lee et al., 2023",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW09",
+          "name": "De Bortoli et al., 2021",
+          "relation_raw": "baseline"
+        }
+      ],
+      "rejected_here": [],
+      "concepts": [
+        "Velocity Field"
+      ],
+      "recipe_refs": []
+    },
+    {
+      "id": "N03",
+      "type": "decision",
+      "parent": "N02",
+      "title": "Adopt dependent coupling framework with same training loss",
+      "body": "Use ρ(x₀,x₁) = ρ₁(x₁)ρ₀(x₀|x₁); keep the quadratic regression loss unchanged\n\nAlternatives considered: Learn the coupling jointly with the velocity (Lee et al., 2023) — introduces inference-time bias; Use mini-batch OT (Tong/Pooladian 2023) — uninformative at large dataset scale; Use Schrödinger bridges (De Bortoli 2021) — requires expensive iterative SDE solving",
+      "thinking": "With the theory cleared, the researchers commit to a concrete coupling design: draw the target first, then draw the base conditioned on it, ρ(x0,x1) = ρ1(x1)ρ0(x0|x1), while leaving the training loss exactly as before. They explicitly weigh and reject three alternatives: jointly learning the coupling with the velocity network (which introduces bias at inference time), mini-batch optimal transport (which loses signal on large datasets), and Schrödinger bridges (which require costly iterative solving). This decision narrows the design space and sets up the next question: what should this conditional base distribution actually look like for real tasks?",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [
+          {
+            "id": "table1_couplings",
+            "caption": "Table 1: Couplings",
+            "markdown": "| Coupling PDF ρ(x₀, x₁) | Base PDF | Description |\n|---|---|---|\n| ρ₁(x₁)ρ₀(x₀) | x₀ ~ N(0, Id) | Independent |\n| ρ(x₀\\|x₁)ρ₁(x₁) | x₀ ~ qφ(x₀\\|x₁) | Learned conditional |\n| mb-OT(x₁, x₀) | x₀ ~ N(0, Id) | Minibatch OT |\n| ρ₁(x₁)ρ₀(x₀\\|x₁) | x₀ ~ ρ₀(x₀\\|x₁) | **Dependent-coupling (this work)** |"
+          }
+        ],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [],
+      "built_on": [],
+      "rejected_here": [],
+      "concepts": [],
+      "recipe_refs": []
+    },
+    {
+      "id": "N04",
+      "type": "question",
+      "parent": "N03",
+      "title": "What is the best form for ρ₀(x₀|x₁) in inverse problems?",
+      "body": "Given that the coupling can be arbitrary, how should we design x₀ = m(x₁) + σζ for inpainting and super-resolution?",
+      "thinking": "Committing to a dependent-coupling framework in the abstract still leaves open how to instantiate it for real inverse problems like inpainting (filling in missing image regions) and super-resolution (upscaling a low-resolution image). The proposed template is x0 = m(x1) + σζ: the base sample is a task-specific corrupted or degraded version of the target, plus a small amount of Gaussian noise ζ. The open question is what form the degradation function m should take, and whether this choice is actually beneficial before committing to it at scale.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [],
+      "built_on": [],
+      "rejected_here": [],
+      "concepts": [],
+      "recipe_refs": []
+    },
+    {
+      "id": "N05",
+      "type": "experiment",
+      "parent": "N04",
+      "title": "Transport cost bound analysis for designed couplings",
+      "body": "For x₀ = m(x₁) + σζ with αₜ=1-t, βₜ=t: E[|İₜ|²] = dσ² &lt;&lt; 2E[|x₁|²]+dσ² (independent bound). Dependent coupling strictly reduces transport cost.",
+      "thinking": "To justify the m(x1) + σζ template before building anything, the authors derive a bound on how far the generative process has to 'travel'. Using the interpolation schedule αt=1-t, βt=t, the expected transport cost collapses to dσ², dramatically smaller than the bound for an independent Gaussian base, 2E[|x1|²]+dσ². Because this cost bound directly reflects how much work (kinetic energy) the model's flow has to do at each step, its reduction predicts that dependent-coupling models should learn simpler, cheaper-to-integrate trajectories, giving a concrete theoretical reason to prefer this construction over a data-agnostic base.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [
+        "Proposition 3.1",
+        "§3.3"
+      ],
+      "why": [
+        {
+          "id": "C02",
+          "title": "Dependent couplings reduce transport cost upper bound",
+          "statement": "For the coupling x₀ = m(x₁) + σζ with αt=1-t, βt=t, the transport cost bound E[|Xₜ₌₁(x₀)-x₀|²] ≤ ∫E[|İₜ|²]dt equals dσ², which is strictly less than the independent-coupling bound 2E[|x₁|²] + dσ².",
+          "status": "supported",
+          "conditions": "",
+          "falsification": "Demonstrate a case where the dependent coupling bound is ≥ the independent coupling bound when m(x₁) is proximal to x₁.",
+          "dependencies": [
+            "C01"
+          ],
+          "provenance": null
+        }
+      ],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [
+        {
+          "id": "E01",
+          "title": "Theoretical validation of regression objective under dependent coupling",
+          "run": "",
+          "setup": "Model: Analytical / Gaussian mixture model (no neural network)\nHardware: CPU\nDataset: 2D Gaussian mixture model (GMM) with 3 modes\nSystem: Stochastic interpolant with dependent coupling ρ(x₀,x₁)=ρ₁(x₁)ρ₀(x₀|x₁)",
+          "metrics": "Visual comparison of probability flow trajectories; expected kinetic energy E[|İₜ|²] at each time t."
+        }
+      ],
+      "artifact": [
+        {
+          "name": "stochastic-interpolants implementation",
+          "pointer": "src/execution/ (3 files): inpainting.py, stochastic_interpolant.py, superresolution.py",
+          "what": "transcribed source code pointer index (not an external run-store pointer)"
+        }
+      ],
+      "built_on": [
+        {
+          "rw_id": "RW01",
+          "name": "Albergo & Vanden-Eijnden, 2022",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW02",
+          "name": "Albergo et al., 2023",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW04",
+          "name": "Liu et al., 2022 (Rectified Flow)",
+          "relation_raw": "baseline"
+        }
+      ],
+      "rejected_here": [
+        {
+          "rw_id": "RW05",
+          "name": "Pooladian et al., 2023",
+          "relation_raw": "bounds"
+        },
+        {
+          "rw_id": "RW06",
+          "name": "Tong et al., 2023",
+          "relation_raw": "bounds"
+        }
+      ],
+      "concepts": [
+        "Transport Cost Bound"
+      ],
+      "recipe_refs": []
+    },
+    {
+      "id": "N06",
+      "type": "decision",
+      "parent": "N05",
+      "title": "Use task-specific corruption m(x₁) as mean of base distribution",
+      "body": "x₀ = m(x₁) + σζ where m is the task-appropriate degradation (masking for inpainting, downsampling+upsampling for super-res)\n\nAlternatives considered: Use x₀ = x₁ + σζ (noisy copy) for all tasks — valid but not task-specific; Use Gaussian base N(0, I) — simple but high transport cost",
+      "thinking": "The transport-cost analysis motivates a design rule: build the base distribution around a task-specific corruption m(x1) of the target rather than something generic. For inpainting that means masking; for super-resolution it means downsampling then upsampling. The researchers explicitly reject two simpler options: using a noisy copy of x1 itself (valid, but not tailored to the task's actual degradation) and a plain Gaussian base (simple, but shown in the previous step to incur much higher transport cost). This decision is the branching point from which the paper's two main empirical tests, inpainting and super-resolution, both proceed.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [
+        "Transport cost bound in Proposition 3.1; simpler trajectories in Figure 2"
+      ],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [],
+      "built_on": [],
+      "rejected_here": [],
+      "concepts": [],
+      "recipe_refs": []
+    },
+    {
+      "id": "N07",
+      "type": "experiment",
+      "parent": "N06",
+      "title": "Inpainting on ImageNet-256 with dependent coupling",
+      "body": "FID-50k=1.13 (dependent) vs 1.35 (uncoupled baseline). Dependent coupling outperforms.",
+      "thinking": "This is the first large-scale test of the dependent-coupling idea: training on ImageNet at 256x256 resolution for the inpainting task. The dependent-coupling model reaches an FID-50k (Fréchet Inception Distance, a standard image-quality score where lower means generated samples look more realistic) of 1.13, beating an otherwise identical model trained with the conventional independent, uncoupled base, which scores 1.35. The result confirms that the theoretical transport-cost advantage established in the previous steps actually pays off in generated image quality, not just in a toy analysis.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [
+        "§4.1"
+      ],
+      "why": [
+        {
+          "id": "C03",
+          "title": "Dependent coupling inpainting outperforms uncoupled baseline on ImageNet",
+          "statement": "Training on ImageNet with the data-dependent inpainting coupling (x₀ = ξ∘x₁ + (1-ξ)∘ζ, αt=t, βt=1-t) achieves FID-50k of 1.13, compared to 1.35 for the uncoupled baseline.",
+          "status": "supported",
+          "conditions": "",
+          "falsification": "Reproduce the experiment and obtain FID-50k ≥ 1.35 for dependent coupling or ≤ 1.13 for the uncoupled baseline.",
+          "dependencies": [
+            "C01"
+          ],
+          "provenance": null
+        }
+      ],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [
+          {
+            "id": "figure3_inpainting_samples",
+            "caption": "Figure 3: Image Inpainting Samples",
+            "markdown": "| Resolution | Number of examples shown | Layout |\n|-----------|--------------------------|--------|\n| 256×256 | 6 | Left: masked x₀; Center: model output; Right: ground truth |\n| 512×512 | 4 | Left: masked x₀; Center: model output; Right: ground truth |"
+          },
+          {
+            "id": "table2_inpainting_fid",
+            "caption": "Table 2: FID for Inpainting Task",
+            "markdown": "| Model | FID-50k |\n|---|---|\n| Uncoupled Interpolant (Baseline) | 1.35 |\n| Dependent Coupling (Ours) | 1.13 |"
+          }
+        ],
+        "data": []
+      },
+      "verified_by": [
+        {
+          "id": "E02",
+          "title": "Inpainting FID on ImageNet-256",
+          "run": "",
+          "setup": "Model: U-Net velocity model (Dim=256, DimMults=(1,1,2,3,4), ResNet block groups=8, learned_sinusoidal_cond=True, learned_sinusoidal_dim=32, attn_dim_head=64, attn_heads=4, random_fourier_features=False)\nHardware: Multi-GPU setup (Lightning Fabric parallelism)\nDataset: ImageNet (256×256 resolution), training and validation sets\nSystem: (a) Uncoupled interpolant baseline; (b) Dependent coupling inpainting model",
+          "metrics": "FID-50k (lower is better)."
+        }
+      ],
+      "artifact": [
+        {
+          "name": "stochastic-interpolants implementation",
+          "pointer": "src/execution/ (3 files): inpainting.py, stochastic_interpolant.py, superresolution.py",
+          "what": "transcribed source code pointer index (not an external run-store pointer)"
+        }
+      ],
+      "built_on": [
+        {
+          "rw_id": "RW11",
+          "name": "Ho et al., 2020b (DDPM)",
+          "relation_raw": "imports"
+        }
+      ],
+      "rejected_here": [],
+      "concepts": [
+        "Inpainting Coupling"
+      ],
+      "recipe_refs": []
+    },
+    {
+      "id": "N08",
+      "type": "decision",
+      "parent": "N07",
+      "title": "Mask velocity output to enforce structural constraint",
+      "body": "Zero out velocity on known (unmasked) pixels; use αₜ=t, βₜ=1-t so İₜ=0 on known pixels\n\nAlternatives considered: Let network predict velocity everywhere — wastes capacity predicting zero; Use replacement method (Ho et al. 2022b) — requires inference-time correction",
+      "thinking": "Inpainting has a special structure the model can exploit: the pixels outside the masked region are already known and should not be touched. Rather than asking the network to learn on its own that these regions must stay fixed, the researchers enforce it structurally: by choosing interpolation coefficients so that the interpolant's time-derivative is zero on unmasked pixels, and zeroing the predicted velocity there, the network never wastes capacity trying to predict a trivial answer. They rejected two alternatives: letting the network predict velocity everywhere (wasteful) and fixing the output after the fact via a replacement trick from prior work (which needs an extra inference-time correction step). This refinement is part of what the FID=1.13 inpainting result from the previous step relies on.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [
+        "§4.1: İₜ = 0 on unmasked pixels structurally; output masking enforces this"
+      ],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [],
+      "built_on": [],
+      "rejected_here": [],
+      "concepts": [],
+      "recipe_refs": []
+    },
+    {
+      "id": "N09",
+      "type": "experiment",
+      "parent": "N06",
+      "title": "Super-resolution on ImageNet 64×64→256×256",
+      "body": "FID-50k train=2.13, valid=2.05. New SOTA surpassing I²SB (2.70 valid).",
+      "thinking": "The second and more demanding test of the same coupling design (decided in N06) applies it to super-resolution: turning a 64x64 ImageNet image into a 256x256 one. The dependent-coupling model reaches FID-50k of 2.13 on the training distribution and 2.05 on held-out validation data, surpassing the previous best method, I²SB, which scored 2.70 on validation. This second, independent success, on a different inverse problem with a different corruption function m, shows the dependent-coupling recipe is not a one-off trick for inpainting but a general strategy for building informative bases whenever a task-specific degradation of the target is available.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [
+        "N06"
+      ],
+      "source_refs": [
+        "§4.2"
+      ],
+      "why": [
+        {
+          "id": "C04",
+          "title": "Dependent coupling super-resolution achieves SOTA FID on ImageNet 64→256",
+          "statement": "The dependent coupling model trained on ImageNet 64×64→256×256 super-resolution achieves FID-50k of 2.13 (train) and 2.05 (validation), surpassing the previous best I²SB (2.70 valid).",
+          "status": "supported",
+          "conditions": "",
+          "falsification": "Reproduce the experiment and obtain validation FID-50k ≥ 2.70 for the dependent coupling model.",
+          "dependencies": [
+            "C01",
+            "C02"
+          ],
+          "provenance": null
+        }
+      ],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [
+          {
+            "id": "table3_superresolution_fid",
+            "caption": "Table 3: FID-50k for Super-resolution (64×64 → 256×256)",
+            "markdown": "| Model | Train FID-50k | Valid FID-50k |\n|---|---|---|\n| Improved DDPM (Nichol & Dhariwal, 2021) | 12.26 | — |\n| SR3 (Saharia et al., 2022) | 11.30 | 5.20 |\n| ADM (Dhariwal & Nichol, 2021) | 7.49 | 3.10 |\n| Cascaded Diffusion (Ho et al., 2022a) | 4.88 | 4.63 |\n| I²SB (Liu et al., 2023a) | — | 2.70 |\n| **Dependent Coupling (Ours)** | **2.13** | **2.05** |"
+          }
+        ],
+        "data": []
+      },
+      "verified_by": [
+        {
+          "id": "E03",
+          "title": "Super-resolution FID on ImageNet 64×64→256×256",
+          "run": "",
+          "setup": "Model: U-Net velocity model (same architecture as E02)\nHardware: Multi-GPU setup (Lightning Fabric parallelism)\nDataset: ImageNet (256×256 high-res target; 64×64 low-res input), train and validation sets\nSystem: Dependent coupling super-resolution model",
+          "metrics": "FID-50k train and FID-50k valid (lower is better)."
+        }
+      ],
+      "artifact": [
+        {
+          "name": "stochastic-interpolants implementation",
+          "pointer": "src/execution/ (3 files): inpainting.py, stochastic_interpolant.py, superresolution.py",
+          "what": "transcribed source code pointer index (not an external run-store pointer)"
+        }
+      ],
+      "built_on": [
+        {
+          "rw_id": "RW08",
+          "name": "Liu et al., 2023a (I²SB)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW10",
+          "name": "Saharia et al., 2022 (SR3)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW11",
+          "name": "Ho et al., 2020b (DDPM)",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW12",
+          "name": "Ho et al., 2022a (Cascaded Diffusion)",
+          "relation_raw": "baseline"
+        }
+      ],
+      "rejected_here": [],
+      "concepts": [],
+      "recipe_refs": []
+    },
+    {
+      "id": "N10",
+      "type": "dead_end",
+      "parent": "N01",
+      "title": "Learned coupling qφ(x₀|x₁) with independent sampling at inference",
+      "body": "Hypothesis: Learning the coupling jointly with the velocity could capture complex coupling structure without requiring knowledge of m(x₁)\n\nFailure mode: At inference, must sample from the true coupling ρ₀(x₀|x₁) but Lee et al. (2023) sample from ρ₀=N(0,I), introducing bias. The marginal of the learned coupling may not equal ρ₀.\n\nLesson: Consistent inference requires sampling from the actual learned/designed coupling, not a surrogate. Our approach uses the explicitly designed coupling at both training and inference.",
+      "thinking": "Before settling on the explicit m(x1)+σζ construction, the researchers considered an alternative: let a neural network learn its own conditional coupling qφ(x0|x1) directly from data, rather than hand-designing it, following an approach from Lee et al. (2023). The idea was appealing because it would not require knowing the degradation function m in advance. It fails at inference time: the model needs to sample x0 from the true learned coupling ρ0(x0|x1), but Lee et al.'s method actually samples from a plain Gaussian N(0,I) instead, creating a mismatch between what was trained on and what is used to generate samples. The lesson carried forward is that any coupling used during training must also be the one sampled from at inference, which is exactly what the paper's explicit, analytic construction guarantees.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [],
+      "built_on": [],
+      "rejected_here": [],
+      "concepts": [],
+      "recipe_refs": []
+    },
+    {
+      "id": "N11",
+      "type": "dead_end",
+      "parent": "N01",
+      "title": "Mini-batch OT coupling for large-scale ImageNet training",
+      "body": "Hypothesis: Running OT over mini-batches of ImageNet could build informative couplings automatically\n\nFailure mode: For large datasets, mini-batch OT estimates are computed on tiny subsets of the full distribution, making the coupling uninformative about the true population-level structure.\n\nLesson: Task-designed couplings (knowing m(x₁) analytically) are more reliable than mini-batch approximations at scale.",
+      "thinking": "A second alternative considered was building the coupling automatically via mini-batch optimal transport (OT): pairing up base and target samples within each training batch to form an informative correspondence, without needing to hand-design a degradation function. This breaks down at the scale of a dataset like ImageNet, because OT computed over a small mini-batch only sees a tiny slice of the full data distribution, so the resulting pairing carries little information about the true population-level structure between base and target. The takeaway is that when a task-specific degradation function m(x1) is available and known analytically, as in inpainting or super-resolution, it is more reliable than a coupling inferred from limited local batch statistics.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [],
+      "built_on": [],
+      "rejected_here": [],
+      "concepts": [],
+      "recipe_refs": []
+    },
+    {
+      "id": "N12",
+      "type": "experiment",
+      "parent": null,
+      "title": "Qualitative GMM-to-GMM transport: coupling vs conditioning",
+      "body": "Dependent coupling → simple non-crossing trajectories. Independent coupling → complex crossing trajectories with auxiliary modes. Conditional velocity → factorized flows per class.",
+      "thinking": "As a final, visual sanity check that complements the ImageNet-scale results, the researchers run a controlled toy experiment: transporting one 2D Gaussian mixture model (a distribution made of several bell-curve clusters) into another, comparing three setups side by side. The dependent-coupling construction, whose cost advantage was proven analytically back in N05, produces simple, non-crossing transport paths with no spurious intermediate clusters; a plain independent coupling produces complex, crossing trajectories that pass through extra auxiliary modes; and a model that instead conditions the velocity on a class label, without changing the coupling itself, produces separate, simple flows per class. The comparison makes concrete the distinction between coupling design (which distribution to start from) and conditioning (what extra information the velocity field is given), and visually confirms that the coupling choice, not just conditioning, is what simplifies the transport.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [
+        "N05"
+      ],
+      "source_refs": [
+        "§3"
+      ],
+      "why": [
+        {
+          "id": "C05",
+          "title": "Data-dependent couplings simplify transport trajectories qualitatively",
+          "statement": "Dependent couplings (ρ(x₀,x₁) = ρ₁(x₁)ρ₀(x₀|x₁)) produce simpler, non-crossing probability flow trajectories compared to independent couplings on GMM-to-GMM transport, with no formation of auxiliary intermediate modes.",
+          "status": "supported",
+          "conditions": "",
+          "falsification": "Demonstrate that dependent coupling probability flows exhibit crossing trajectories or intermediate auxiliary modes on the GMM example in Figure 2.",
+          "dependencies": [
+            "C02"
+          ],
+          "provenance": null
+        }
+      ],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [
+          {
+            "id": "figure2_transport_comparison",
+            "caption": "Figure 2: Data-dependent couplings vs conditioning",
+            "markdown": "| Panel | Coupling type | Trajectory complexity | Auxiliary intermediate modes |\n|-------|--------------|----------------------|------------------------------|\n| Left | Data-dependent: ρ(x₀,x₁)=ρ₁(x₁)ρ₀(x₀\\|x₁) | Simple, non-crossing | None |\n| Center | Independent + conditional velocity bₜ(x,ξ), ξ∈{0,1,2} | Simple per class | None (factorized) |\n| Right | Independent: ρ₀(x₀)ρ₁(x₁), unconditional bₜ(x) | Complex, crossing | Yes (auxiliary modes) |"
+          }
+        ],
+        "data": []
+      },
+      "verified_by": [
+        {
+          "id": "E04",
+          "title": "Qualitative trajectory comparison on GMM transport",
+          "run": "",
+          "setup": "Model: Analytical transport (exact velocity, no neural network)\nHardware: CPU\nDataset: 2D Gaussian Mixture Model (3 modes) as both source and target\nSystem: Three variants: (1) data-dependent coupling, (2) conditional velocity with ξ∈{0,1,2}, (3) unconditional + independent coupling",
+          "metrics": "Visual complexity of trajectories; presence of crossing; presence of auxiliary modes in intermediate density ρₜ."
+        }
+      ],
+      "artifact": [
+        {
+          "name": "stochastic-interpolants implementation",
+          "pointer": "src/execution/ (3 files): inpainting.py, stochastic_interpolant.py, superresolution.py",
+          "what": "transcribed source code pointer index (not an external run-store pointer)"
+        }
+      ],
+      "built_on": [],
+      "rejected_here": [],
+      "concepts": [],
+      "recipe_refs": []
+    }
+  ],
+  "context": {
+    "title": "Problem",
+    "summary": "- **Insight**: The transport equation ∂ₜρₜ(x) + ∇·(bₜ(x)ρₜ(x)) = 0 and the quadratic regression objective Lb(b̂) hold for ANY joint coupling ρ(x₀,x₁) with the correct marginals—not just independent couplings. The…",
+    "sections": [
+      {
+        "role": "setting",
+        "heading": "Setting",
+        "present": false,
+        "entries": []
+      },
+      {
+        "role": "observations",
+        "heading": "Observations",
+        "present": true,
+        "entries": [
+          {
+            "ent_id": "O1",
+            "inferred_id": false,
+            "ent_title": "Standard generative models use data-agnostic base densities",
+            "text": "- **Statement**: Flow matching, rectified flow, and stochastic interpolants conventionally set the base density ρ₀ to a standard Gaussian N(0, Id), regardless of the structure of the target density ρ₁.\n- **Evidence**: §1 \"the choice of Gaussian base represents an absence of prior knowledge about the problem structure, and existing works have yet to fully explore the strength of base densities adapted to the target\"\n- **Implication**: The transport from a generic Gaussian to a structured target density may be unnecessarily complex, leading to curved trajectories that require many ODE steps to integrate accurately.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "Flow matching, rectified flow, and stochastic interpolants conventionally set the base density ρ₀ to a standard Gaussian N(0, Id), regardless of the structure of the target density ρ₁."
+              },
+              {
+                "label": "Evidence",
+                "value": "§1 \"the choice of Gaussian base represents an absence of prior knowledge about the problem structure, and existing works have yet to fully explore the strength of base densities adapted to the target\""
+              },
+              {
+                "label": "Implication",
+                "value": "The transport from a generic Gaussian to a structured target density may be unnecessarily complex, leading to curved trajectories that require many ODE steps to integrate accurately."
+              }
+            ],
+            "refs": []
+          },
+          {
+            "ent_id": "O2",
+            "inferred_id": false,
+            "ent_title": "Independent coupling induces high transport costs for structured problems",
+            "text": "- **Statement**: For inverse problems (inpainting, super-resolution), starting from an independent Gaussian base creates crossing trajectories and high kinetic energy E[|İₜ|²] compared to starting from a corrupted version of the target.\n- **Evidence**: Fig. 2 (right panel) shows complex crossing trajectories for independent coupling on a GMM-to-GMM transport; Proposition 3.1 establishes E[|Xₜ₌₁(x₀)-x₀|²] ≤ ∫E[|İₜ|²]dt\n- **Implication**: The upper bound on transport cost in (15) is strictly larger for independent couplings than for well-designed dependent couplings.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "For inverse problems (inpainting, super-resolution), starting from an independent Gaussian base creates crossing trajectories and high kinetic energy E[|İₜ|²] compared to starting from a corrupted version of the target."
+              },
+              {
+                "label": "Evidence",
+                "value": "Fig. 2 (right panel) shows complex crossing trajectories for independent coupling on a GMM-to-GMM transport; Proposition 3.1 establishes E[|Xₜ₌₁(x₀)-x₀|²] ≤ ∫E[|İₜ|²]dt"
+              },
+              {
+                "label": "Implication",
+                "value": "The upper bound on transport cost in (15) is strictly larger for independent couplings than for well-designed dependent couplings."
+              }
+            ],
+            "refs": []
+          },
+          {
+            "ent_id": "O3",
+            "inferred_id": false,
+            "ent_title": "Inverse problems have natural data-dependent structure",
+            "text": "- **Statement**: In inpainting and super-resolution, we always observe a degraded/partial version of the target x₁ at inference time. This corrupted observation m(x₁) can be used to define the base distribution.\n- **Evidence**: §4.1 \"the missing areas of the image are defined at time zero as independent normal random variables\"; §4.2 \"x₀ = U(D(x₁)) + σζ\"\n- **Implication**: Setting x₀ = m(x₁) + σζ (corrupted target + small noise) creates a base proximal to the target, drastically simplifying transport.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "In inpainting and super-resolution, we always observe a degraded/partial version of the target x₁ at inference time. This corrupted observation m(x₁) can be used to define the base distribution."
+              },
+              {
+                "label": "Evidence",
+                "value": "§4.1 \"the missing areas of the image are defined at time zero as independent normal random variables\"; §4.2 \"x₀ = U(D(x₁)) + σζ\""
+              },
+              {
+                "label": "Implication",
+                "value": "Setting x₀ = m(x₁) + σζ (corrupted target + small noise) creates a base proximal to the target, drastically simplifying transport."
+              }
+            ],
+            "refs": []
+          },
+          {
+            "ent_id": "O4",
+            "inferred_id": false,
+            "ent_title": "Existing coupling methods have practical limitations",
+            "text": "- **Statement**: Minibatch OT methods (Pooladian et al., 2023; Tong et al., 2023) become uninformative on large datasets; learned conditional methods (Lee et al., 2023) introduce bias by sampling from an independent Gaussian at inference; Schrödinger bridge methods (De Bortoli et al., 2021) require costly iterative SDE solving.\n- **Evidence**: §2 \"for large datasets, may become uninformative as to the true coupling\"; \"introduces a potential bias\"; \"costly in practice\"\n- **Implication**: A flexible, deterministic, simulation-free method for data-dependent couplings is needed.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "Minibatch OT methods (Pooladian et al., 2023; Tong et al., 2023) become uninformative on large datasets; learned conditional methods (Lee et al., 2023) introduce bias by sampling from an independent Gaussian at inference; Schrödinger bridge methods (De Bortoli et al., 2021) require costly iterative SDE solving."
+              },
+              {
+                "label": "Evidence",
+                "value": "§2 \"for large datasets, may become uninformative as to the true coupling\"; \"introduces a potential bias\"; \"costly in practice\""
+              },
+              {
+                "label": "Implication",
+                "value": "A flexible, deterministic, simulation-free method for data-dependent couplings is needed."
+              }
+            ],
+            "refs": []
+          }
+        ]
+      },
+      {
+        "role": "gaps",
+        "heading": "Gaps",
+        "present": true,
+        "entries": [
+          {
+            "ent_id": "G1",
+            "inferred_id": false,
+            "ent_title": "No unified framework for data-dependent base densities in flow-based models",
+            "text": "- **Statement**: Existing stochastic interpolant and flow matching formulations lack a principled way to define and use ρ(x₀,x₁) = ρ₁(x₁)ρ₀(x₀|x₁) with provable correctness guarantees.\n- **Caused by**: O1, O4\n- **Existing attempts**: Score-based diffusion with conditioning (Saharia et al., 2022), Schrödinger bridges (De Bortoli et al., 2021), I²SB (Liu et al., 2023a)\n- **Why they fail**: Diffusion methods tie the base density to the noise schedule; Schrödinger bridges require expensive iterative algorithms; existing methods don't cleanly separate coupling design from velocity learning.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "Existing stochastic interpolant and flow matching formulations lack a principled way to define and use ρ(x₀,x₁) = ρ₁(x₁)ρ₀(x₀|x₁) with provable correctness guarantees."
+              },
+              {
+                "label": "Caused By",
+                "value": "O1, O4"
+              },
+              {
+                "label": "Existing Attempts",
+                "value": "Score-based diffusion with conditioning (Saharia et al., 2022), Schrödinger bridges (De Bortoli et al., 2021), I²SB (Liu et al., 2023a)"
+              },
+              {
+                "label": "Why They Fail",
+                "value": "Diffusion methods tie the base density to the noise schedule; Schrödinger bridges require expensive iterative algorithms; existing methods don't cleanly separate coupling design from velocity learning."
+              }
+            ],
+            "refs": [
+              {
+                "raw": "O1",
+                "kind": "observation",
+                "target": null
+              },
+              {
+                "raw": "O4",
+                "kind": "observation",
+                "target": null
+              }
+            ]
+          },
+          {
+            "ent_id": "G2",
+            "inferred_id": false,
+            "ent_title": "Training objective unclear for correlated (x₀, x₁) pairs",
+            "text": "- **Statement**: When x₀ and x₁ are correlated, it is not obvious whether the standard quadratic regression objective for the velocity field remains valid and unbiased.\n- **Caused by**: O1, O3\n- **Existing attempts**: OT-conditioned flow matching modifies the training distribution but keeps the same loss\n- **Why they fail**: No formal proof that the regression objective in (7) is valid under arbitrary joint density ρ(x₀,x₁).",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "When x₀ and x₁ are correlated, it is not obvious whether the standard quadratic regression objective for the velocity field remains valid and unbiased."
+              },
+              {
+                "label": "Caused By",
+                "value": "O1, O3"
+              },
+              {
+                "label": "Existing Attempts",
+                "value": "OT-conditioned flow matching modifies the training distribution but keeps the same loss"
+              },
+              {
+                "label": "Why They Fail",
+                "value": "No formal proof that the regression objective in (7) is valid under arbitrary joint density ρ(x₀,x₁)."
+              }
+            ],
+            "refs": [
+              {
+                "raw": "O1",
+                "kind": "observation",
+                "target": null
+              },
+              {
+                "raw": "O3",
+                "kind": "observation",
+                "target": null
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "role": "insight",
+        "heading": "Key Insight",
+        "present": true,
+        "entries": [
+          {
+            "ent_id": null,
+            "inferred_id": true,
+            "ent_title": "Insight",
+            "text": "- **Insight**: The transport equation ∂ₜρₜ(x) + ∇·(bₜ(x)ρₜ(x)) = 0 and the quadratic regression objective Lb(b̂) hold for ANY joint coupling ρ(x₀,x₁) with the correct marginals—not just independent couplings. The velocity field is always the conditional expectation bₜ(x) = E(İₜ|Iₜ=x), regardless of whether (x₀,x₁) are correlated.\n- **Derived from**: O2, O3, G2\n- **Enables**: Designing x₀ = m(x₁) + σζ as a task-specific degradation of x₁, plugging it into the same training loop as before, and obtaining a generative model that starts near the target.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Insight",
+                "value": "The transport equation ∂ₜρₜ(x) + ∇·(bₜ(x)ρₜ(x)) = 0 and the quadratic regression objective Lb(b̂) hold for ANY joint coupling ρ(x₀,x₁) with the correct marginals—not just independent couplings. The velocity field is always the conditional expectation bₜ(x) = E(İₜ|Iₜ=x), regardless of whether (x₀,x₁) are correlated."
+              },
+              {
+                "label": "Derived From",
+                "value": "O2, O3, G2"
+              },
+              {
+                "label": "Enables",
+                "value": "Designing x₀ = m(x₁) + σζ as a task-specific degradation of x₁, plugging it into the same training loop as before, and obtaining a generative model that starts near the target."
+              }
+            ],
+            "refs": [
+              {
+                "raw": "O2",
+                "kind": "observation",
+                "target": null
+              },
+              {
+                "raw": "O3",
+                "kind": "observation",
+                "target": null
+              },
+              {
+                "raw": "G2",
+                "kind": "gap",
+                "target": null
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "role": "assumptions",
+        "heading": "Assumptions",
+        "present": true,
+        "entries": [
+          {
+            "ent_id": "A1",
+            "inferred_id": false,
+            "ent_title": "",
+            "text": "The joint density ρ(x₀,x₁) has finite second moments and correct marginals (eq. 2–3).",
+            "unstructured": true,
+            "fields": [],
+            "refs": [
+              {
+                "raw": "A1",
+                "kind": "assumption",
+                "target": null
+              }
+            ]
+          },
+          {
+            "ent_id": "A2",
+            "inferred_id": false,
+            "ent_title": "",
+            "text": "The corrupted observation m(x₁) is known or observable at inference time.",
+            "unstructured": true,
+            "fields": [],
+            "refs": [
+              {
+                "raw": "A2",
+                "kind": "assumption",
+                "target": null
+              }
+            ]
+          },
+          {
+            "ent_id": "A3",
+            "inferred_id": false,
+            "ent_title": "",
+            "text": "The noise coefficient σ > 0 is chosen small enough to keep transport costs low but large enough to avoid lower-dimensional manifold degeneracies.",
+            "unstructured": true,
+            "fields": [],
+            "refs": [
+              {
+                "raw": "A3",
+                "kind": "assumption",
+                "target": null
+              }
+            ]
+          },
+          {
+            "ent_id": "A4",
+            "inferred_id": false,
+            "ent_title": "",
+            "text": "The velocity field can be approximated well by a neural network (U-Net) trained via SGD.",
+            "unstructured": true,
+            "fields": [],
+            "refs": [
+              {
+                "raw": "A4",
+                "kind": "assumption",
+                "target": null
+              }
+            ]
+          },
+          {
+            "ent_id": "A5",
+            "inferred_id": false,
+            "ent_title": "",
+            "text": "ImageNet class labels are available and used as conditional information ξ.",
+            "unstructured": true,
+            "fields": [],
+            "refs": [
+              {
+                "raw": "A5",
+                "kind": "assumption",
+                "target": null
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "glossary": {
+    "title": "Concepts",
+    "groups": [],
+    "terms": [
+      {
+        "term_id": "G01",
+        "name": "Stochastic Interpolant",
+        "aliases": [],
+        "group": "",
+        "definition": "A continuous-time stochastic process parameterized by differentiable coefficient functions $\\alpha_t, \\beta_t, \\gamma_t$ satisfying boundary conditions $\\alpha_0 = \\beta_1 = 1$, $\\alpha_1 = \\beta_0 = \\gamma_0 = \\gamma_1 = 0$, and $\\alpha_t^2 + \\beta_t^2 + \\gamma_t^2 > 0$ for all $t \\in [0,1]$. The pair $(x_0, x_1)$ is jointly drawn from $\\rho(x_0, x_1)$, and $z \\sim \\mathcal{N}(0, I_d)$ independent of $(x_0, x_1)$.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "$I_t = \\alpha_t x_0 + \\beta_t x_1 + \\gamma_t z$, $t \\in [0,1]$"
+          },
+          {
+            "label": "Boundary Conditions",
+            "value": "Applies when $\\rho(x_0, x_1)$ has the correct marginals: $\\int \\rho(x_0, x_1)dx_1 = \\rho_0(x_0)$ and $\\int \\rho(x_0, x_1)dx_0 = \\rho_1(x_1)$. Fails if marginal conditions are violated."
+          }
+        ],
+        "refs": [],
+        "related": [
+          "G02",
+          "G03",
+          "G04"
+        ]
+      },
+      {
+        "term_id": "G02",
+        "name": "Data-Dependent Coupling",
+        "aliases": [],
+        "group": "",
+        "definition": "A joint density over base sample $x_0$ and target sample $x_1$ in which the base sample is drawn conditionally given the target: $x_0 \\sim \\rho_0(\\cdot|x_1)$. In practice, this is instantiated as $x_0 = m(x_1) + \\sigma\\zeta$ with $\\zeta \\sim \\mathcal{N}(0, I_d)$, where $m(x_1)$ is a task-specific degradation of the target.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "$\\rho(x_0, x_1) = \\rho_1(x_1)\\rho_0(x_0|x_1)$"
+          },
+          {
+            "label": "Boundary Conditions",
+            "value": "Requires that $\\int \\rho_0(x_0|x_1)\\rho_1(x_1)dx_1 = \\rho_0(x_0)$ (marginal consistency). Contrast with independent coupling $\\rho(x_0,x_1) = \\rho_0(x_0)\\rho_1(x_1)$."
+          }
+        ],
+        "refs": [],
+        "related": [
+          "G01",
+          "G07",
+          "G08",
+          "G09"
+        ]
+      },
+      {
+        "term_id": "G03",
+        "name": "Velocity Field",
+        "aliases": [],
+        "group": "",
+        "definition": "The conditional expectation of the time-derivative of the stochastic interpolant, given the interpolant value. It defines the drift in the probability flow ODE $\\dot{X}_t = b_t(X_t)$ whose solutions push $\\rho_0$ forward to $\\rho_1$.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "$b_t(x) = \\mathbb{E}(\\dot{I}_t | I_t = x)$"
+          },
+          {
+            "label": "Boundary Conditions",
+            "value": "Uniquely minimizes the quadratic objective $\\mathcal{L}_b(\\hat{b}) = \\int \\mathbb{E}[|\\hat{b}_t(I_t)|^2 - 2\\dot{I}_t \\cdot \\hat{b}_t(I_t)]dt$ for any coupling with correct marginals."
+          }
+        ],
+        "refs": [],
+        "related": [
+          "G01",
+          "G04",
+          "G06",
+          "G05"
+        ]
+      },
+      {
+        "term_id": "G04",
+        "name": "Transport Equation",
+        "aliases": [],
+        "group": "",
+        "definition": "The continuity equation satisfied by the time-dependent density $\\rho_t(x)$ induced by the stochastic interpolant $I_t$. The density $\\rho_t(x)$ interpolates between $\\rho_0$ at $t=0$ and $\\rho_1$ at $t=1$.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "$\\partial_t \\rho_t(x) + \\nabla \\cdot (b_t(x)\\rho_t(x)) = 0$"
+          },
+          {
+            "label": "Boundary Conditions",
+            "value": "Holds for any coupling with the correct marginals. Generalizes to the conditional case with $\\rho_t(x|\\xi)$ and $b_t(x,\\xi)$."
+          }
+        ],
+        "refs": [],
+        "related": [
+          "G03",
+          "G05",
+          "G06"
+        ]
+      },
+      {
+        "term_id": "G05",
+        "name": "Probability Flow ODE",
+        "aliases": [],
+        "group": "",
+        "definition": "The deterministic ODE whose solution maps samples from $\\rho_0$ at $t=0$ to samples from $\\rho_1$ at $t=1$, using the learned velocity field $b_t$. Can be solved forward ($\\rho_0 \\to \\rho_1$) or backward ($\\rho_1 \\to \\rho_0$).",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "$\\dot{X}_t = b_t(X_t)$, with $X_{t=0} = x_0 \\sim \\rho_0$"
+          },
+          {
+            "label": "Boundary Conditions",
+            "value": "Requires an accurate approximation of $b_t$; numerical integration error may be controlled by solving the Dopri (Dormand-Prince) adaptive ODE solver. At sampling time, $x_0$ is drawn from the data-dependent base $\\rho_0(\\cdot|x_1)$."
+          }
+        ],
+        "refs": [],
+        "related": [
+          "G03",
+          "G04"
+        ]
+      },
+      {
+        "term_id": "G06",
+        "name": "Score Function",
+        "aliases": [],
+        "group": "",
+        "definition": "The gradient of the log-density of the interpolant at time $t$, expressible as minus the inverse noise level times the conditional expectation of the noise $z$. The function $g_t$ minimizes $\\mathcal{L}_g(\\hat{g}) = \\int \\mathbb{E}[|\\hat{g}_t(I_t)|^2 - 2z \\cdot \\hat{g}_t(I_t)]dt$.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "$\\nabla \\log \\rho_t(x) = -\\gamma_t^{-1} g_t(x)$, where $g_t(x) = \\mathbb{E}(z|I_t=x)$"
+          },
+          {
+            "label": "Boundary Conditions",
+            "value": "Only defined when $\\gamma_t \\neq 0$. When $\\gamma_t = 0$ (as in the inpainting and super-resolution experiments with the simplified interpolant), the score is not available from this formula."
+          }
+        ],
+        "refs": [],
+        "related": [
+          "G03"
+        ]
+      },
+      {
+        "term_id": "G07",
+        "name": "Inpainting Coupling",
+        "aliases": [],
+        "group": "",
+        "definition": "The base sample construction for image inpainting. The binary mask $\\xi \\in \\{0,1\\}^{C \\times W \\times H}$ preserves the clean pixels of the target $x_1$ (known region) and fills masked pixels with independent Gaussian noise. The interpolant uses $\\alpha_t = t$, $\\beta_t = 1-t$ (reversed coefficients relative to standard).",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "$x_0 = \\xi \\circ x_1 + (1-\\xi) \\circ \\zeta$, $\\zeta \\sim \\mathcal{N}(0, I_d)$"
+          },
+          {
+            "label": "Boundary Conditions",
+            "value": "Mask is randomly generated by tiling image into 64 tiles, each included with probability $p=0.3$. Mask takes same value for all channels at each spatial location."
+          }
+        ],
+        "refs": [],
+        "related": [
+          "G02",
+          "G01"
+        ]
+      },
+      {
+        "term_id": "G08",
+        "name": "Super-Resolution Coupling",
+        "aliases": [],
+        "group": "",
+        "definition": "The base sample construction for super-resolution. $\\mathcal{D}: \\mathbb{R}^{C \\times W \\times H} \\to \\mathbb{R}^{C \\times W_\\text{low} \\times H_\\text{low}}$ crops the image to low resolution; $\\mathcal{U}$ upsamples back using nearest-neighbor interpolation. Small Gaussian noise $\\sigma\\zeta$ is added to ensure the base density is non-degenerate (full-rank covariance in the ambient space).",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "$x_0 = \\mathcal{U}(\\mathcal{D}(x_1)) + \\sigma\\zeta$, $\\zeta \\sim \\mathcal{N}(0, I_d)$, $\\sigma > 0$"
+          },
+          {
+            "label": "Boundary Conditions",
+            "value": "Requires $\\sigma > 0$ to avoid concentration on a lower-dimensional manifold. The conditioning variable is $\\xi = \\mathcal{U}(\\mathcal{D}(x_1))$ (low-res image), appended to channel dimension."
+          }
+        ],
+        "refs": [],
+        "related": [
+          "G02",
+          "G09"
+        ]
+      },
+      {
+        "term_id": "G09",
+        "name": "Transport Cost Bound",
+        "aliases": [],
+        "group": "",
+        "definition": "An upper bound on the expected squared displacement of the generative ODE, controlled by the kinetic energy of the interpolant. For the super-resolution coupling with $\\alpha_t=1-t$, $\\beta_t=t$, $\\gamma_t=0$: $\\dot{I}_t = x_1 - x_0$, so the bound reduces to $\\mathbb{E}[|x_1 - x_0|^2] = d\\sigma^2$ (dependent) vs $2\\mathbb{E}[|x_1|^2] + d\\sigma^2$ (independent).",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "$\\mathbb{E}_{x_0 \\sim \\rho_0}[|X_{t=1}(x_0) - x_0|^2] \\leq \\int_0^1 \\mathbb{E}[|\\dot{I}_t|^2]dt$"
+          },
+          {
+            "label": "Boundary Conditions",
+            "value": "Bound is tight when the flow is length-minimizing (optimal transport). Minimizing this bound is equivalent to finding the Wasserstein-2 optimal transport map."
+          }
+        ],
+        "refs": [],
+        "related": [
+          "G02",
+          "G05",
+          "G01"
+        ]
+      },
+      {
+        "term_id": "G10",
+        "name": "Conditioning Variable",
+        "aliases": [],
+        "group": "",
+        "definition": "An external, task-specific signal independent of the coupling construction. Can be a discrete class label (e.g., ImageNet class) or a continuous embedding (e.g., low-resolution image for super-resolution). The velocity field and score are conditioned on $\\xi$, enabling class-conditional or task-conditional generation. This is **distinct** from the data-dependent coupling: conditioning alters the velocity field, while coupling alters the starting distribution.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "$\\xi \\in \\mathcal{D}$ (class label or continuous embedding); velocity field $b_t(x, \\xi)$"
+          },
+          {
+            "label": "Boundary Conditions",
+            "value": "Must be available both at training and inference time. In inpainting, $\\xi$ is the binary mask; in super-resolution, $\\xi = \\mathcal{U}(\\mathcal{D}(x_1))$ (the low-res image)."
+          }
+        ],
+        "refs": [],
+        "related": [
+          "G07",
+          "G08",
+          "G03"
+        ]
+      }
+    ],
+    "lexicon": {
+      "stochastic interpolant": "G01",
+      "data-dependent coupling": "G02",
+      "velocity field": "G03",
+      "transport equation": "G04",
+      "probability flow ode": "G05",
+      "score function": "G06",
+      "inpainting coupling": "G07",
+      "super-resolution coupling": "G08",
+      "transport cost bound": "G09",
+      "conditioning variable": "G10"
+    }
+  },
+  "dependencies": {
+    "title": "Related Work / Dependencies",
+    "preamble": "# Related Work",
+    "legend": [],
+    "attribution": "",
+    "entries": [
+      {
+        "rw_id": "RW01",
+        "inferred_id": false,
+        "name": "Albergo & Vanden-Eijnden, 2022",
+        "relation_raw": "imports",
+        "relation_norm": "imports",
+        "delta": "What changed: This work introduces **data-dependent couplings** ρ(x₀,x₁)=ρ₁(x₁)ρ₀(x₀|x₁). Original stochastic interpolants only considered independent couplings ρ(x₀,x₁)=ρ₀(x₀)ρ₁(x₁).\nWhy: To adapt the base density to the structure of the target, reducing transport cost for inverse problems.",
+        "adopted": "Stochastic interpolant definition (eq. 1), transport equation framework, quadratic regression objective, probability flow ODE/SDE characterization.",
+        "grounding": [
+          {
+            "raw": "arXiv:2209.15571",
+            "kind": "arxiv",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C01",
+          "C02"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW02",
+        "inferred_id": false,
+        "name": "Albergo et al., 2023",
+        "relation_raw": "imports",
+        "relation_norm": "imports",
+        "delta": "What changed: Extends to dependent couplings and conditional generation; provides new proofs with conditioning variables ξ (Appendix A).\nWhy: Unifying framework for flows and diffusions; dependent coupling is a strict generalization.",
+        "adopted": "Generalized interpolant with conditioning (Definition A.1), score identity, velocity/score regression objectives.",
+        "grounding": [
+          {
+            "raw": "arXiv:2303.08797",
+            "kind": "arxiv",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C01",
+          "C02"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW03",
+        "inferred_id": false,
+        "name": "Lipman et al., 2022",
+        "relation_raw": "baseline",
+        "relation_norm": "baseline",
+        "delta": "What changed: Flow matching uses an independent coupling (Gaussian base); this work generalizes to dependent couplings.\nWhy: Flow matching is a prominent related method; dependent coupling can be viewed as flow matching with a non-Gaussian, data-dependent base.",
+        "adopted": "Simulation-free regression for velocity field.",
+        "grounding": [
+          {
+            "raw": "arXiv:2210.02747",
+            "kind": "arxiv",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C01"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW04",
+        "inferred_id": false,
+        "name": "Liu et al., 2022 (Rectified Flow)",
+        "relation_raw": "baseline",
+        "relation_norm": "baseline",
+        "delta": "What changed: Rectified flow uses independent Gaussian base; this work designs the base from data.\nWhy: Rectified flow seeks straight trajectories via data; dependent coupling achieves straighter trajectories by design.",
+        "adopted": "Straight-line interpolant idea.",
+        "grounding": [
+          {
+            "raw": "arXiv:2209.03003",
+            "kind": "arxiv",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C02"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW05",
+        "inferred_id": false,
+        "name": "Pooladian et al., 2023",
+        "relation_raw": "bounds",
+        "relation_norm": "bounds",
+        "delta": "What changed: Minibatch OT builds couplings from batch-level optimal transport; this work uses task-designed deterministic couplings.\nWhy: Minibatch OT becomes uninformative at dataset scale; task-designed couplings are always informative.",
+        "adopted": "Motivation for reduced transport cost via better couplings.",
+        "grounding": [
+          {
+            "raw": "arXiv:2304.14772",
+            "kind": "arxiv",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C02"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW06",
+        "inferred_id": false,
+        "name": "Tong et al., 2023",
+        "relation_raw": "bounds",
+        "relation_norm": "bounds",
+        "delta": "What changed: Minibatch OT for flow matching; this work uses analytic data-dependent couplings.\nWhy: Avoid uninformative couplings at scale.",
+        "adopted": "Minibatch OT coupling motivation.",
+        "grounding": [],
+        "claims": [
+          "C02"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW07",
+        "inferred_id": false,
+        "name": "Lee et al., 2023",
+        "relation_raw": "baseline",
+        "relation_norm": "baseline",
+        "delta": "What changed: Lee et al. learn qφ(x₀|x₁) but sample from N(0,I) at inference; this work uses the actual dependent coupling at inference time, avoiding the bias.\nWhy: Sampling from the true ρ₀(x₀|x₁) at inference is consistent and unbiased.",
+        "adopted": "Motivation for data-dependent base via learned conditional.",
+        "grounding": [
+          {
+            "raw": "arXiv:2301.12003",
+            "kind": "arxiv",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C01"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW08",
+        "inferred_id": false,
+        "name": "Liu et al., 2023a (I²SB)",
+        "relation_raw": "baseline",
+        "relation_norm": "baseline",
+        "delta": "What changed: I²SB uses Schrödinger bridge diffusion bridges with known coupling; this work uses a simpler, more flexible stochastic interpolant formulation that separates bridging from coupling.\nWhy: Stochastic interpolants are simpler (no need to solve Schrödinger bridge equations) and more flexible.",
+        "adopted": "Benchmark FID numbers for super-resolution (I²SB: 2.70 valid FID).",
+        "grounding": [
+          {
+            "raw": "arXiv:2302.05872",
+            "kind": "arxiv",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C04"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW09",
+        "inferred_id": false,
+        "name": "De Bortoli et al., 2021",
+        "relation_raw": "baseline",
+        "relation_norm": "baseline",
+        "delta": "What changed: Schrödinger bridge requires expensive iterative SDE solving; stochastic interpolants with dependent couplings are simulation-free.\nWhy: Computational efficiency; simulation-free training is a key advantage.",
+        "adopted": "Schrödinger bridge as a coupling strategy.",
+        "grounding": [],
+        "claims": [
+          "C01"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW10",
+        "inferred_id": false,
+        "name": "Saharia et al., 2022 (SR3)",
+        "relation_raw": "baseline",
+        "relation_norm": "baseline",
+        "delta": "What changed: SR3 uses score-based diffusion conditioned on low-res image; this work uses a deterministic ODE with data-dependent base.\nWhy: Simpler and better-performing approach for super-resolution.",
+        "adopted": "Problem framing for super-resolution; FID benchmark (SR3: 11.30 train, 5.20 valid).",
+        "grounding": [],
+        "claims": [
+          "C04"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW11",
+        "inferred_id": false,
+        "name": "Ho et al., 2020b (DDPM)",
+        "relation_raw": "imports",
+        "relation_norm": "imports",
+        "delta": "What changed: U-Net architecture from DDPM is reused as the velocity model; conditioning on class labels is inherited.\nWhy: Well-tested architecture for image generation; class conditioning is critical for ImageNet.",
+        "adopted": "U-Net architecture (dim=256, dim_mults=(1,1,2,3,4)), class label conditioning via embedding.",
+        "grounding": [],
+        "claims": [
+          "C03",
+          "C04"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW12",
+        "inferred_id": false,
+        "name": "Ho et al., 2022a (Cascaded Diffusion)",
+        "relation_raw": "baseline",
+        "relation_norm": "baseline",
+        "delta": "What changed: Cascaded diffusion uses multiple diffusion stages; this work uses a single ODE with data-dependent coupling.\nWhy: Simpler single-stage approach; image-shaped conditioning strategy is adopted.",
+        "adopted": "Channel concatenation for image-shaped conditioning; FID benchmark (Cascaded Diffusion: 4.88 train, 4.63 valid).",
+        "grounding": [],
+        "claims": [
+          "C04"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      }
+    ],
+    "footprint": []
+  },
+  "recipes": {
+    "title": "Solution",
+    "files": [
+      {
+        "file": "algorithm.md",
+        "role": "algorithm",
+        "file_title": "Algorithm",
+        "sections": [
+          {
+            "sec_id": null,
+            "heading": "Mathematical Formulation",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "### Stochastic Interpolant (with coupling)\n$$I_t = \\alpha_t x_0 + \\beta_t x_1 + \\gamma_t z, \\quad t \\in [0,1]$$\n\nwhere:\n- $(x_0, x_1) \\sim \\rho(x_0, x_1) = \\rho_1(x_1)\\rho_0(x_0|x_1)$ (data-dependent coupling)\n- $z \\sim \\mathcal{N}(0, I_d)$, independent of $(x_0, x_1)$\n- Boundary conditions: $\\alpha_0 = \\beta_1 = 1$, $\\alpha_1 = \\beta_0 = \\gamma_0 = \\gamma_1 = 0$\n\n### Data-Dependent Base Construction\n$$x_0 = m(x_1) + \\sigma\\zeta, \\quad \\zeta \\sim \\mathcal{N}(0, I_d)$$\n\n**Inpainting**: $x_0 = \\xi \\circ x_1 + (1 - \\xi) \\circ \\zeta$, $\\alpha_t = t$, $\\beta_t = 1-t$\n\n**Super-resolution**: $x_0 = \\mathcal{U}(\\mathcal{D}(x_1)) + \\sigma\\zeta$, $\\alpha_t = 1-t$, $\\beta_t = t$\n\n### Velocity Regression Objective (Eq. 22)\n$$\\hat{\\mathcal{L}}_b(\\hat{b}) = \\frac{1}{n_b} \\sum_{i=1}^{n_b} \\left[ |\\hat{b}_{t_i}(I_{t_i})|^2 - 2\\dot{I}_{t_i} \\cdot \\hat{b}_{t_i}(I_{t_i}) \\right]$$\n\nwhere $\\dot{I}_t = \\dot{\\alpha}_t x_0 + \\dot{\\beta}_t x_1$ (for $\\gamma_t=0$).\n\n### Score Identity (Eq. 6)\n$$\\nabla \\log \\rho_t(x) = -\\gamma_t^{-1} g_t(x), \\quad g_t(x) = \\mathbb{E}[z | I_t = x]$$\n\n### Transport Cost Bound (Proposition 3.1)\n$$\\mathbb{E}_{x_0 \\sim \\rho_0}\\left[|X_{t=1}(x_0) - x_0|^2\\right] \\leq \\int_0^1 \\mathbb{E}[|\\dot{I}_t|^2]dt$$\n\nFor super-resolution coupling: $\\mathbb{E}[|\\dot{I}_t|^2] = \\mathbb{E}[|x_1 - x_0|^2] = d\\sigma^2$",
+            "text": "### Stochastic Interpolant (with coupling)\n$$I_t = \\alpha_t x_0 + \\beta_t x_1 + \\gamma_t z, \\quad t \\in [0,1]$$\n\nwhere:\n- $(x_0, x_1) \\sim \\rho(x_0, x_1) = \\rho_1(x_1)\\rho_0(x_0|x_1)$ (data-dependent coupling)\n- $z \\sim \\mathcal{N}(0, I_d)$, independent of $(x_0, x_1)$\n- Boundary conditions: $\\alpha_0 = \\beta_1 = 1$, $\\alpha_1 = \\beta_0 = \\gamma_0 = \\gamma_1 = 0$\n\n### Data-Dependent Base Construction\n$$x_0 = m(x_1) + \\sigma\\zeta, \\quad \\zeta \\sim \\mathcal{N}(0, I_d)$$\n\n**Inpainting**: $x_0 = \\xi \\circ x_1 + (1 - \\xi) \\circ \\zeta$, $\\alpha_t = t$, $\\beta_t = 1-t$\n\n**Super-resolution**: $x_0 = \\mathcal{U}(\\mathcal{D}(x_1)) + \\sigma\\zeta$, $\\alpha_t = 1-t$, $\\beta_t = t$\n\n### Velocity Regression Objective (Eq. 22)\n$$\\hat{\\mathcal{L}}_b(\\hat{b}) = \\frac{1}{n_b} \\sum_{i=1}^{n_b} \\left[ |\\hat{b}_{t_i}(I_{t_i})|^2 - 2\\dot{I}_{t_i} \\cdot \\hat{b}_{t_i}(I_{t_i}) \\right]$$\n\nwhere $\\dot{I}_t = \\dot{\\alpha}_t x_0 + \\dot{\\beta}_t x_1$ (for $\\gamma_t=0$).\n\n### Score Identity (Eq. 6)\n$$\\nabla \\log \\rho_t(x) = -\\gamma_t^{-1} g_t(x), \\quad g_t(x) = \\mathbb{E}[z | I_t = x]$$\n\n### Transport Cost Bound (Proposition 3.1)\n$$\\mathbb{E}_{x_0 \\sim \\rho_0}\\left[|X_{t=1}(x_0) - x_0|^2\\right] \\leq \\int_0^1 \\mathbb{E}[|\\dot{I}_t|^2]dt$$\n\nFor super-resolution coupling: $\\mathbb{E}[|\\dot{I}_t|^2] = \\mathbb{E}[|x_1 - x_0|^2] = d\\sigma^2$",
+            "warn": "",
+            "refs": [],
+            "kind": "math"
+          },
+          {
+            "sec_id": null,
+            "heading": "Pseudocode",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "Input: Interpolant coefficients αₜ, βₜ; velocity model b̂; batch size nᵦ\nrepeat:\n    for i = 1, ..., nᵦ do:\n        Draw x₁ᵢ ~ ρ₁(x₁)\n        Draw ζⁱ ~ N(0, Id)\n        Draw tᵢ ~ U(0, 1)\n        Compute x₀ᵢ = m(x₁ᵢ) + σζⁱ      # task-specific: inpainting or super-res\n        Compute Iₜᵢ = αₜᵢ·x₀ᵢ + βₜᵢ·x₁ᵢ\n        Compute İₜᵢ = α̇ₜᵢ·x₀ᵢ + β̇ₜᵢ·x₁ᵢ  # = x₁-x₀ for both tasks\n    end for\n    Compute empirical loss:\n        L̂ᵦ(b̂) = nᵦ⁻¹ Σᵢ [|b̂ₜᵢ(Iₜᵢ)|² - 2İₜᵢ · b̂ₜᵢ(Iₜᵢ)]\n    Take gradient step (Adam) on L̂ᵦ(b̂) to update b̂\nuntil converged\nreturn b̂\n\nInput: model b̂, corrupted sample x₀ = m(x₁_test) + σζ, N ∈ ℕ\nDraw ζ ~ N(0, Id)\nInitialize X̂₀ = m(x₁_test) + σζ\nfor n = 0, ..., N-1 do:\n    X̂ₙ₊₁ = X̂ₙ + N⁻¹ · b̂ₙ/ₙ(X̂ₙ)\nend for\nreturn X̂_N  # clean sample\n\nInput: model b̂, initial condition X₀ = x₀ ~ ρ₀(·|x₁_test)\nSolve: dXₜ/dt = b̂ₜ(Xₜ, ξ), X₀ given\nusing Dormand-Prince (Dopri) adaptive ODE solver from torchdiffeq\nreturn X₁",
+            "text": "### Algorithm 1: Training\n\n```\nInput: Interpolant coefficients αₜ, βₜ; velocity model b̂; batch size nᵦ\nrepeat:\n    for i = 1, ..., nᵦ do:\n        Draw x₁ᵢ ~ ρ₁(x₁)\n        Draw ζⁱ ~ N(0, Id)\n        Draw tᵢ ~ U(0, 1)\n        Compute x₀ᵢ = m(x₁ᵢ) + σζⁱ      # task-specific: inpainting or super-res\n        Compute Iₜᵢ = αₜᵢ·x₀ᵢ + βₜᵢ·x₁ᵢ\n        Compute İₜᵢ = α̇ₜᵢ·x₀ᵢ + β̇ₜᵢ·x₁ᵢ  # = x₁-x₀ for both tasks\n    end for\n    Compute empirical loss:\n        L̂ᵦ(b̂) = nᵦ⁻¹ Σᵢ [|b̂ₜᵢ(Iₜᵢ)|² - 2İₜᵢ · b̂ₜᵢ(Iₜᵢ)]\n    Take gradient step (Adam) on L̂ᵦ(b̂) to update b̂\nuntil converged\nreturn b̂\n```\n\n### Algorithm 2: Sampling (Forward Euler)\n\n```\nInput: model b̂, corrupted sample x₀ = m(x₁_test) + σζ, N ∈ ℕ\nDraw ζ ~ N(0, Id)\nInitialize X̂₀ = m(x₁_test) + σζ\nfor n = 0, ..., N-1 do:\n    X̂ₙ₊₁ = X̂ₙ + N⁻¹ · b̂ₙ/ₙ(X̂ₙ)\nend for\nreturn X̂_N  # clean sample\n```\n\n### Sampling (Dopri Adaptive Solver, used in practice)\n\n```\nInput: model b̂, initial condition X₀ = x₀ ~ ρ₀(·|x₁_test)\nSolve: dXₜ/dt = b̂ₜ(Xₜ, ξ), X₀ given\nusing Dormand-Prince (Dopri) adaptive ODE solver from torchdiffeq\nreturn X₁\n```",
+            "warn": "",
+            "refs": [],
+            "kind": "code"
+          },
+          {
+            "sec_id": null,
+            "heading": "Complexity Analysis",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Training",
+                "value": "O(nᵦ × U-Net forward/backward pass) per step. U-Net cost depends on image resolution and architecture depth."
+              },
+              {
+                "label": "Sampling (Forward Euler)",
+                "value": "O(N × U-Net forward pass). N function evaluations."
+              },
+              {
+                "label": "Sampling (Dopri)",
+                "value": "Adaptive; number of function evaluations depends on tolerance and trajectory smoothness. Dependent coupling typically requires fewer evaluations due to simpler trajectories."
+              },
+              {
+                "label": "Memory",
+                "value": "Batch of images at training resolution (256×256 or 512×512) × C × batch_size."
+              }
+            ],
+            "code": "",
+            "text": "- **Training**: O(nᵦ × U-Net forward/backward pass) per step. U-Net cost depends on image resolution and architecture depth.\n- **Sampling (Forward Euler)**: O(N × U-Net forward pass). N function evaluations.\n- **Sampling (Dopri)**: Adaptive; number of function evaluations depends on tolerance and trajectory smoothness. Dependent coupling typically requires fewer evaluations due to simpler trajectories.\n- **Memory**: Batch of images at training resolution (256×256 or 512×512) × C × batch_size.",
+            "warn": "",
+            "refs": [],
+            "kind": "kv"
+          }
+        ]
+      },
+      {
+        "file": "architecture.md",
+        "role": "architecture",
+        "file_title": "System Architecture",
+        "sections": [
+          {
+            "sec_id": null,
+            "heading": "Overview",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "",
+            "text": "The system consists of three major components: (1) the **Interpolant Constructor** that builds coupled (x₀, x₁) pairs and computes Iₜ, (2) the **Velocity Network** (U-Net) that approximates bₜ(x, ξ), and (3) the **ODE/SDE Solver** that integrates the probability flow at inference time.",
+            "warn": "",
+            "refs": [],
+            "kind": "prose"
+          },
+          {
+            "sec_id": null,
+            "heading": "Components",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Purpose",
+                "value": "Given a target sample x₁ and a coupling type, compute the base sample x₀ and the interpolant Iₜ at a random time t.\nApproximate the velocity field bₜ(x, ξ) via neural network b̂ₜ parameterized by θ.\nAt inference time, integrate $\\dot{X}_t = \\hat{b}_t(X_t, \\xi)$ from t=0 to t=1 to produce a sample from ρ₁."
+              },
+              {
+                "label": "Inputs",
+                "value": "x₁: target sample from ρ₁ (ImageNet image, C×W×H)\nCoupling type: inpainting (mask ξ) or super-resolution (downsample/upsample m(x₁))\nt ~ U(0,1): randomly sampled time\nIₜ: interpolant image (C×W×H) concatenated with conditioning channels\nt: scalar time (embedded via learned sinusoidal positional encoding)\nξ: conditioning variable (appended as channels of Iₜ, plus class label embedding)\nx₀ ~ ρ₀(·|x₁): initial condition from data-dependent base\nb̂ₜ: learned velocity network\nIntegration method: Dopri (Dormand-Prince adaptive solver from `torchdiffeq`)"
+              },
+              {
+                "label": "Outputs",
+                "value": "x₀: base sample (corrupted/masked version of x₁)\nIₜ = αₜ·x₀ + βₜ·x₁: interpolant at time t\nİₜ = α̇ₜ·x₀ + β̇ₜ·x₁: time derivative of interpolant\nb̂ₜ(Iₜ, ξ): predicted velocity field (C×W×H)\nX_{t=1} ≈ x₁: generated sample"
+              },
+              {
+                "label": "Key Design Choices",
+                "value": "- **Inpainting**: αₜ = t, βₜ = 1-t → İₜ = x₁ - x₀; unmasked pixels have zero derivative.\n- **Super-resolution**: αₜ = 1-t, βₜ = t → İₜ = x₁ - x₀; corrupted starting point.\n- **No noise term**: γₜ = 0 in all experiments; interpolant is deterministic given (x₀, x₁, t).\n### Component 2: Velocity Network (U-Net)\nForward Euler is described in Algorithm 2 for simplicity; Dopri is used in practice.\nSDE variants (forward SDE eq. 11, backward SDE eq. 13) are theoretically supported but focus is on deterministic ODE.\nFor inpainting: initial condition is x₀ = ξ∘x₁_test + (1-ξ)∘ζ.\nFor super-resolution: initial condition is x₀ = U(D(x₁_test)) + σζ."
+              },
+              {
+                "label": "Architecture",
+                "value": "U-Net from Ho et al. (2020b) / luciddrains's `denoising-diffusion-pytorch`"
+              },
+              {
+                "label": "Architecture Details",
+                "value": "`dim` = 256\n`dim_mults` = (1, 1, 2, 3, 4)\n`resnet_block_groups` = 8\n`learned_sinusoidal_cond` = True\n`learned_sinusoidal_dim` = 32\n`attn_dim_head` = 64\n`attn_heads` = 4\n`random_fourier_features` = False"
+              },
+              {
+                "label": "Masking For Inpainting",
+                "value": "The velocity output is multiplied by (1-ξ) so unmasked pixels receive zero update; model only acts on the first C=3 image channels, not the appended conditioning channels.\n### Component 3: ODE/SDE Solver"
+              }
+            ],
+            "code": "",
+            "text": "### Component 1: Interpolant Constructor\n\n- **Purpose**: Given a target sample x₁ and a coupling type, compute the base sample x₀ and the interpolant Iₜ at a random time t.\n- **Inputs**:\n  - x₁: target sample from ρ₁ (ImageNet image, C×W×H)\n  - Coupling type: inpainting (mask ξ) or super-resolution (downsample/upsample m(x₁))\n  - t ~ U(0,1): randomly sampled time\n- **Outputs**:\n  - x₀: base sample (corrupted/masked version of x₁)\n  - Iₜ = αₜ·x₀ + βₜ·x₁: interpolant at time t\n  - İₜ = α̇ₜ·x₀ + β̇ₜ·x₁: time derivative of interpolant\n- **Key design choices**:\n  - **Inpainting**: αₜ = t, βₜ = 1-t → İₜ = x₁ - x₀; unmasked pixels have zero derivative.\n  - **Super-resolution**: αₜ = 1-t, βₜ = t → İₜ = x₁ - x₀; corrupted starting point.\n  - **No noise term**: γₜ = 0 in all experiments; interpolant is deterministic given (x₀, x₁, t).\n\n### Component 2: Velocity Network (U-Net)\n\n- **Purpose**: Approximate the velocity field bₜ(x, ξ) via neural network b̂ₜ parameterized by θ.\n- **Architecture**: U-Net from Ho et al. (2020b) / luciddrains's `denoising-diffusion-pytorch`\n- **Inputs**:\n  - Iₜ: interpolant image (C×W×H) concatenated with conditioning channels\n  - t: scalar time (embedded via learned sinusoidal positional encoding)\n  - ξ: conditioning variable (appended as channels of Iₜ, plus class label embedding)\n- **Outputs**:\n  - b̂ₜ(Iₜ, ξ): predicted velocity field (C×W×H)\n- **Architecture details**:\n  - `dim` = 256\n  - `dim_mults` = (1, 1, 2, 3, 4)\n  - `resnet_block_groups` = 8\n  - `learned_sinusoidal_cond` = True\n  - `learned_sinusoidal_dim` = 32\n  - `attn_dim_head` = 64\n  - `attn_heads` = 4\n  - `random_fourier_features` = False\n- **Masking for inpainting**: The velocity output is multiplied by (1-ξ) so unmasked pixels receive zero update; model only acts on the first C=3 image channels, not the appended conditioning channels.\n\n### Component 3: ODE/SDE Solver\n\n- **Purpose**: At inference time, integrate $\\dot{X}_t = \\hat{b}_t(X_t, \\xi)$ from t=0 to t=1 to produce a sample from ρ₁.\n- **Inputs**:\n  - x₀ ~ ρ₀(·|x₁): initial condition from data-dependent base\n  - b̂ₜ: learned velocity network\n  - Integration method: Dopri (Dormand-Prince adaptive solver from `torchdiffeq`)\n- **Outputs**:\n  - X_{t=1} ≈ x₁: generated sample\n- **Key design choices**:\n  - Forward Euler is described in Algorithm 2 for simplicity; Dopri is used in practice.\n  - SDE variants (forward SDE eq. 11, backward SDE eq. 13) are theoretically supported but focus is on deterministic ODE.\n  - For inpainting: initial condition is x₀ = ξ∘x₁_test + (1-ξ)∘ζ.\n  - For super-resolution: initial condition is x₀ = U(D(x₁_test)) + σζ.",
+            "warn": "",
+            "refs": [],
+            "kind": "kv"
+          },
+          {
+            "sec_id": null,
+            "heading": "Component Interaction Graph",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "Training:\n  ImageNet x₁ ──→ [Interpolant Constructor] ──→ Iₜ, İₜ ──→ [Velocity Network] ──→ b̂ₜ\n                                                                                        │\n                                                                           [Loss: |b̂ₜ(Iₜ)|² - 2İₜ·b̂ₜ(Iₜ)]\n                                                                                        │\n                                                                              [Adam Optimizer] ──→ update θ\n\nInference:\n  x₁_test (degraded) ──→ [Coupling: compute x₀] ──→ [ODE Solver (Dopri)] ──→ X_{t=1} (restored image)\n                                                            │\n                                                     [Velocity Network b̂ₜ]",
+            "text": "```\nTraining:\n  ImageNet x₁ ──→ [Interpolant Constructor] ──→ Iₜ, İₜ ──→ [Velocity Network] ──→ b̂ₜ\n                                                                                        │\n                                                                           [Loss: |b̂ₜ(Iₜ)|² - 2İₜ·b̂ₜ(Iₜ)]\n                                                                                        │\n                                                                              [Adam Optimizer] ──→ update θ\n\nInference:\n  x₁_test (degraded) ──→ [Coupling: compute x₀] ──→ [ODE Solver (Dopri)] ──→ X_{t=1} (restored image)\n                                                            │\n                                                     [Velocity Network b̂ₜ]\n```",
+            "warn": "",
+            "refs": [],
+            "kind": "code"
+          }
+        ]
+      },
+      {
+        "file": "constraints.md",
+        "role": "constraints",
+        "file_title": "Constraints and Limitations",
+        "sections": [
+          {
+            "sec_id": null,
+            "heading": "Boundary Conditions (Where the Solution Works)",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "### BC1: Marginal consistency of coupling\nThe coupling ρ(x₀,x₁) = ρ₁(x₁)ρ₀(x₀|x₁) must satisfy:\n$$\\int \\rho_0(x_0|x_1)\\rho_1(x_1)dx_1 = \\rho_0(x_0)$$\nThe choice x₀ = m(x₁) + σζ (σ>0) automatically satisfies this if m(x₁) is deterministic given x₁.\n\n### BC2: Non-degenerate base distribution\nFor the score identity (eq. 6) to hold, γₜ ≠ 0 is required. In experiments γₜ = 0, so the score identity is NOT available, and only the velocity field is learned and used.\n\n### BC3: σ > 0 for super-resolution\nMust have σ > 0 to ensure x₀ is not concentrated on a lower-dimensional manifold (image of the downsampling/upsampling map). σ = 0 would cause the base density to be singular.\n\n### BC4: Corrupted observation at inference\nThe data-dependent coupling requires that m(x₁) be available at inference time. For inpainting, the partial image is given; for super-resolution, the low-resolution image is given. If m(x₁) is not available (unconditional generation scenario), this framework reverts to independent coupling.",
+            "text": "### BC1: Marginal consistency of coupling\nThe coupling ρ(x₀,x₁) = ρ₁(x₁)ρ₀(x₀|x₁) must satisfy:\n$$\\int \\rho_0(x_0|x_1)\\rho_1(x_1)dx_1 = \\rho_0(x_0)$$\nThe choice x₀ = m(x₁) + σζ (σ>0) automatically satisfies this if m(x₁) is deterministic given x₁.\n\n### BC2: Non-degenerate base distribution\nFor the score identity (eq. 6) to hold, γₜ ≠ 0 is required. In experiments γₜ = 0, so the score identity is NOT available, and only the velocity field is learned and used.\n\n### BC3: σ > 0 for super-resolution\nMust have σ > 0 to ensure x₀ is not concentrated on a lower-dimensional manifold (image of the downsampling/upsampling map). σ = 0 would cause the base density to be singular.\n\n### BC4: Corrupted observation at inference\nThe data-dependent coupling requires that m(x₁) be available at inference time. For inpainting, the partial image is given; for super-resolution, the low-resolution image is given. If m(x₁) is not available (unconditional generation scenario), this framework reverts to independent coupling.",
+            "warn": "",
+            "refs": [],
+            "kind": "math"
+          },
+          {
+            "sec_id": null,
+            "heading": "Known Limitations",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "",
+            "text": "### L1: No exact numerical value for σ reported\nThe paper states σ > 0 for super-resolution but does not report the exact value used. The transport cost analysis uses σ, but the specific experimental value is not specified in paper text.\n\n### L2: No inference-time correction / MCMC\nThe inpainting approach \"does not necessitate any inference time corrections, such as the replacement method or MCMC\" (§4.1). This may result in mild inconsistencies with known pixel values in borderline cases, though the generative model is statistically valid.\n\n### L3: Requires clean coupling knowledge at training and inference\nUnlike learned couplings (Lee et al., 2023), the coupling ρ₀(x₀|x₁) must be explicitly specified (not learned). For tasks without a known corruption model, this approach is not directly applicable.\n\n### L4: Batch size and dataset scale constraints\nThe minibatch OT approach of Tong/Pooladian et al. becomes uninformative at dataset scale; our approach avoids this but requires the coupling to be task-designed rather than optimized from data.\n\n### L5: FID evaluation uses 50k samples\nResults use FID-50k, which may not capture mode-level quality differences; FID depends on the Inception network and is known to favor certain image statistics.\n\n### L6: Inpainting mask is random at training but fixed at test\nTraining uses randomly generated masks (p=0.3); performance may vary for different mask patterns at test time. No adaptation for specific mask types is discussed.",
+            "warn": "The paper states σ > 0 for super-resolution but does not report the exact value used. The transport cost analysis uses σ, but the specific experimental value is not specified in paper text.",
+            "refs": [],
+            "kind": "prose"
+          }
+        ]
+      },
+      {
+        "file": "heuristics.md",
+        "role": "heuristics",
+        "file_title": "Heuristics",
+        "sections": [
+          {
+            "sec_id": "H01",
+            "heading": "H01: Reversed interpolant coefficients for inpainting (αₜ=t, βₜ=1-t)",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "In the inpainting task, x₀ = ξ∘x₁ + (1-ξ)∘ζ contains the clean image in known regions and noise in masked regions. Setting αₜ=t and βₜ=1-t means Iₜ = t·x₀ + (1-t)·x₁. Since unmasked pixels are identical in x₀ and x₁, the velocity İₜ = x₁-x₀ is zero on unmasked pixels for all t. This structural property allows masking the network output to enforce fixed unmasked pixels without information leakage."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "high — changing to αₜ=1-t, βₜ=t would require different output masking logic."
+              },
+              {
+                "label": "Bounds",
+                "value": "αₜ and βₜ must satisfy α₀=β₁=1, α₁=β₀=0 (boundary conditions of the interpolant). Both αₜ=t and αₜ=1-t satisfy this with appropriate swapping of x₀ and x₁ roles."
+              },
+              {
+                "label": "Code Ref",
+                "value": "[src/execution/inpainting.py]"
+              },
+              {
+                "label": "Source",
+                "value": "§4.1 \"In the interpolant (20), we set αₜ = t and βₜ = 1 − t\""
+              }
+            ],
+            "code": "",
+            "text": "- **Rationale**: In the inpainting task, x₀ = ξ∘x₁ + (1-ξ)∘ζ contains the clean image in known regions and noise in masked regions. Setting αₜ=t and βₜ=1-t means Iₜ = t·x₀ + (1-t)·x₁. Since unmasked pixels are identical in x₀ and x₁, the velocity İₜ = x₁-x₀ is zero on unmasked pixels for all t. This structural property allows masking the network output to enforce fixed unmasked pixels without information leakage.\n- **Sensitivity**: high — changing to αₜ=1-t, βₜ=t would require different output masking logic.\n- **Bounds**: αₜ and βₜ must satisfy α₀=β₁=1, α₁=β₀=0 (boundary conditions of the interpolant). Both αₜ=t and αₜ=1-t satisfy this with appropriate swapping of x₀ and x₁ roles.\n- **Code ref**: [src/execution/inpainting.py]\n- **Source**: §4.1 \"In the interpolant (20), we set αₜ = t and βₜ = 1 − t\"",
+            "warn": "",
+            "refs": [],
+            "kind": "kv"
+          },
+          {
+            "sec_id": "H02",
+            "heading": "H02: Zero-velocity masking for unmasked pixels",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "Since İₜ = x₁ - x₀ = 0 on unmasked pixels (where x₀ = x₁), the true velocity is zero there. Masking the neural network output to be zero on known regions encodes this structural information, reducing the effective learning problem to only the masked regions and preventing the model from \"wasting capacity\" predicting zero velocity."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "medium — omitting this masking likely degrades performance as the model must learn to output zero on known regions."
+              },
+              {
+                "label": "Bounds",
+                "value": "The mask ξ must be consistent between x₀ construction, network conditioning, and output masking."
+              },
+              {
+                "label": "Code Ref",
+                "value": "[src/execution/inpainting.py]"
+              },
+              {
+                "label": "Source",
+                "value": "§4.1 \"we can build this property into our neural network model, and mask the output\""
+              }
+            ],
+            "code": "",
+            "text": "- **Rationale**: Since İₜ = x₁ - x₀ = 0 on unmasked pixels (where x₀ = x₁), the true velocity is zero there. Masking the neural network output to be zero on known regions encodes this structural information, reducing the effective learning problem to only the masked regions and preventing the model from \"wasting capacity\" predicting zero velocity.\n- **Sensitivity**: medium — omitting this masking likely degrades performance as the model must learn to output zero on known regions.\n- **Bounds**: The mask ξ must be consistent between x₀ construction, network conditioning, and output masking.\n- **Code ref**: [src/execution/inpainting.py]\n- **Source**: §4.1 \"we can build this property into our neural network model, and mask the output\"",
+            "warn": "",
+            "refs": [],
+            "kind": "kv"
+          },
+          {
+            "sec_id": "H03",
+            "heading": "H03: Small Gaussian noise σ added to super-resolution base",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "Setting x₀ = U(D(x₁)) + σζ with σ>0 adds a small amount of Gaussian noise to the upsampled low-resolution image. Without noise (σ=0), the base distribution would be concentrated on the image of the downsampling-upsampling operator D∘U, a lower-dimensional manifold in the ambient space. Adding noise σζ smoothes the base density over all of R^{C×W×H}, making it well-defined and non-degenerate."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "medium — σ must be small enough to keep transport cost low but large enough to regularize the base density."
+              },
+              {
+                "label": "Bounds",
+                "value": "σ > 0 strictly required. Exact value not specified in paper."
+              },
+              {
+                "label": "Code Ref",
+                "value": "[src/execution/superresolution.py]"
+              },
+              {
+                "label": "Source",
+                "value": "§4.2 \"Working with σ > 0 alleviates the associated singularities\""
+              }
+            ],
+            "code": "",
+            "text": "- **Rationale**: Setting x₀ = U(D(x₁)) + σζ with σ>0 adds a small amount of Gaussian noise to the upsampled low-resolution image. Without noise (σ=0), the base distribution would be concentrated on the image of the downsampling-upsampling operator D∘U, a lower-dimensional manifold in the ambient space. Adding noise σζ smoothes the base density over all of R^{C×W×H}, making it well-defined and non-degenerate.\n- **Sensitivity**: medium — σ must be small enough to keep transport cost low but large enough to regularize the base density.\n- **Bounds**: σ > 0 strictly required. Exact value not specified in paper.\n- **Code ref**: [src/execution/superresolution.py]\n- **Source**: §4.2 \"Working with σ > 0 alleviates the associated singularities\"",
+            "warn": "- **Bounds**: σ > 0 strictly required. Exact value not specified in paper.",
+            "refs": [],
+            "kind": "kv"
+          },
+          {
+            "sec_id": "H04",
+            "heading": "H04: Gradient norm clipping at 10,000 (L2 norm of all parameters)",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "Clip the global gradient norm (treating all parameters as one vector) at 10,000 to prevent catastrophic gradient updates during training of the large U-Net on ImageNet. This is PyTorch's default norm type for `clip_grad_norm_`."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "low — a very high threshold that mainly catches rare gradient explosions."
+              },
+              {
+                "label": "Bounds",
+                "value": "Clipping value = 10,000 (the norm of the entire parameter vector)."
+              },
+              {
+                "label": "Code Ref",
+                "value": "[src/execution/stochastic_interpolant.py]"
+              },
+              {
+                "label": "Source",
+                "value": "Appendix B \"We clip gradient norms at 10,000 (this is the norm of the entire set of parameters taken as a vector, the default type of norm clipping in PyTorch library)\""
+              }
+            ],
+            "code": "",
+            "text": "- **Rationale**: Clip the global gradient norm (treating all parameters as one vector) at 10,000 to prevent catastrophic gradient updates during training of the large U-Net on ImageNet. This is PyTorch's default norm type for `clip_grad_norm_`.\n- **Sensitivity**: low — a very high threshold that mainly catches rare gradient explosions.\n- **Bounds**: Clipping value = 10,000 (the norm of the entire parameter vector).\n- **Code ref**: [src/execution/stochastic_interpolant.py]\n- **Source**: Appendix B \"We clip gradient norms at 10,000 (this is the norm of the entire set of parameters taken as a vector, the default type of norm clipping in PyTorch library)\"",
+            "warn": "",
+            "refs": [],
+            "kind": "kv"
+          },
+          {
+            "sec_id": "H05",
+            "heading": "H05: StepLR learning rate decay (γ=0.99, N=1000 steps)",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "Gradual learning rate decay prevents oscillation around the final optimum while still enabling fast early convergence at lr=2e-4. The multiplicative factor 0.99 per 1000 steps is mild, giving roughly lr×0.99^200 ≈ 0.135·lr after 200,000 steps."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "medium — affects final model quality; too aggressive decay would under-train."
+              },
+              {
+                "label": "Bounds",
+                "value": "Initial lr=2e-4; decay factor γ=0.99 every N=1000 gradient steps."
+              },
+              {
+                "label": "Code Ref",
+                "value": "[src/execution/stochastic_interpolant.py]"
+              },
+              {
+                "label": "Source",
+                "value": "Appendix B \"starting at learning rate 2e-4 with the StepLR scheduler which scales the learning rate by γ = .99 every N = 1000 steps\""
+              }
+            ],
+            "code": "",
+            "text": "- **Rationale**: Gradual learning rate decay prevents oscillation around the final optimum while still enabling fast early convergence at lr=2e-4. The multiplicative factor 0.99 per 1000 steps is mild, giving roughly lr×0.99^200 ≈ 0.135·lr after 200,000 steps.\n- **Sensitivity**: medium — affects final model quality; too aggressive decay would under-train.\n- **Bounds**: Initial lr=2e-4; decay factor γ=0.99 every N=1000 gradient steps.\n- **Code ref**: [src/execution/stochastic_interpolant.py]\n- **Source**: Appendix B \"starting at learning rate 2e-4 with the StepLR scheduler which scales the learning rate by γ = .99 every N = 1000 steps\"",
+            "warn": "",
+            "refs": [],
+            "kind": "kv"
+          },
+          {
+            "sec_id": "H06",
+            "heading": "H06: Image-shaped conditioning via channel concatenation",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "Appending the conditioning image ξ (upsampled low-res image for super-resolution, or mask for inpainting) as additional channels to the U-Net input, following Ho et al. (2022a). This gives the network spatial access to conditioning at all resolution levels of the U-Net. Class labels are embedded via the class conditioning mechanism of the U-Net (learnable embeddings)."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "medium — concatenation depth affects early-layer processing of conditioning."
+              },
+              {
+                "label": "Bounds",
+                "value": "Conditioning channels are concatenated to input; network output channels correspond only to the image (not conditioning)."
+              },
+              {
+                "label": "Code Ref",
+                "value": "[src/execution/superresolution.py]"
+              },
+              {
+                "label": "Source",
+                "value": "Appendix B \"we follow (Ho et al., 2022a) and append upsampled low-resolution images to the input xₜ at each time step\""
+              }
+            ],
+            "code": "",
+            "text": "- **Rationale**: Appending the conditioning image ξ (upsampled low-res image for super-resolution, or mask for inpainting) as additional channels to the U-Net input, following Ho et al. (2022a). This gives the network spatial access to conditioning at all resolution levels of the U-Net. Class labels are embedded via the class conditioning mechanism of the U-Net (learnable embeddings).\n- **Sensitivity**: medium — concatenation depth affects early-layer processing of conditioning.\n- **Bounds**: Conditioning channels are concatenated to input; network output channels correspond only to the image (not conditioning).\n- **Code ref**: [src/execution/superresolution.py]\n- **Source**: Appendix B \"we follow (Ho et al., 2022a) and append upsampled low-resolution images to the input xₜ at each time step\"",
+            "warn": "",
+            "refs": [],
+            "kind": "kv"
+          }
+        ]
+      }
+    ]
+  }
+}
+/* __ARA_DATA_END__ */
+</script>
+
+<script>
+"use strict";
+(function () {
+  const GLYPH = { question:"Q", experiment:"✦", decision:"→", dead_end:"✗", pivot:"↻", insight:"!", default:"•" };
+  const TYPES = ["question","experiment","decision","dead_end","pivot","insight"];
+
+  let DATA;
+  try {
+    // The payload sits between the BEGIN/END marker comments (kept in-file so the
+    // skill can re-inject). Strip ONLY those two named markers before parsing; the
+    // rest of textContent is pure JSON. (Marker text is not written literally here,
+    // so it stays a single injection site.)
+    var raw = document.getElementById("ara-data").textContent
+                .replace(/\/\*\s*__ARA_DATA_(?:BEGIN|END)__\s*\*\//g, "");
+    DATA = JSON.parse(raw);
+  } catch (e) {
+    document.getElementById("detail").innerHTML =
+      '<div class="none">Could not parse embedded ARA data: ' + String(e) + '</div>';
+    return;
+  }
+
+  const nodes = DATA.nodes || [];
+  const byId = new Map(nodes.map(n => [n.id, n]));
+  const kids = new Map();
+  nodes.forEach(n => kids.set(n.id, []));
+  let roots = [];
+  nodes.forEach(n => {
+    if (n.parent && byId.has(n.parent)) kids.get(n.parent).push(n.id);
+    else roots.push(n.id);
+  });
+  // Traversal order: explicit DATA.order if given, else DFS from roots.
+  let order = Array.isArray(DATA.order) && DATA.order.length ? DATA.order.filter(id => byId.has(id)) : [];
+  if (!order.length) { const seen=new Set(); const dfs=id=>{if(seen.has(id))return;seen.add(id);order.push(id);(kids.get(id)||[]).forEach(dfs)}; roots.forEach(dfs); }
+
+  const esc = s => String(s==null?"":s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  const glyph = t => GLYPH[t] || GLYPH.default;
+  const cls = t => TYPES.includes(t) ? t : "default";
+
+  // ---- header ----
+  const m = DATA.meta || {};
+  document.getElementById("h-title").textContent = m.title || "ARA Trajectory";
+  document.getElementById("h-sub").textContent =
+    [ (m.authors||[]).join(", "), m.venue, m.year ].filter(Boolean).join(" · ");
+  if (m.abstract) document.getElementById("h-abstract").textContent = m.abstract;
+  else document.getElementById("h-abstract-wrap").style.display = "none";
+
+  const ftype = document.getElementById("ftype");
+  const present = [...new Set(nodes.map(n => n.type))];
+  TYPES.concat(present.filter(t=>!TYPES.includes(t))).filter(t=>present.includes(t))
+    .forEach(t => { const o=document.createElement("option"); o.value=t; o.textContent=t; ftype.appendChild(o); });
+
+  // ---- minimal markdown-table renderer ----
+  function renderMd(md){
+    if(!md) return "";
+    const lines = String(md).split("\n");
+    let out=[], i=0;
+    while(i<lines.length){
+      if(/^\s*\|/.test(lines[i]) && i+1<lines.length && /^\s*\|?[\s:|-]+\|?\s*$/.test(lines[i+1])){
+        const row = l => l.replace(/^\s*\|/,"").replace(/\|\s*$/,"").split("|").map(c=>c.trim());
+        const head = row(lines[i]); i+=2; const body=[];
+        while(i<lines.length && /^\s*\|/.test(lines[i])){ body.push(row(lines[i])); i++; }
+        out.push('<table class="md"><thead><tr>'+head.map(h=>"<th>"+esc(h)+"</th>").join("")+
+          '</tr></thead><tbody>'+body.map(r=>"<tr>"+r.map(c=>"<td>"+esc(c)+"</td>").join("")+"</tr>").join("")+"</tbody></table>");
+      } else { if(lines[i].trim()) out.push("<div>"+esc(lines[i])+"</div>"); i++; }
+    }
+    return out.join("");
+  }
+
+  // ---- detail pane ----
+  function block(title, tag, inner, open, cls){
+    return '<details class="block'+(cls?" "+cls:"")+'"'+(open?" open":"")+'><summary>'+esc(title)+
+      (tag?'<span class="tag">'+esc(tag)+'</span>':'')+'</summary><div class="body">'+inner+'</div></details>';
+  }
+  function chips(arr, klass){ return arr&&arr.length ? '<div class="chips">'+arr.map(x=>'<span class="chip '+(klass||"")+'">'+esc(x)+'</span>').join("")+'</div>' : ""; }
+
+  function renderDetail(n){
+    const d = document.getElementById("detail");
+    let h = '<div class="dhead"><span class="badge '+cls(n.type)+'">'+esc(n.type)+'</span>'+
+      '<span class="did">'+esc(n.id)+'</span>'+
+      (n.support_level?'<span class="pill '+esc(n.support_level)+'">'+esc(n.support_level)+'</span>':'')+
+      (n.isolated?'<span class="pill iso">isolated</span>':'')+'</div>';
+    h += '<div class="dtitle">'+esc(n.title||"(untitled)")+'</div>';
+
+    // reasoning (primary, always open) — the agent's thinking IS the content of a step
+    let reason="";
+    if(n.thinking){
+      reason += '<div class="lead">'+esc(n.thinking)+'</div>';
+      if(n.body) reason += '<div class="didwhat">what it did</div><div>'+esc(n.body)+'</div>';
+    } else {
+      reason += n.body ? '<div class="lead">'+esc(n.body)+'</div>' : '<div class="empty">No description.</div>';
+    }
+    if(n.depends_on&&n.depends_on.length) reason += chips(n.depends_on.map(x=>"⇠ depends on "+x));
+    if(n.source_refs&&n.source_refs.length) reason += chips(n.source_refs, "ext");
+    if(n.built_on&&n.built_on.length) reason += chipRow("built on", n.built_on, "chip-built");
+    if(n.rejected_here&&n.rejected_here.length) reason += chipRow("rejected here", n.rejected_here, "chip-rej");
+    if(n.recipe_refs&&n.recipe_refs.length) reason += recipeChips(n.recipe_refs);
+    h += block(n.thinking?"reasoning":"what", n.type, reason, true, "reason");
+
+    // result (the grounded payload) — open
+    const r = n.result||{};
+    if((r.sources&&r.sources.length)||(r.figures&&r.figures.length)||(r.tables&&r.tables.length)||(r.data&&r.data.length)){
+      let s="";
+      (r.figures||[]).forEach(f=>{ s+='<figure><img src="'+esc(f.img)+'" alt="'+esc(f.caption||f.id)+'"/>'+
+        (f.caption?'<figcaption>'+esc(f.caption)+'</figcaption>':'')+'</figure>'; });
+      (r.tables||[]).forEach(t=>{ s+=(t.caption?'<div class="empty">'+esc(t.caption)+'</div>':'')+renderMd(t.markdown); });
+      (r.sources||[]).forEach(q=>{ s+='<div class="quote">'+esc(q.quote)+(q.ref?'<div class="ref">← '+esc(q.ref)+'</div>':'')+'</div>'; });
+      (r.data||[]).forEach(x=>{ s+='<div class="ptr">⛁ <span class="path">'+esc(x.path)+'</span>'+(x.note?' — '+esc(x.note):'')+'</div>'; });
+      h += block("result", "", s, true);
+    }
+
+    // why (claims) — supporting detail, collapsed
+    if(n.why&&n.why.length){
+      const w = n.why.map(c=>{
+        let s='<div class="claim"><h4>'+esc(c.id)+(c.title?' — '+esc(c.title):'')+'</h4>';
+        if(c.statement) s+='<div class="kv">'+esc(c.statement)+'</div>';
+        if(c.status) s+='<div class="kv"><b>status</b> <span class="status '+esc(String(c.status).toLowerCase())+'">'+esc(c.status)+'</span></div>';
+        if(c.conditions) s+='<div class="kv"><b>conditions</b> '+esc(c.conditions)+'</div>';
+        if(c.falsification) s+='<div class="kv"><b>falsified if</b> '+esc(c.falsification)+'</div>';
+        if(c.dependencies&&c.dependencies.length) s+='<div class="kv"><b>depends on</b> '+esc(c.dependencies.join(", "))+'</div>';
+        if(c.provenance) s+='<div class="kv"><span class="prov">provenance: '+esc(c.provenance)+'</span></div>';
+        return s+'</div>';
+      }).join("");
+      h += block("why", n.why.map(c=>c.id).join(" · "), w);
+    }
+
+    // how verified (experiments) — supporting detail, collapsed
+    if(n.verified_by&&n.verified_by.length){
+      const v = n.verified_by.map(e=>'<div class="claim"><h4>'+esc(e.id)+(e.title?' — '+esc(e.title):'')+'</h4>'+
+        (e.run?'<div class="kv"><b>run</b> <span class="path mono">'+esc(e.run)+'</span></div>':'')+
+        (e.setup?'<div class="kv"><b>setup</b> '+esc(e.setup)+'</div>':'')+
+        (e.metrics?'<div class="kv"><b>metrics</b> '+esc(e.metrics)+'</div>':'')+'</div>').join("");
+      h += block("how verified", n.verified_by.map(e=>e.id).join(" · "), v);
+    }
+
+    // artifact pointers (src/artifacts.md) — collapsed
+    if(n.artifact&&n.artifact.length){
+      const a = n.artifact.map(x=>'<div class="ptr">▸ <b>'+esc(x.name)+'</b> — <span class="path">'+esc(x.pointer)+'</span>'+
+        (x.what?'<div class="empty">'+esc(x.what)+'</div>':'')+'</div>').join("");
+      h += block("artifact", "pointer", a);
+    }
+
+    d.innerHTML = h;
+    if(typeof LEX!=="undefined" && LEX) linkifyConcepts(d);
+    d.scrollTop = 0;
+  }
+
+  // ---- map ----
+  let selected = null;
+  function selectNode(id){
+    if(!byId.has(id)) return;
+    selected = id;
+    document.querySelectorAll(".node").forEach(el=>el.classList.toggle("sel", el.dataset.id===id));
+    const el = document.querySelector('.node[data-id="'+CSS.escape(id)+'"]');
+    if(el) el.scrollIntoView({block:"nearest"});
+    renderDetail(byId.get(id));
+    rstat();
+  }
+
+  function nodeRow(n){
+    const row = document.createElement("div");
+    row.className = "node "+(n.type==="dead_end"?"dead":"");
+    row.dataset.id = n.id; row.dataset.type = n.type;
+    // calmer than before: one glyph + id + (quiet) cross-edge marker; the ⊕/⊘ count soup is gone.
+    row.innerHTML = '<span class="glyph '+cls(n.type)+'">'+glyph(n.type)+'</span>'+
+      '<span><span class="meta"><span class="nid">'+esc(n.id)+'</span>'+
+      (n.depends_on&&n.depends_on.length?'<span class="dep" title="depends on '+esc(n.depends_on.join(", "))+'">⇠ '+esc(n.depends_on.join(","))+'</span>':'')+
+      '</span><div class="ntitle">'+esc(n.title||n.body||"(untitled)")+'</div></span>';
+    row.addEventListener("click", ()=>selectNode(n.id));
+    // hover a node to highlight its cross-edge targets (gentler than always-on connectors)
+    if(n.depends_on&&n.depends_on.length){
+      row.addEventListener("mouseenter", ()=>n.depends_on.forEach(t=>{ const el=document.querySelector('.node[data-id="'+CSS.escape(t)+'"]'); if(el) el.classList.add("deptarget"); }));
+      row.addEventListener("mouseleave", ()=>document.querySelectorAll(".node.deptarget").forEach(el=>el.classList.remove("deptarget")));
+    }
+    return row;
+  }
+  function renderSubtree(id, container){
+    const n = byId.get(id); if(!n) return;
+    container.appendChild(nodeRow(n));
+    const cs = kids.get(id)||[];
+    if(cs.length){ const wrap=document.createElement("div"); wrap.className="kid"; cs.forEach(c=>renderSubtree(c,wrap)); container.appendChild(wrap); }
+  }
+  function renderMap(){
+    const map = document.getElementById("map"); map.innerHTML="";
+    const normalRoots = roots.filter(id=>!byId.get(id).isolated);
+    const isoRoots = roots.filter(id=>byId.get(id).isolated);
+    normalRoots.forEach(id=>renderSubtree(id, map));
+    if(isoRoots.length){
+      const box=document.createElement("div"); box.className="isobox";
+      const hdr=document.createElement("div"); hdr.className="isohdr"; hdr.textContent="isolated subtree"; box.appendChild(hdr);
+      isoRoots.forEach(id=>renderSubtree(id, box)); map.appendChild(box);
+    }
+  }
+
+  // ---- filter / search ----
+  function applyFilters(){
+    const q = document.getElementById("q").value.trim().toLowerCase();
+    const ty = document.getElementById("ftype").value;
+    const deadOnly = document.getElementById("fdead").checked;
+    let shown=0;
+    document.querySelectorAll(".node").forEach(el=>{
+      const n = byId.get(el.dataset.id);
+      const text = (n.id+" "+(n.title||"")+" "+(n.body||"")).toLowerCase();
+      const ok = (!q||text.includes(q)) && (!ty||n.type===ty) && (!deadOnly||n.type==="dead_end");
+      el.classList.toggle("dim", !ok);
+      if(ok) shown++;
+    });
+    document.getElementById("rstat").textContent = shown+" / "+nodes.length+" steps";
+  }
+  function rstat(){
+    const i = selected?order.indexOf(selected):-1;
+    document.getElementById("rstat").textContent = (i>=0?("step "+(i+1)+" / "+order.length):(nodes.length+" steps"));
+  }
+
+  // ---- replay ----
+  let timer=null;
+  function step(delta){
+    let i = selected?order.indexOf(selected):-1;
+    i = Math.max(0, Math.min(order.length-1, i+delta));
+    selectNode(order[i]);
+  }
+  function play(){
+    if(timer){ stop(); return; }
+    if(!selected) selectNode(order[0]);
+    document.getElementById("rplay").textContent="⏸ Pause";
+    timer = setInterval(()=>{
+      const i = selected?order.indexOf(selected):-1;
+      if(i>=order.length-1){ stop(); return; }
+      step(1);
+    }, 1300);
+  }
+  function stop(){ if(timer){clearInterval(timer);timer=null;} document.getElementById("rplay").textContent="▶ Replay"; }
+
+  // ======================= v1.1 enrichment layers (all inert unless present) =======================
+  const CTX = DATA.context, GLO = DATA.glossary, DEP = DATA.dependencies, REC = DATA.recipes;
+  const LAYERS = { context:CTX, glossary:GLO, dependencies:DEP, recipes:REC };
+
+  // ---- indexes (built once) ----
+  const claimToNodes = new Map();
+  nodes.forEach(n => (n.why||[]).forEach(c => { if(c&&c.id){ if(!claimToNodes.has(c.id)) claimToNodes.set(c.id,[]); claimToNodes.get(c.id).push(n.id); } }));
+  const firstNodeForClaim = id => (claimToNodes.get(id)||[])[0] || null;
+  const rwById   = new Map(((DEP&&DEP.entries)||[]).map(e => [e.rw_id, e]));
+  const termById = new Map(((GLO&&GLO.terms)||[]).map(t => [t.term_id, t]));
+  // concept "used by" (inferred) from each node's name-matched concepts[]
+  if(GLO){
+    const nameToTerm = new Map();
+    (GLO.terms||[]).forEach(t => { if(t.name) nameToTerm.set(String(t.name).toLowerCase(), t); (t.aliases||[]).forEach(a=>nameToTerm.set(String(a).toLowerCase(), t)); });
+    nodes.forEach(n => (n.concepts||[]).forEach(cn => { const t=nameToTerm.get(String(cn).toLowerCase()); if(t){ (t._used=t._used||[]).push(n.id); } }));
+  }
+
+  // ---- tiny inline-math fallback (no CDN; operates on already-escaped text, adds only safe tags) ----
+  const GK={alpha:"α",beta:"β",gamma:"γ",delta:"δ",epsilon:"ε",eta:"η",theta:"θ",kappa:"κ",lambda:"λ",mu:"μ",nu:"ν",pi:"π",rho:"ρ",sigma:"σ",tau:"τ",phi:"φ",chi:"χ",psi:"ψ",omega:"ω",Delta:"Δ",Sigma:"Σ",Omega:"Ω",Phi:"Φ",Theta:"Θ",Lambda:"Λ",Gamma:"Γ",nabla:"∇",partial:"∂",times:"×",cdot:"·",infty:"∞",approx:"≈",leq:"≤",geq:"≥",neq:"≠",to:"→",in:"∈",sum:"Σ",prod:"Π",sqrt:"√",mathbb:"",mathcal:"",mathbf:"",mathrm:"",left:"",right:""};
+  function texInner(s){
+    s=s.replace(/\\(?:mathbb|mathcal|mathbf|mathrm)\{([^{}]*)\}/g,"$1");
+    s=s.replace(/\\frac\{([^{}]*)\}\{([^{}]*)\}/g,"($1)/($2)");
+    s=s.replace(/\\([A-Za-z]+)/g,(m,w)=>GK[w]!==undefined?GK[w]:m);
+    s=s.replace(/\^\{([^{}]*)\}/g,"<sup>$1</sup>").replace(/\^([\w()+\-])/g,"<sup>$1</sup>");
+    s=s.replace(/_\{([^{}]*)\}/g,"<sub>$1</sub>").replace(/_([\w()+\-])/g,"<sub>$1</sub>");
+    return s;
+  }
+  function mathPass(escaped){
+    if(escaped.indexOf("$")<0) return escaped;
+    return escaped.replace(/\$\$([^$]+)\$\$/g,(m,x)=>'<span class="math">'+texInner(x)+'</span>')
+                  .replace(/\$([^$]+)\$/g,(m,x)=>'<span class="math">'+texInner(x)+'</span>');
+  }
+  function mtext(v){ const e=esc(v); try{ return mathPass(e); }catch(_){ return e; } }
+
+  // ---- typed-ref rendering (off-ARA pointers stay inert; in-ARA targets become jump chips) ----
+  function refUrl(rf){
+    const raw=rf.raw||"";
+    if(rf.kind==="url"){ const m=raw.match(/https?:\/\/\S+/); return m?m[0]:""; }
+    if(rf.kind==="arxiv"){ const m=raw.match(/(\d{4}\.\d{4,5})/); return m?("https://arxiv.org/abs/"+m[1]):""; }
+    if(rf.kind==="doi"){ const m=raw.match(/(10\.\d{4,}\/\S+)/); return m?("https://doi.org/"+m[1]):""; }
+    return "";
+  }
+  function refChip(rf){
+    const raw=esc(rf.raw||""), url=refUrl(rf);
+    if(url) return '<a class="chip ext" href="'+esc(url)+'" target="_blank" rel="noopener">'+raw+'</a>';
+    if(rf.target){
+      if(rf.kind==="claim")        return '<span class="chip jump" data-jump-claim="'+esc(rf.target)+'">'+raw+'</span>';
+      if(rf.kind==="node")         return '<span class="chip jump" data-jump-node="'+esc(rf.target)+'">'+raw+'</span>';
+      if(rf.kind==="concept")      return '<span class="chip jump" data-open-term="'+esc(rf.target)+'">'+raw+'</span>';
+      if(rf.kind==="related_work") return '<span class="chip jump" data-open-panel="dependencies" data-anchor="ov-'+esc(rf.target)+'">'+raw+'</span>';
+      return '<span class="chip jump" data-scroll="ov-'+esc(rf.target)+'">'+raw+'</span>';
+    }
+    const dangle=(rf.kind==="claim"||rf.kind==="related_work"||rf.kind==="concept");
+    return '<span class="chip '+(dangle?'dangle" title="referenced but not found in this ARA':'ext')+'">'+raw+'</span>';
+  }
+  function refRow(refs){ return refs&&refs.length ? '<div class="chips">'+refs.map(refChip).join("")+'</div>' : ""; }
+
+  // ---- per-node provenance chips (consumed by renderDetail) ----
+  function chipRow(label, arr, klass){
+    const cs=arr.map(x=>{
+      const txt=[x.rw_id,x.name].filter(Boolean).join(" · ")||"?";
+      const tip=x.relation_raw?(' title="'+esc(x.relation_raw)+'"'):'';
+      const op =x.rw_id?(' data-open-panel="dependencies" data-anchor="ov-'+esc(x.rw_id)+'"'):'';
+      return '<span class="chip '+klass+(x.rw_id?' jump':'')+'"'+tip+op+'>'+esc(txt)+'</span>';
+    }).join("");
+    return '<div class="chiplabel">'+esc(label)+'</div><div class="chips">'+cs+'</div>';
+  }
+  function recipeChips(arr){
+    const cs=arr.map(x=>{
+      const anchor="ov-sec-"+(x.file||"")+"-"+(x.sec_id||"");
+      return '<span class="chip chip-recipe jump" data-open-panel="recipes" data-anchor="'+esc(anchor)+'" title="'+esc((x.file||"")+(x.role?(" · "+x.role):""))+'">▦ '+esc(x.heading||x.file||"recipe")+'</span>';
+    }).join("");
+    return '<div class="chiplabel">recipe</div><div class="chips">'+cs+'</div>';
+  }
+
+  // ---- the four overlay renderers (reuse block/chips/renderMd) ----
+  function renderContext(){
+    let h=""; if(CTX.summary) h+='<div class="ribbon">'+esc(CTX.summary)+'</div>';
+    (CTX.sections||[]).forEach(sec=>{
+      let inner="";
+      if(sec.present===false){ inner='<div class="muted grey">(not specified in this ARA)</div>'; }
+      else (sec.entries||[]).forEach(en=>{
+        let c='<div class="card" id="ov-'+esc(en.ent_id||"")+'"><h4>'+(en.ent_id?'<span class="did">'+esc(en.ent_id)+'</span> ':'')+esc(en.ent_title||"")+(en.inferred_id?' <span class="sub">(pos.)</span>':'')+'</h4>';
+        if(!en.unstructured && en.fields && en.fields.length) en.fields.forEach(f=>c+='<div class="kv"><b>'+esc(f.label)+'</b> '+mtext(f.value)+'</div>');
+        else if(en.text) c+='<div class="kv">'+mtext(en.text)+'</div>';
+        if(en.unstructured) c+='<div class="sub">unstructured</div>';
+        c+=refRow(en.refs)+'</div>'; inner+=c;
+      });
+      h+=block(sec.heading||sec.role||"section", sec.role||"", inner, sec.role==="insight");
+    });
+    return h || '<div class="muted">No problem context.</div>';
+  }
+  function renderGlossary(filter){
+    const f=(filter||"").trim().toLowerCase();
+    const match=t=>!f||((t.name||"")+" "+(t.aliases||[]).join(" ")+" "+(t.definition||"")).toLowerCase().includes(f);
+    function card(t){
+      let c='<div class="card" id="ov-'+esc(t.term_id)+'"><h4>'+esc(t.name)+(t.group?' <span class="sub">'+esc(t.group)+'</span>':'')+'</h4>';
+      if(t.aliases&&t.aliases.length) c+='<div class="chips">'+t.aliases.map(a=>'<span class="chip">'+esc(a)+'</span>').join("")+'</div>';
+      if(t.definition) c+='<div class="kv">'+mtext(t.definition)+'</div>';
+      (t.fields||[]).forEach(fl=>c+='<div class="kv"><b>'+esc(fl.label)+'</b> '+mtext(fl.value)+'</div>');
+      if(t.related&&t.related.length) c+='<div class="kv"><b>related</b> '+t.related.map(r=>{const rt=termById.get(r);return '<span class="chip jump" data-open-term="'+esc(r)+'">'+esc(rt?rt.name:r)+'</span>';}).join(" ")+'</div>';
+      if(t._used&&t._used.length) c+='<div class="kv"><b>mentions</b> '+[...new Set(t._used)].map(nid=>'<span class="chip jump" data-jump-node="'+esc(nid)+'">'+esc(nid)+'</span>').join(" ")+' <span class="sub">(inferred)</span></div>';
+      return c+refRow(t.refs)+'</div>';
+    }
+    const groups=GLO.groups&&GLO.groups.length?GLO.groups:null; let h="";
+    if(groups){
+      const grouped=new Set();
+      groups.forEach(g=>{ (g.term_ids||[]).forEach(id=>grouped.add(id)); const ts=(g.term_ids||[]).map(id=>termById.get(id)).filter(Boolean).filter(match); if(ts.length) h+=block(g.name||"group", String(ts.length), ts.map(card).join(""), true); });
+      const rest=(GLO.terms||[]).filter(t=>!grouped.has(t.term_id)).filter(match);
+      if(rest.length) h+=block("other", String(rest.length), rest.map(card).join(""), true);
+    } else { const ts=(GLO.terms||[]).filter(match); h=ts.map(card).join(""); }
+    return h || '<div class="muted">No matching terms.</div>';
+  }
+  function renderDeps(filter){
+    const f=(filter||"").trim().toLowerCase(); let h="";
+    if(DEP.preamble) h+='<div class="muted">'+esc(DEP.preamble)+'</div>';
+    if(DEP.attribution) h+='<div class="ribbon">'+esc(DEP.attribution)+'</div>';
+    const ents=(DEP.entries||[]).filter(e=>!e.is_footprint).filter(e=>!f||(((e.rw_id||"")+" "+(e.name||"")+" "+(e.relation_raw||"")+" "+(e.delta||"")).toLowerCase().includes(f)));
+    ents.forEach(e=>{
+      const rn=e.relation_norm, relc=["baseline","imports","extends","bounds","refutes"].includes(rn)?rn:"neutral";
+      let c='<div class="card" id="ov-'+esc(e.rw_id||"")+'"><h4>'+(e.rw_id?'<span class="did">'+esc(e.rw_id)+'</span> ':'')+esc(e.name||"")+'</h4>';
+      c+='<div class="chips"><span class="rel '+relc+'">'+esc(e.relation_raw||rn||"related")+'</span>'+(e.cross_agent?'<span class="chip" title="other-agent provenance">↔ other-agent</span>':'')+'</div>';
+      if(e.delta) c+='<div class="kv">'+mtext(e.delta)+'</div>';
+      if(e.adopted) c+='<div class="kv"><b>adopted</b> '+esc(e.adopted)+'</div>';
+      let prov=(e.grounding||[]).map(refChip).join("");
+      (e.claims||[]).filter(id=>claimToNodes.has(id)).forEach(id=>prov+='<span class="chip jump" data-jump-claim="'+esc(id)+'">'+esc(id)+'</span>');
+      c+= prov?('<div class="kv"><b>grounding</b> '+prov+'</div>'):'<div class="muted">ungrounded</div>';
+      h+=c+'</div>';
+    });
+    if(!ents.length) h+='<div class="muted">No matching dependencies.</div>';
+    const fp=DEP.footprint||[];
+    if(fp.length) h+=block("Citation footprint", String(fp.length), fp.map(x=>'<div class="ptr"><span class="muted">'+esc(x.ref_id||"")+'</span> '+esc(x.citation||"")+'</div>').join(""), false);
+    return h;
+  }
+  function renderRecipes(){
+    let h="";
+    (REC.files||[]).forEach(file=>{
+      let inner="";
+      (file.sections||[]).forEach(sec=>{
+        let c='<div class="card" id="ov-sec-'+esc((file.file||"")+"-"+(sec.sec_id||""))+'"><h4>'+(sec.sec_id?'<span class="did">'+esc(sec.sec_id)+'</span> ':'')+esc(sec.heading||"")+'</h4>';
+        if(sec.kind==="table"&&sec.markdown) c+=renderMd(sec.markdown);
+        else if(sec.kind==="steps"&&sec.steps&&sec.steps.length) c+='<ol>'+sec.steps.map(s=>'<li>'+mtext(String(s).replace(/^\s*\d+\.\s*/,""))+'</li>').join("")+'</ol>';
+        else if(sec.kind==="kv"&&sec.fields&&sec.fields.length) sec.fields.forEach(fl=>c+='<div class="kv"><b>'+esc(fl.label)+'</b> '+mtext(fl.value)+'</div>');
+        else if(sec.kind==="code"&&sec.code) c+='<pre class="snip">'+esc(sec.code)+'</pre>';
+        else if(sec.kind==="math"&&sec.code) c+='<div class="kv math">'+mtext(sec.code)+'</div>';
+        else if(sec.text) c+='<div class="kv">'+mtext(sec.text)+'</div>';
+        if(sec.warn) c+='<div class="warn">'+esc(sec.warn)+'</div>';
+        inner+=c+refRow(sec.refs)+'</div>';
+      });
+      h+=block((file.file_title||file.file||"recipe")+(file.role?("  ·  "+file.role):""), String((file.sections||[]).length), inner, true);
+    });
+    return h || '<div class="muted">No recipe content.</div>';
+  }
+
+  // ---- overlay open/close + layerbar wiring ----
+  const ov=document.getElementById("overlay");
+  let lastTrigger=null;
+  const PANEL_RENDER={ context:renderContext, glossary:()=>renderGlossary(""), dependencies:()=>renderDeps(""), recipes:renderRecipes };
+  function hasContent(name){ const L=LAYERS[name]; if(!L) return false;
+    if(name==="context") return (L.sections||[]).length>0;
+    if(name==="glossary") return (L.terms||[]).length>0;
+    if(name==="dependencies") return (L.entries||[]).length>0||(L.footprint||[]).length>0;
+    if(name==="recipes") return (L.files||[]).length>0; return false; }
+  function panelTitle(name){ const L=LAYERS[name]||{}; return L.title || ({context:"Context",glossary:"Concepts",dependencies:"Dependencies",recipes:"Solution"}[name]); }
+  function panelCount(name){ const L=LAYERS[name]||{};
+    if(name==="glossary") return (L.terms||[]).length;
+    if(name==="dependencies") return (L.entries||[]).length;
+    if(name==="recipes") return (L.files||[]).reduce((a,f)=>a+(f.sections||[]).length,0); return 0; }
+  function openPanel(name, anchor){
+    if(!hasContent(name)) return;
+    stop(); lastTrigger=document.activeElement;
+    document.getElementById("ov-title").textContent=panelTitle(name);
+    const body=document.getElementById("ov-body"); body.innerHTML=PANEL_RENDER[name]();
+    if(LEX) linkifyConcepts(body);
+    const q=document.getElementById("ov-q");
+    if(name==="glossary"||name==="dependencies"){ q.hidden=false; q.value=""; q.dataset.panel=name; } else { q.hidden=true; }
+    ov.hidden=false;
+    if(anchor){ const el=document.getElementById(anchor); if(el) el.scrollIntoView({block:"center"}); } else body.scrollTop=0;
+    (q.hidden?document.getElementById("ov-close"):q).focus();
+  }
+  function closePanel(){ ov.hidden=true; if(lastTrigger&&lastTrigger.focus) lastTrigger.focus(); }
+  document.querySelectorAll(".lbtn").forEach(b=>{ const name=b.dataset.panel;
+    if(hasContent(name)){ b.hidden=false; const c=b.querySelector(".cnt"); if(c){ const n=panelCount(name); if(n) c.textContent=n; } b.addEventListener("click",()=>openPanel(name)); } });
+  document.getElementById("ov-q").addEventListener("input", e=>{ const p=e.target.dataset.panel, body=document.getElementById("ov-body");
+    body.innerHTML = p==="glossary"?renderGlossary(e.target.value):renderDeps(e.target.value); if(LEX) linkifyConcepts(body); });
+
+  // ---- glossary lexicon + popover ----
+  const LEX=(GLO&&GLO.lexicon&&Object.keys(GLO.lexicon).length)?(function(){
+    const surf=Object.keys(GLO.lexicon).filter(s=>s.length>=3).sort((a,b)=>b.length-a.length);
+    if(!surf.length) return null;
+    const re=s=>s.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+    return { re:new RegExp("\\b("+surf.map(re).join("|")+")\\b","i"), map:GLO.lexicon };
+  })():null;
+  const SKIP_TAGS={A:1,CODE:1,PRE:1,BUTTON:1,SCRIPT:1,STYLE:1,H4:1,H5:1,SUMMARY:1};
+  function linkifyConcepts(root){
+    if(!LEX) return;
+    const walker=document.createTreeWalker(root, NodeFilter.SHOW_TEXT, { acceptNode(t){
+      if(!t.nodeValue||!t.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+      let p=t.parentNode; while(p&&p!==root){ if(p.classList&&p.classList.contains("gterm")) return NodeFilter.FILTER_REJECT; if(SKIP_TAGS[p.tagName]) return NodeFilter.FILTER_REJECT; p=p.parentNode; }
+      return NodeFilter.FILTER_ACCEPT; } });
+    const seen=new Set(), hits=[]; let t;
+    while((t=walker.nextNode())){ const m=LEX.re.exec(t.nodeValue); if(!m) continue; const tid=LEX.map[m[1].toLowerCase()]; if(!tid||seen.has(tid)) continue; seen.add(tid); hits.push({node:t,index:m.index,len:m[1].length,tid}); }
+    hits.forEach(hp=>{ const tn=hp.node, txt=tn.nodeValue, par=tn.parentNode; if(!par) return;
+      const span=document.createElement("span"); span.className="gterm"; span.dataset.term=hp.tid; span.tabIndex=0; span.textContent=txt.slice(hp.index,hp.index+hp.len);
+      const after=document.createTextNode(txt.slice(hp.index+hp.len));
+      par.replaceChild(after,tn); par.insertBefore(span,after); par.insertBefore(document.createTextNode(txt.slice(0,hp.index)),span); });
+  }
+  const gpop=document.getElementById("gpop");
+  function gpopShow(span){ const t=termById.get(span.dataset.term); if(!t) return;
+    const def=t.definition||""; gpop.innerHTML='<h5>'+esc(t.name)+'</h5><div>'+mtext(def.slice(0,240))+(def.length>240?'…':'')+'</div><span class="gp-open" data-open-term="'+esc(t.term_id)+'">open in glossary →</span>';
+    gpop.style.display="block"; const r=span.getBoundingClientRect();
+    gpop.style.left=Math.max(6,Math.min(r.left, window.innerWidth-372))+"px"; gpop.style.top=(r.bottom+6)+"px"; }
+  function gpopHide(){ gpop.style.display="none"; }
+
+  // ---- delegated interactions for the new layers ----
+  document.addEventListener("click", e=>{
+    const el=e.target.closest&&e.target.closest("[data-close],[data-jump-node],[data-jump-claim],[data-open-panel],[data-open-term],[data-scroll]");
+    if(!el) return;
+    if(el.hasAttribute("data-close")){ closePanel(); return; }
+    if(el.dataset.jumpNode){ closePanel(); selectNode(el.dataset.jumpNode); return; }
+    if(el.dataset.jumpClaim){ const nid=firstNodeForClaim(el.dataset.jumpClaim); if(nid){ closePanel(); selectNode(nid); } return; }
+    if(el.dataset.openTerm){ openPanel("glossary","ov-"+el.dataset.openTerm); return; }
+    if(el.hasAttribute("data-open-panel")){ openPanel(el.dataset.openPanel, el.dataset.anchor||null); return; }
+    if(el.dataset.scroll){ const t=document.getElementById(el.dataset.scroll); if(t) t.scrollIntoView({block:"center"}); return; }
+  });
+  document.addEventListener("mouseover", e=>{ const g=e.target.closest&&e.target.closest(".gterm"); if(g) gpopShow(g); });
+  document.addEventListener("mouseout",  e=>{ const g=e.target.closest&&e.target.closest(".gterm"); if(g) gpopHide(); });
+  document.addEventListener("focusin",   e=>{ const g=e.target.closest&&e.target.closest(".gterm"); if(g) gpopShow(g); });
+  document.addEventListener("focusout",  e=>{ const g=e.target.closest&&e.target.closest(".gterm"); if(g) gpopHide(); });
+  window.addEventListener("scroll", gpopHide, true);
+
+  document.getElementById("q").addEventListener("input", applyFilters);
+  document.getElementById("ftype").addEventListener("change", applyFilters);
+  document.getElementById("fdead").addEventListener("change", applyFilters);
+  document.getElementById("rplay").addEventListener("click", play);
+  document.getElementById("rprev").addEventListener("click", ()=>{stop();step(-1);});
+  document.getElementById("rnext").addEventListener("click", ()=>{stop();step(1);});
+  document.addEventListener("keydown", e=>{
+    if(e.key==="Escape"){ if(!ov.hidden){ closePanel(); return; } gpopHide(); }
+    if(e.target.tagName==="INPUT"||e.target.tagName==="SELECT") return;
+    if(e.key==="ArrowLeft"){stop();step(-1);} else if(e.key==="ArrowRight"){stop();step(1);}
+    else if(e.key==="c"||e.key==="g"||e.key==="d"||e.key==="r"){ const p={c:"context",g:"glossary",d:"dependencies",r:"recipes"}[e.key]; if(hasContent(p)) openPanel(p); }
+  });
+
+  renderMap();
+  rstat();
+})();
+</script>
+</body>
+</html>

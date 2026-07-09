@@ -1,0 +1,2863 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ARA Trajectory</title>
+<!--
+  ARA Trajectory Viewer — canonical self-contained scaffold for the `research-visualizer` skill.
+
+  HOW THE SKILL USES THIS FILE
+  ----------------------------
+  The rendering logic below is FIXED. The agent does NOT rewrite it. The agent only:
+    1. Parses the ARA into one ARA_DATA object (schema in references/binding.md).
+    2. base64-inlines every referenced figure .png into node.result.figures[].img.
+    3. Replaces ONLY the JSON between the BEGIN/END markers in the <script id="ara-data"> block.
+    4. Writes the result to <ara>/trajectory.html (or --output).
+  Everything is inline (no CDN, no fetch, no server) so the output is one portable file.
+
+  INJECTION CONTRACT
+  ------------------
+  - Replace exactly the lines between  __ARA_DATA_BEGIN__  and  __ARA_DATA_END__.
+  - The payload MUST be valid JSON (it is read with JSON.parse).
+  - JSON must not contain the literal substring "</script>"; escape any "<" in inlined
+    markdown/text as "<" to be safe.
+  - The demo payload shipped here renders a 3-node sample so the bare template opens and
+    shows every node state (experiment, dead_end, isolated). The skill overwrites it.
+-->
+<style>
+  /* Research Visualizer — "field notebook of a machine scientist".
+     Cool archival vellum + ink; monospace is the machine-readout voice for
+     structure / IDs / data, a humanist serif carries the reasoning prose. The
+     signature is a traced trajectory spine that forks at branches and is struck
+     through at dead ends. Type is read from glyph + label; colour is reserved
+     for true epistemic status (teal = chrome, green = supported, amber =
+     tentative, clay-red = dead end) — never decoration. */
+  :root{
+    /* paper & ink — deliberately cool vellum, NOT warm cream */
+    --bg:#e9ece4; --panel:#f4f6f0; --panel2:#e3e7dd; --line:#ccd3c7; --ink:#1b2420;
+    --muted:#67726a; --faint:#8a948b; --accent:#0e6b62; --accent-ink:#0a4f48; --chip:#e6eae0;
+    --ok:#3a6a39; --warn:#a6402c; --tentative:#8a6310; --glyph-bg:#e0e5da; --glyph-ink:#4a544c;
+    --sel-bg:#e3ede7; --code-bg:#eaeee6; --reason-bg:#f4f6f0;
+    --iso-line:#b7c0ae; --iso-bg:#e5eadf; --iso-ink:#5f6b58;
+    --scrim:rgba(20,28,24,.42); --shadow:rgba(20,28,24,.16);
+    --add-bg:#e0ebdb; --add-ink:#2f5a2e; --del-bg:#f1e0da; --del-ink:#8c3623; --hunk:#67726a;
+    --spine:#c3ccbd; --grid:rgba(27,36,32,.05);
+    /* legacy type vars retained so any leftover hooks resolve */
+    --q:var(--glyph-bg); --exp:var(--glyph-bg); --dec:var(--glyph-bg); --piv:var(--glyph-bg); --ins:var(--glyph-bg); --def:var(--glyph-bg); --dead:var(--warn);
+    /* type roles: a serif reads the prose, monospace reads the machine */
+    --serif:ui-serif,"New York","Iowan Old Style",Palatino,Georgia,serif;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--bg);color:var(--ink);font:14px/1.65 var(--sans);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  code,pre,.mono{font-family:var(--mono)}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+
+  /* ---- masthead ---- */
+  header{padding:20px 24px 14px;border-bottom:1px solid var(--line);background:var(--panel)}
+  header .title{font-family:var(--serif);font-size:23px;font-weight:600;margin:0;letter-spacing:-.012em}
+  header .sub{font-family:var(--mono);color:var(--muted);font-size:11.5px;margin-top:5px;letter-spacing:.01em}
+  header details{margin-top:10px;color:var(--ink)}
+  header summary{cursor:pointer;color:var(--accent-ink);font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em}
+  .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:16px}
+  .toolbar input[type=search],.toolbar select{background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:6px 10px;font-size:13px;font-family:var(--sans)}
+  .toolbar input[type=search]{min-width:230px}
+  .toolbar input[type=search]:focus,.toolbar select:focus{border-color:var(--accent);outline:none}
+  .toolbar label{color:var(--muted);font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.06em;display:flex;gap:6px;align-items:center}
+  .btn{background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:6px 11px;font-size:12.5px;font-family:var(--mono);cursor:pointer;transition:border-color .12s,color .12s,background .12s}
+  .btn:hover{border-color:var(--accent);color:var(--accent-ink)}
+  .btn.primary{border-color:var(--accent);color:#fff;background:var(--accent)}
+  .btn.primary:hover{background:var(--accent-ink)}
+  .spacer{flex:1}
+  .count{color:var(--muted);font-family:var(--mono);font-size:11px;letter-spacing:.04em;padding-left:10px;border-left:1px solid var(--line)}
+
+  main{display:grid;grid-template-columns:minmax(300px,36%) 1fr;height:calc(100% - 0px);min-height:0}
+  #map{overflow:auto;border-right:1px solid var(--line);padding:18px 12px 56px;background:var(--bg);
+    background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+    background-size:24px 24px;background-position:-1px -1px}
+  #detail{overflow:auto;padding:26px 32px 80px;background:var(--bg)}
+
+  /* ---- process map: the trajectory spine is the signature ---- */
+  .node{position:relative;display:flex;gap:10px;align-items:flex-start;padding:7px 9px;border-radius:6px;cursor:pointer;border:1px solid transparent}
+  .node:hover{background:var(--panel2)}
+  .node.sel{background:var(--sel-bg);border-color:var(--accent)}
+  .node.deptarget{background:var(--sel-bg);outline:1px dashed var(--accent);outline-offset:-1px}
+  .node.dim{opacity:.32}
+  .node .glyph{flex:none;width:20px;height:20px;border-radius:5px;display:grid;place-items:center;font-family:var(--mono);font-size:11px;font-weight:700;color:var(--glyph-ink);background:var(--glyph-bg);border:1px solid var(--line);margin-top:1px}
+  .node.sel .glyph{border-color:var(--accent);color:var(--accent-ink)}
+  .node .nid{color:var(--muted);font-size:10.5px;font-family:var(--mono);letter-spacing:.02em}
+  .node .ntitle{font-size:13px;line-height:1.45}
+  .node.dead .ntitle{color:var(--warn);text-decoration:line-through;text-decoration-color:rgba(166,64,44,.45)}
+  .node .meta{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  /* the spine + branch connectors: nested steps trace back to their parent */
+  .kid{margin-left:19px;border-left:2px solid var(--spine);padding-left:14px}
+  .kid>.node::before{content:"";position:absolute;left:-14px;top:14px;width:10px;height:2px;background:var(--spine)}
+  .kid>.node.sel::before{background:var(--accent)}
+  .isobox{border:1px dashed var(--iso-line);border-radius:8px;margin:12px 2px;padding:6px 4px;background:var(--iso-bg)}
+  .isobox .isohdr{color:var(--iso-ink);font-family:var(--mono);font-size:10px;padding:3px 8px 7px;text-transform:uppercase;letter-spacing:.1em}
+  .dep{color:var(--muted);font-size:10px;font-family:var(--mono);border:1px solid var(--line);border-radius:4px;padding:0 5px}
+
+  .glyph.dead_end{background:var(--warn);color:#fff;border-color:var(--warn)}
+
+  /* ---- detail pane ---- */
+  .dhead{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-bottom:2px}
+  .badge{font-family:var(--mono);font-size:10px;font-weight:700;border-radius:4px;padding:3px 9px;color:var(--glyph-ink);background:var(--glyph-bg);border:1px solid var(--line);text-transform:uppercase;letter-spacing:.08em}
+  .badge.dead_end{background:var(--warn);color:#fff;border-color:var(--warn)}
+  .pill{font-family:var(--mono);font-size:10px;border:1px solid var(--line);border-radius:20px;padding:2px 9px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+  .pill.explicit{border-color:var(--ok);color:var(--ok)} .pill.inferred{border-color:var(--tentative);color:var(--tentative)}
+  .pill.iso{border-color:var(--iso-line);color:var(--iso-ink)}
+  .dtitle{font-family:var(--serif);font-size:25px;font-weight:600;margin:12px 0 6px;letter-spacing:-.012em;line-height:1.28}
+  .did{color:var(--muted);font-family:var(--mono);font-size:11.5px}
+
+  .block{border:1px solid var(--line);border-radius:7px;margin:15px 0;background:var(--panel)}
+  .block>summary{cursor:pointer;padding:11px 15px;font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);list-style:none;display:flex;align-items:center;gap:8px}
+  .block>summary::-webkit-details-marker{display:none}
+  .block>summary:hover{color:var(--accent-ink)}
+  .block>summary .tag{margin-left:auto;color:var(--faint);font-size:10.5px;font-weight:400;font-family:var(--mono);text-transform:none;letter-spacing:0}
+  .block .body{padding:4px 16px 16px}
+  /* the primary reasoning block: the agent's thinking, set as typeset prose */
+  .block.reason{border-left:3px solid var(--accent);background:var(--reason-bg)}
+  .block.reason>summary{color:var(--accent-ink)}
+  .block.reason .lead{font-family:var(--serif);font-size:17px;line-height:1.7;color:var(--ink)}
+  .didwhat{color:var(--muted);font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.09em;margin:16px 0 4px}
+  .lead{font-family:var(--serif);color:#2a322c;font-size:16px;line-height:1.7}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:11px}
+  .chip{background:var(--chip);border:1px solid var(--line);border-radius:4px;padding:2px 8px;font-size:11px;color:#46504a;font-family:var(--mono)}
+  .chip.ext{color:var(--muted)}
+
+  .claim{border:1px solid var(--line);border-left:2px solid var(--accent);border-radius:0 6px 6px 0;padding:11px 13px;margin:11px 0;background:var(--panel2)}
+  .claim h4{margin:0 0 6px;font-family:var(--mono);font-size:12px}
+  .claim .kv{font-size:13px;line-height:1.6;margin:4px 0;color:#3a423c}
+  .claim .kv b{color:var(--muted);font-weight:600;font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em}
+  .status{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.05em;border-radius:4px;padding:1px 7px;border:1px solid var(--line)}
+  .status.supported{color:var(--ok);border-color:var(--ok)}
+  .status.refuted{color:var(--warn);border-color:var(--warn)}
+  .status.hypothesis{color:var(--tentative);border-color:var(--tentative)}
+  .prov{font-size:11px;color:var(--iso-ink);font-family:var(--mono)}
+
+  .quote{border-left:3px solid var(--accent);background:var(--panel);border-radius:0 6px 6px 0;padding:9px 13px;margin:9px 0;font-size:13.5px;line-height:1.6;color:#2a322c}
+  .quote .ref{color:var(--muted);font-size:10.5px;font-family:var(--mono);margin-top:5px}
+  figure{margin:14px 0}
+  figure img{max-width:100%;border:1px solid var(--line);border-radius:5px;background:#fff;padding:6px}
+  figcaption{color:var(--muted);font-family:var(--mono);font-size:11px;margin-top:7px}
+
+  table.md{border-collapse:collapse;width:100%;font-family:var(--mono);font-size:12px;margin:10px 0}
+  table.md th,table.md td{border:1px solid var(--line);padding:5px 9px;text-align:left}
+  table.md th{background:var(--panel2);color:var(--ink);font-weight:700;text-transform:uppercase;font-size:10.5px;letter-spacing:.04em}
+  pre.snip{background:var(--code-bg);border:1px solid var(--line);border-radius:6px;padding:10px 12px;overflow:auto;font-size:12px;color:var(--ink);white-space:pre-wrap}
+
+  .ptr{font-size:13px;margin:7px 0}
+  .ptr .path{font-family:var(--mono);color:#46504a}
+  .truncated{color:var(--muted);font-size:11.5px;font-style:italic}
+  .empty{color:var(--muted);font-size:13px}
+  .none{color:var(--muted);padding:40px 24px;text-align:center;font-family:var(--mono);font-size:12px;letter-spacing:.02em}
+  kbd{background:var(--panel2);border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 5px;font-family:var(--mono);font-size:11px}
+
+  /* ---- enrichment layers (all inert unless the data is present) ---- */
+  .layerbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+  .lbtn .cnt{color:var(--muted);font-size:10.5px}
+  .chiplabel{color:var(--muted);font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.08em;margin:12px 0 3px}
+  .chip.jump{cursor:pointer}
+  .chip.jump:hover{border-color:var(--accent);color:var(--accent-ink)}
+  .chip.dangle{color:#9aa49b;text-decoration:line-through;cursor:not-allowed}
+  .chip.infer{border-style:dashed}
+  .chip-built{border-color:var(--ok);color:var(--ok)}
+  .chip-rej{border-color:var(--warn);color:var(--warn)}
+  .chip-recipe{border-color:var(--accent);color:var(--accent-ink)}
+  .nmark{color:var(--muted);font-size:10px;margin-left:5px;font-family:var(--mono)}
+  .rel{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.05em;border-radius:4px;padding:2px 8px;color:var(--glyph-ink);background:var(--glyph-bg);font-weight:700}
+  .rel.bounds,.rel.refutes{background:var(--warn);color:#fff}
+  .rel.neutral{background:var(--chip);color:var(--ink);border:1px solid var(--line);font-weight:400}
+  .ribbon{border-left:3px solid var(--accent);background:var(--panel2);border-radius:0 6px 6px 0;padding:9px 13px;margin:9px 0;color:#3a423c;font-size:13px;line-height:1.6}
+  .warn{border-left:3px solid var(--warn);background:var(--del-bg);border-radius:0 6px 6px 0;padding:9px 13px;margin:9px 0;font-size:13px;line-height:1.6}
+  .muted{color:var(--muted);font-size:11.5px}
+  .math{font-family:var(--serif);font-style:italic}
+  .gterm{border-bottom:1px dashed var(--accent);cursor:help}
+  #gpop{position:fixed;max-width:360px;background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:11px 13px;z-index:60;box-shadow:0 8px 28px var(--shadow);font-size:13px;line-height:1.55;display:none}
+  #gpop h5{margin:0 0 5px;font-family:var(--mono);font-size:12px;text-transform:uppercase;letter-spacing:.05em}
+  #gpop .gp-open{color:var(--accent);cursor:pointer;font-family:var(--mono);font-size:11px;margin-top:7px;display:inline-block}
+  .ov{position:fixed;inset:0;z-index:50}
+  .ov[hidden]{display:none}
+  .ov-scrim{position:absolute;inset:0;background:var(--scrim)}
+  .ov-sheet{position:relative;margin:5vh auto;max-width:920px;max-height:86vh;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 16px 48px var(--shadow)}
+  .ov-head{position:sticky;top:0;display:flex;gap:10px;align-items:center;padding:13px 17px;border-bottom:1px solid var(--line);background:var(--panel);z-index:1}
+  .ov-head #ov-title{font-family:var(--mono);font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.09em;color:var(--accent-ink)}
+  .ov-head input[type=search]{flex:1;max-width:260px;background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:5px 10px;font-size:13px}
+  .ov-body{padding:10px 17px 26px}
+  .ov-body .spacer{flex:1}
+  .card{border:1px solid var(--line);border-radius:6px;padding:11px 13px;margin:11px 0;background:var(--panel2)}
+  .card h4{margin:0 0 6px;font-family:var(--mono);font-size:12px}
+  .card .sub{color:var(--muted);font-family:var(--mono);font-size:10.5px}
+  .grey{opacity:.5}
+
+  /* responsive: stack the two panes on a narrow screen */
+  @media (max-width:720px){
+    main{grid-template-columns:1fr;grid-template-rows:42vh 1fr}
+    #map{border-right:none;border-bottom:1px solid var(--line)}
+    #detail{padding:20px 18px 64px}
+    .dtitle{font-size:21px}
+  }
+  /* honour reduced-motion */
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<header>
+  <h1 class="title" id="h-title">ARA Trajectory</h1>
+  <div class="sub" id="h-sub"></div>
+  <details id="h-abstract-wrap"><summary>Abstract</summary><div class="lead" id="h-abstract"></div></details>
+  <div class="toolbar">
+    <input type="search" id="q" placeholder="search steps…" autocomplete="off" />
+    <label>type
+      <select id="ftype"><option value="">all</option></select>
+    </label>
+    <label><input type="checkbox" id="fdead" /> dead ends only</label>
+    <span class="spacer"></span>
+    <button class="btn" id="rprev" title="previous (←)">‹</button>
+    <button class="btn primary" id="rplay">▶ Replay</button>
+    <button class="btn" id="rnext" title="next (→)">›</button>
+    <span class="count" id="rstat"></span>
+  </div>
+  <div class="layerbar" id="layerbar">
+    <button class="btn lbtn" data-panel="context" hidden>◧ Context</button>
+    <button class="btn lbtn" data-panel="glossary" hidden>▤ Glossary <span class="cnt"></span></button>
+    <button class="btn lbtn" data-panel="dependencies" hidden>⇄ Dependencies <span class="cnt"></span></button>
+    <button class="btn lbtn" data-panel="recipes" hidden>▦ Recipes <span class="cnt"></span></button>
+  </div>
+</header>
+
+<main>
+  <aside id="map"></aside>
+  <section id="detail"><div class="none">Select a step on the left, or press <kbd>▶ Replay</kbd>.</div></section>
+</main>
+
+<!-- v1.1: one shared modal overlay for the Context/Glossary/Dependencies/Recipes panels, + a glossary popover. Both inert unless their data is present. -->
+<div id="overlay" class="ov" hidden role="dialog" aria-modal="true">
+  <div class="ov-scrim" data-close></div>
+  <div class="ov-sheet">
+    <div class="ov-head"><span id="ov-title"></span>
+      <input type="search" id="ov-q" placeholder="filter…" hidden autocomplete="off" />
+      <span class="spacer"></span>
+      <button class="btn" id="ov-close" data-close>✕ <kbd>Esc</kbd></button>
+    </div>
+    <div class="ov-body" id="ov-body"></div>
+  </div>
+</div>
+<div id="gpop"></div>
+
+<!-- The skill replaces ONLY the JSON between the two markers below. -->
+<script id="ara-data" type="application/json">
+/* __ARA_DATA_BEGIN__ */
+{
+  "meta": {
+    "title": "Batch and Match: Black-Box Variational Inference with a Score-Based Divergence",
+    "authors": [
+      "Diana Cai",
+      "Chirag Modi",
+      "Loucas Pillaud-Vivien",
+      "Charles C. Margossian",
+      "Robert M. Gower",
+      "David M. Blei",
+      "Lawrence K. Saul"
+    ],
+    "year": "2024",
+    "venue": "arXiv (stat.ML) — arXiv:2402.14758v2",
+    "ara_dir": "bam",
+    "abstract": "Most leading implementations of black-box variational inference (BBVI) are based on optimizing a stochastic evidence lower bound (ELBO). But such approaches to BBVI often converge slowly due to the high variance of their gradient estimates and their sensitivity to hyperparameters. In this work, we propose batch and match (BaM), an alternative approach to BBVI based on a score-based divergence. Notably, this score-based divergence can be optimized by a closed-form proximal update for Gaussian variational families with full covariance matrices. We analyze the convergence of BaM when the target distribution is Gaussian, and we prove that in the limit of infinite batch size the variational parameter updates converge exponentially quickly to the target mean and covariance. We also evaluate the performance of BaM on Gaussian and non-Gaussian target distributions that arise from posterior inference in hierarchical and deep generative models. In these experiments, we find that BaM typically converges in fewer (and sometimes significantly fewer) gradient evaluations than leading implementations of BBVI based on ELBO maximization."
+  },
+  "order": [
+    "N01",
+    "N02",
+    "N03",
+    "N04",
+    "N05",
+    "N06",
+    "N07",
+    "N08",
+    "N09",
+    "N10",
+    "N11",
+    "N12"
+  ],
+  "nodes": [
+    {
+      "id": "N01",
+      "type": "question",
+      "parent": null,
+      "title": "Can BBVI be improved by replacing ELBO with a score-based divergence?",
+      "body": "ELBO-based BBVI (ADVI) converges slowly due to high-variance gradients and sensitivity to learning rates. Can we design an alternative divergence that enables faster, more stable optimization for Gaussian variational families?",
+      "thinking": "The starting question: standard black-box variational inference fits a Gaussian approximation by maximizing a stochastic evidence lower bound (ELBO), but that gradient is noisy and the fit is very sensitive to the learning rate, especially once you allow a full (non-diagonal) covariance matrix. Rather than trying to tame those gradients, the root question asks whether swapping the objective itself, from the ELBO to a score-based divergence, could sidestep the noise-and-tuning problem entirely and give faster, more stable convergence.",
+      "depends_on": [],
+      "source_refs": [],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [],
+      "built_on": [],
+      "rejected_here": [],
+      "recipe_refs": [],
+      "concepts": [
+        "Score-Based Divergence"
+      ]
+    },
+    {
+      "id": "N02",
+      "type": "experiment",
+      "parent": "N01",
+      "title": "Design score-based divergence with desirable properties",
+      "body": "D(q;p) = E_q[||∇log(q/p)||²_{Cov(q)}] satisfies non-negativity, equality condition, and affine invariance. Computable for unnormalized p via score oracle only.",
+      "thinking": "To answer the opening question, the next step is to construct a divergence that could actually replace the ELBO. The design constructed here weights the squared difference between the score functions (gradients of the log-densities) of q and p by the covariance of q itself. That specific choice of weighting is what buys three properties simultaneously: the divergence is always non-negative and zero only when q equals p, it stays unchanged under any affine reparameterization of the space, and, crucially, it can be evaluated using only the target's unnormalized log-density (no partition function needed) — which is exactly what makes it usable for black-box inference.",
+      "depends_on": [],
+      "source_refs": [
+        "Theorem A.3",
+        "Theorem A.4",
+        "§2.2"
+      ],
+      "why": [
+        {
+          "id": "C01",
+          "title": "Score-based divergence properties",
+          "statement": "The score-based divergence D(q;p) = E_q[||∇log(q/p)||²_{Cov(q)}] satisfies (i) non-negativity with equality iff p=q, (ii) affine invariance under coordinate transformations, and (iii) evaluability for unnormalized target densities (depends only on ∇log p, not the partition function).",
+          "status": "supported",
+          "falsification": "Construct a pair (p,q) with p≠q where D(q;p)=0; or find an affine transformation h where D(q;p)≠D(h#q;h#p); or show the divergence requires normalization of p.",
+          "dependencies": []
+        }
+      ],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [
+          {
+            "id": "Figure 5.2",
+            "caption": "Non-Gaussian targets constructed using the sinh-arcsinh distribution, varying the skew s and the tail weight t. The curves denote the mean of the forward KL divergence over 10 runs, and shaded regions denote their standard error. ADVI, Score, Fisher, and GSM use a batch size of B=5.",
+            "markdown": "**Source**: Figure 5.2, Section 5.1\n\n## Experimental Conditions\n- Distribution: D=10 sinh-arcsinh normal, z = sinh(τ^{-1}(sinh^{-1}(y)+s)), y ~ N(μ,Σ)\n- Learning rate: BaM: λ_t = BD/(t+1) (decaying); ADVI/Score/Fisher: grid-searched\n- Metric: Forward KL KL(p; q_t) vs. gradient evaluations\n\n## Configurations\n\n### Varying Skew (τ=1 fixed, normal tails)\n| s | BaM batches | Other batches |\n|---|-------------|---------------|\n| 0.2 | B=5 (BaM-5), B=10 (BaM-10) | B=5 |\n| 1.0 | B=5, B=10 | B=5 |\n| 1.8 | B=5, B=10 | B=5 |\n\n### Varying Tails (s=0 fixed, no skew)\n| τ | BaM batches | Other batches |\n|---|-------------|---------------|\n| 0.1 | B=5, B=10 | B=5 |\n| 0.9 | B=5, B=10 | B=5 |\n| 1.7 | B=5, B=10 | B=5 |\n\n## Qualitative Findings (from paper text)\n- BaM converges faster than ADVI for all skew/tail configurations\n- For large skew (s=1.0, 1.8): BaM converges to higher forward KL but similar reverse KL vs ADVI (Gaussian approximation is limited)\n- GSM reverse KL diverges for highly skewed target (s=1.8)\n- ADVI-Score also diverges for highly skewed targets; more sensitive to learning rate\n- For varying tails: all methods converge to similar reverse KL; BaM and ADVI converge to better values than GSM in some cases\n- BaM stabilizes more quickly with larger batch sizes\n- Decaying λ_t necessary for non-Gaussian convergence (constant λ_t fails)"
+          }
+        ],
+        "data": []
+      },
+      "verified_by": [
+        {
+          "id": "E01",
+          "title": "Gaussian Targets with Increasing Dimensions",
+          "setup": "Model: Full-covariance Gaussian variational approximation N(μ, Σ). Hardware: CPU/GPU via JAX (exact hardware not specified; wallclock shown in Fig E.1). Dataset: Synthetically generated Gaussian targets of dimension D ∈ {4, 16, 64, 256}; covariance Σ* = AA^T for random D×D matrix A. System: BaM (batch sizes B=2 and B=D-tuned: 5/15/40/150 for D=4/16/64/256), ADVI (B=2, ADAM), GSM (B=2), ADVI-Score (B=2), ADVI-Fisher (B=2).\n\nProcedure: (1) Generate random Gaussian target N(μ*, Σ*) where Σ* = AA^T for random A. (2) Initialize all methods with μ_0 ~ Uniform[0, 0.1] and Σ_0 = I. (3) For BaM: set λ_t = BD (constant); for ADVI/Score/Fisher: grid-search learning rate. (4) Run each method for at least 10^4 iterations. (5) At each iteration, compute forward KL divergence KL(p; q_t) and reverse KL divergence KL(q_t; p) empirically. (6) Repeat for 10 random seeds. (7) Plot mean (and individual) KL curves vs number of gradient evaluations.",
+          "metrics": "Forward KL divergence KL(p; q_t) and reverse KL divergence KL(q_t; p) as functions of gradient evaluations (= B × iterations). Baselines: ADVI (ELBO, ADAM), ADVI-Score (score-based divergence, ADAM), ADVI-Fisher (Fisher divergence, ADAM), GSM. Expected outcome: BaM with large batch size converges orders of magnitude faster (in gradient evaluations) than ADVI; BaM with B=2 and GSM perform similarly, BaM at larger batch sizes outperforms GSM; ADVI, Score-ADVI, and Fisher-ADVI have similar convergence to each other; BaM convergence improves with increasing batch size, GSM does not benefit from B>2."
+        },
+        {
+          "id": "E02",
+          "title": "Non-Gaussian Targets (Sinh-Arcsinh Distribution)",
+          "setup": "Model: Full-covariance Gaussian variational approximation. Hardware: CPU/GPU via JAX. Dataset: D=10 sinh-arcsinh normal distributions; varying skew s ∈ {0.2, 1.0, 1.8} with τ=1; varying tails τ ∈ {0.1, 0.9, 1.7} with s=0. System: BaM (B=5 and B=10), ADVI (B=5), GSM (B=5), ADVI-Score (B=5), ADVI-Fisher (B=5).\n\nProcedure: (1) Construct sinh-arcsinh target distributions with specified (s, τ) parameters. (2) Initialize all methods with random μ_0 and Σ_0 = I. (3) For BaM: use decaying learning rate λ_t = BD/(t+1); for ADVI/Score/Fisher: grid-search learning rate. (4) Run each method for at least 10^4 iterations; 10 seeds. (5) Compute forward and reverse KL divergence at each iteration. (6) Report mean ± standard error curves.",
+          "metrics": "Forward KL KL(p; q_t) and reverse KL KL(q_t; p) vs gradient evaluations. Baselines: ADVI, ADVI-Score, ADVI-Fisher, GSM. Expected outcome: BaM converges faster than ADVI for all skew/tail configurations; for large skew (s=1.0, 1.8) BaM reaches higher forward KL but similar reverse KL vs ADVI; GSM reverse KL diverges for highly skewed targets (s=1.8), Score variant also diverges for high skew; for varying tails all methods converge to similar reverse KL, BaM typically converges in fewer iterations than ADVI; decaying learning rate λ_t = BD/(t+1) outperforms constant schedule for non-Gaussian targets."
+        }
+      ],
+      "artifact": [
+        {
+          "name": "score_divergence.py",
+          "pointer": "src/execution/score_divergence.py",
+          "what": "Score-based and Fisher divergence estimators used to design/evaluate D(q;p) (Monte Carlo estimate of the score-based divergence for Gaussian q)."
+        }
+      ],
+      "built_on": [
+        {
+          "rw_id": "RW04",
+          "name": "Hyvärinen, 2005",
+          "relation_raw": "imports"
+        }
+      ],
+      "rejected_here": [
+        {
+          "rw_id": "RW05",
+          "name": "Barp et al., 2019",
+          "relation_raw": "bounds"
+        },
+        {
+          "rw_id": "RW11",
+          "name": "Yu and Zhang, 2023",
+          "relation_raw": "refutes"
+        }
+      ],
+      "recipe_refs": [],
+      "concepts": [
+        "Score-Based Divergence",
+        "Affine Invariance"
+      ]
+    },
+    {
+      "id": "N03",
+      "type": "decision",
+      "parent": "N02",
+      "title": "Choice of weighting matrix in Fisher-type divergence",
+      "body": "Use M = Cov(q) (data-dependent, adapts to variational distribution). alternatives: Fixed M = I (standard Fisher divergence) — not affine invariant; Fixed M = constant matrix — affine invariant only for specific M; M = precision matrix Gamma_q^{-1} of q — equivalent to Cov(q) for Gaussians",
+      "thinking": "The score-based divergence in N02 needs a weighting matrix M, and that choice is not free: a fixed matrix (the identity, or any other constant matrix) breaks affine invariance except for very special cases. The decision here is to let the weight track the variational distribution itself, M = Cov(q), which Theorem A.4 shows is the unique choice that keeps the divergence invariant under affine reparameterizations of the Gaussian family.",
+      "depends_on": [],
+      "source_refs": [
+        "Theorem A.4 shows M = Cov(q) is the unique choice ensuring affine invariance via Γ_q = [Cov(q)]^{-1} for Gaussians"
+      ],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [
+        {
+          "name": "score_divergence.py",
+          "pointer": "src/execution/score_divergence.py",
+          "what": "Implements the Cov(q)-weighted score-based divergence and the fixed-weight Fisher divergence alternative for comparison."
+        }
+      ],
+      "built_on": [],
+      "rejected_here": [],
+      "recipe_refs": [],
+      "concepts": [
+        "Affine Invariance"
+      ]
+    },
+    {
+      "id": "N04",
+      "type": "question",
+      "parent": "N03",
+      "title": "Can D(q;p) be efficiently optimized over Gaussian family Q?",
+      "body": "The score-based divergence is defined. Can we find a closed-form optimizer, avoiding stochastic gradient descent?",
+      "thinking": "With the divergence itself defined and its weighting matrix settled, the next question is purely about optimization: having a well-behaved divergence is not enough if minimizing it still requires the same noisy stochastic-gradient machinery as ELBO-based methods. This question asks whether the Gaussian structure of the variational family can be exploited to find a closed-form optimizer instead.",
+      "depends_on": [],
+      "source_refs": [],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [],
+      "built_on": [],
+      "rejected_here": [],
+      "recipe_refs": [],
+      "concepts": [
+        "Score-Based Divergence"
+      ]
+    },
+    {
+      "id": "N05",
+      "type": "dead_end",
+      "parent": "N04",
+      "title": "Direct Monte Carlo minimization of D(q;p)",
+      "body": "Hypothesis: Minimize Monte Carlo estimate of D(q;p) via reparameterization trick and SGD. Failure mode: Reparameterization-based gradient of D̂_q(q;p) couples sampling distribution with optimization variable; leads to gradient-based method that does not exploit Gaussian structure. Same sensitivity issues as ADVI. Lesson: Need to decouple sampling from optimization by fixing the sampling distribution at q_t (biased estimator), then find analytical optimizer of the resulting objective.",
+      "thinking": "The first attempt at a closed-form optimizer was the most obvious one: just plug the new divergence into the same reparameterization-trick-plus-SGD machinery used for the ELBO. That failed for a structural reason, not a tuning one — differentiating through the sampling distribution ties the samples to the very parameters being optimized, so the resulting gradient method inherits the same noise and learning-rate sensitivity as ADVI and never exploits the fact that the family is Gaussian. The lesson carried forward is that sampling and optimization need to be decoupled: freeze the sampling distribution at the current iterate q_t and then optimize analytically.",
+      "depends_on": [],
+      "source_refs": [],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [
+        {
+          "name": "advi_variants.py",
+          "pointer": "src/execution/advi_variants.py",
+          "what": "This rejected direct-SGD approach survives in the codebase as the ADVI-Score baseline: reparameterization-trick + Adam optimization of the score-based divergence, kept only for comparison, not as BaM's own update rule."
+        }
+      ],
+      "built_on": [],
+      "rejected_here": [],
+      "recipe_refs": [],
+      "concepts": []
+    },
+    {
+      "id": "N06",
+      "type": "decision",
+      "parent": "N04",
+      "title": "Use biased estimator D̂_{q_t}(q;p) + KL regularizer for proximal update",
+      "body": "Choice: Fix sampling distribution at current q_t; add KL(q_t;q) regularizer to penalize large updates; minimize analytically. alternatives: Euclidean distance regularizer (standard SPP) — no closed form for Gaussian family; Wasserstein metric regularizer (Lambert et al., 2022) — proximal step not in closed form; No regularizer (GSM limit) — unstable for non-Gaussian targets",
+      "thinking": "Following the lesson from the failed direct-SGD attempt, the decision is to turn the update into a proximal-point step: fix the sampling distribution at the current iterate q_t (so it no longer couples with the optimization variable) and add a KL(q_t; q) regularizer that keeps each step close to the current iterate. Among the possible regularizers, KL wins because, unlike a Euclidean-distance or Wasserstein regularizer, it has a standard closed form between Gaussians — and combined with the score-matching term it turns the stationarity condition into a quadratic matrix equation with a known solution.",
+      "depends_on": [],
+      "source_refs": [
+        "KL divergence between Gaussians has a standard closed form; combined with score-matching term yields quadratic matrix equation with known solution"
+      ],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [
+        {
+          "name": "bam.py",
+          "pointer": "src/execution/bam.py",
+          "what": "Implements Algorithm 1 (Batch and Match), the batch step + match step realizing this biased-estimator-plus-KL-regularizer proximal update."
+        }
+      ],
+      "built_on": [],
+      "rejected_here": [],
+      "recipe_refs": [],
+      "concepts": [
+        "Quadratic Matrix Equation"
+      ]
+    },
+    {
+      "id": "N07",
+      "type": "experiment",
+      "parent": "N06",
+      "title": "Derive closed-form solution to L_BaM(q) = D̂_{q_t}(q;p) + (2/λ)KL(q_t;q)",
+      "body": "Stationarity condition for Σ yields quadratic matrix equation ΣUΣ + Σ = V with closed-form PD solution Σ = 2V[I + (I+4UV)^{1/2}]^{-1}. Mean updates follow linearly.",
+      "thinking": "Working out the stationarity condition of the regularized objective from N06 shows that the optimal covariance must satisfy a quadratic matrix equation, ΣUΣ + Σ = V, where U and V are built from batch statistics. This equation has a known positive-definite closed-form solution, so the covariance update requires no gradient descent at all — just a matrix square root and an inverse. Once the new covariance is known, the mean update follows as a simple linear combination. This closed form is the mechanical core that makes BaM a batch-and-match algorithm rather than a stochastic-gradient one.",
+      "depends_on": [],
+      "source_refs": [
+        "Appendix C",
+        "Lemma B.1",
+        "Lemma B.2",
+        "§3.1"
+      ],
+      "why": [
+        {
+          "id": "C02",
+          "title": "Closed-form BaM updates",
+          "statement": "The BaM objective L_BaM(q) = D̂_{q_t}(q;p) + (2/λ_t) KL(q_t; q) has a unique global minimum in the Gaussian family Q that can be computed in closed form: Σ_{t+1} = 2V[I + (I + 4UV)^{1/2}]^{-1} and μ_{t+1} = (λ_t/(1+λ_t)) μ_t + (1/(1+λ_t))(Σ_{t+1}ḡ + z̄), where U and V are PSD matrices derived from batch statistics.",
+          "status": "supported",
+          "falsification": "Find an input (U≥0, V>0) for which the stated formula does not satisfy the quadratic equation ΣUΣ + Σ = V; or show the solution is not positive definite.",
+          "dependencies": [
+            "C01"
+          ]
+        }
+      ],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [
+        {
+          "id": "E01",
+          "title": "Gaussian Targets with Increasing Dimensions",
+          "setup": "Model: Full-covariance Gaussian variational approximation N(μ, Σ). Hardware: CPU/GPU via JAX (exact hardware not specified; wallclock shown in Fig E.1). Dataset: Synthetically generated Gaussian targets of dimension D ∈ {4, 16, 64, 256}; covariance Σ* = AA^T for random D×D matrix A. System: BaM (batch sizes B=2 and B=D-tuned: 5/15/40/150 for D=4/16/64/256), ADVI (B=2, ADAM), GSM (B=2), ADVI-Score (B=2), ADVI-Fisher (B=2).\n\nProcedure: (1) Generate random Gaussian target N(μ*, Σ*) where Σ* = AA^T for random A. (2) Initialize all methods with μ_0 ~ Uniform[0, 0.1] and Σ_0 = I. (3) For BaM: set λ_t = BD (constant); for ADVI/Score/Fisher: grid-search learning rate. (4) Run each method for at least 10^4 iterations. (5) At each iteration, compute forward KL divergence KL(p; q_t) and reverse KL divergence KL(q_t; p) empirically. (6) Repeat for 10 random seeds. (7) Plot mean (and individual) KL curves vs number of gradient evaluations.",
+          "metrics": "Forward KL divergence KL(p; q_t) and reverse KL divergence KL(q_t; p) as functions of gradient evaluations (= B × iterations). Baselines: ADVI (ELBO, ADAM), ADVI-Score (score-based divergence, ADAM), ADVI-Fisher (Fisher divergence, ADAM), GSM. Expected outcome: BaM with large batch size converges orders of magnitude faster (in gradient evaluations) than ADVI; BaM with B=2 and GSM perform similarly, BaM at larger batch sizes outperforms GSM; ADVI, Score-ADVI, and Fisher-ADVI have similar convergence to each other; BaM convergence improves with increasing batch size, GSM does not benefit from B>2."
+        },
+        {
+          "id": "E02",
+          "title": "Non-Gaussian Targets (Sinh-Arcsinh Distribution)",
+          "setup": "Model: Full-covariance Gaussian variational approximation. Hardware: CPU/GPU via JAX. Dataset: D=10 sinh-arcsinh normal distributions; varying skew s ∈ {0.2, 1.0, 1.8} with τ=1; varying tails τ ∈ {0.1, 0.9, 1.7} with s=0. System: BaM (B=5 and B=10), ADVI (B=5), GSM (B=5), ADVI-Score (B=5), ADVI-Fisher (B=5).\n\nProcedure: (1) Construct sinh-arcsinh target distributions with specified (s, τ) parameters. (2) Initialize all methods with random μ_0 and Σ_0 = I. (3) For BaM: use decaying learning rate λ_t = BD/(t+1); for ADVI/Score/Fisher: grid-search learning rate. (4) Run each method for at least 10^4 iterations; 10 seeds. (5) Compute forward and reverse KL divergence at each iteration. (6) Report mean ± standard error curves.",
+          "metrics": "Forward KL KL(p; q_t) and reverse KL KL(q_t; p) vs gradient evaluations. Baselines: ADVI, ADVI-Score, ADVI-Fisher, GSM. Expected outcome: BaM converges faster than ADVI for all skew/tail configurations; for large skew (s=1.0, 1.8) BaM reaches higher forward KL but similar reverse KL vs ADVI; GSM reverse KL diverges for highly skewed targets (s=1.8), Score variant also diverges for high skew; for varying tails all methods converge to similar reverse KL, BaM typically converges in fewer iterations than ADVI; decaying learning rate λ_t = BD/(t+1) outperforms constant schedule for non-Gaussian targets."
+        },
+        {
+          "id": "E03",
+          "title": "Posterior Inference in Hierarchical Bayesian Models (PosteriorDB)",
+          "setup": "Model: Full-covariance Gaussian VI on 3 Stan/PosteriorDB models. Hardware: CPU/GPU via JAX. Dataset: (1) arK (autoregressive model, D=7, nearly Gaussian); (2) gp-pois-regr (Gaussian process Poisson regression, D=13, non-Gaussian); (3) eight-schools-centered (8-schools hierarchical, D=10, non-Gaussian). Reference samples from HMC provided by PosteriorDB. System: BaM (B=8 and B=32), ADVI (B=8 and B=32), GSM (B=8 and B=32). Score function computed via BridgeStan.\n\nProcedure: (1) Load Stan model and reference HMC samples from PosteriorDB. (2) Initialize all methods with μ_0 ~ Uniform[0, 0.1] and Σ_0 = I. (3) For BaM: use decaying learning rate λ_t = BD/(t+1). (4) For ADVI: grid-search over learning rates. (5) Run each method for at least 10^4 iterations; 5 seeds. (6) At each iteration, compute relative mean error = ||μ_VI - μ_HMC|| / ||μ_HMC|| and relative SD error = ||σ_VI - σ_HMC|| / ||σ_HMC||. (7) Report mean ± standard error over seeds.",
+          "metrics": "Relative posterior mean error and relative posterior SD error vs gradient evaluations (Equation 242). Baselines: ADVI, GSM. Expected outcome: BaM outperforms ADVI (lower mean error, faster convergence); GSM can converge faster than BaM at small batch sizes but oscillates around the solution; BaM benefits from larger batch sizes (B=32 > B=8), ADVI and GSM do not benefit from larger batches; for hierarchical model BaM converges to larger relative SD error than GSM (exception to trend)."
+        },
+        {
+          "id": "E04",
+          "title": "Deep Generative Model — CIFAR-10 Image Reconstruction",
+          "setup": "Model: VAE decoder network Ω(z, θ̂): R^256 → R^3072; 5-layer convolutional encoder and decoder; Gaussian likelihood x_n|z_n ~ N(Ω(z_n, θ̂), 0.1·I); latent z ∈ R^256; observation x ∈ R^3072. Hardware: GPU (JAX with JIT compilation). Dataset: CIFAR-10 (60,000 images, 32×32×3 = 3072 pixels); training split for VAE pre-training; test split for VI evaluation. System: BaM (B=10, 100, 300), ADVI (B=10, 100, 300), GSM, Amortized VI (factorized Gaussian encoder).\n\nProcedure: (1) Pre-train VAE on CIFAR-10 training split for 100 epochs using standard VAE training (ELBO, ADAM, factorized Gaussian encoder). (2) Sample test image x' from CIFAR-10 test set. (3) For BaM and ADVI: run 100-iteration pilot with candidate learning rates {λ} to select best λ per batch size. (4) Initialize all VI methods at N(0, I). (5) Run BaM for T=1000 iterations; run ADVI for T=1000 iterations; run GSM for T=1000 iterations. (6) At each iteration, evaluate E[z'|x'] and compute reconstructed image Ω(E[z'|x'], θ̂). (7) Compute MSE between reconstructed and original image at each iteration. (8) Compare 3000-gradient-evaluation budget: ADVI (B=10, T=300) vs BaM (B=300, T=10).",
+          "metrics": "Mean Squared Error (MSE) between reconstructed and test image, vs. iteration count and wallclock time. Baselines: ADVI (various batch sizes), GSM, Amortized VI (trained VAE encoder). Expected outcome: BaM with B=10 (small relative to D=256) performs poorly (high MSE); BaM with B=300 (comparable to D) converges an order of magnitude (or more) faster than ADVI and GSM; under 3000-gradient-evaluation budget BaM B=300,T=10 achieves comparable MSE to ADVI B=10,T=300; BaM B=300 is faster in wallclock time (more parallelizable) than ADVI; both BaM and ADVI (full covariance) eventually achieve lower MSE than Amortized VI (factorized Gaussian)."
+        }
+      ],
+      "artifact": [
+        {
+          "name": "bam.py",
+          "pointer": "src/execution/bam.py",
+          "what": "compute_batch_statistics and the covariance/mean update implement exactly this closed-form quadratic-matrix-equation solution."
+        }
+      ],
+      "built_on": [
+        {
+          "rw_id": "RW03",
+          "name": "Asi and Duchi, 2019",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW07",
+          "name": "Theis and Hoffman, 2015",
+          "relation_raw": "extends"
+        },
+        {
+          "rw_id": "RW09",
+          "name": "Lambert et al., 2022",
+          "relation_raw": "extends"
+        },
+        {
+          "rw_id": "RW12",
+          "name": "Diao et al., 2023",
+          "relation_raw": "extends"
+        }
+      ],
+      "rejected_here": [
+        {
+          "rw_id": "RW08",
+          "name": "Khan et al., 2015 and 2016",
+          "relation_raw": "refutes"
+        },
+        {
+          "rw_id": "RW11",
+          "name": "Yu and Zhang, 2023",
+          "relation_raw": "refutes"
+        }
+      ],
+      "recipe_refs": [],
+      "concepts": [
+        "Quadratic Matrix Equation"
+      ]
+    },
+    {
+      "id": "N08",
+      "type": "experiment",
+      "parent": "N07",
+      "title": "Prove convergence of BaM for Gaussian targets (Theorem 3.1)",
+      "body": "For Gaussian target in infinite-batch limit, normalized errors decay exponentially: ||ε_t|| ≤ (1-δ)^t||ε_0|| for all λ>0 and any initialization. Convergence rate δ = λβ/(1+λ) where β reflects initialization quality.",
+      "thinking": "Having a closed-form update is only useful if it actually converges, so the next step proves that it does — at least in the cleanest setting: a Gaussian target and an infinite batch size. The result (Theorem 3.1) shows the whitened mean and covariance errors shrink geometrically every iteration, at a rate δ that depends on the regularization strength λ and how good the initialization is, but critically the proof holds for ANY λ>0 and ANY positive-definite initial covariance — unlike gradient-based methods, there is no fragile learning-rate regime to search for.",
+      "depends_on": [],
+      "source_refs": [
+        "Theorem 3.1",
+        "Appendix D",
+        "§3.2"
+      ],
+      "why": [
+        {
+          "id": "C04",
+          "title": "Exponential convergence for Gaussian targets",
+          "statement": "For Gaussian target p = N(μ*, Σ*) in the infinite-batch limit (B→∞) with fixed λ>0, the normalized errors ε_t = Σ*^{-1/2}(μ_t - μ*) and Δ_t = Σ*^{-1/2}Σ_t Σ*^{-1/2} - I satisfy: ||ε_t|| ≤ (1-δ)^t ||ε_0|| and ||Δ_t|| ≤ (1-δ)^t ||Δ_0|| + t(1-δ)^{t-1}||ε_0||², where β = min(α, (1+λ)/(1+λ+||ε_0||²)), δ = λβ/(1+λ), and α is the minimum eigenvalue of Σ*^{-1/2}Σ_0 Σ*^{-1/2}.",
+          "status": "supported",
+          "falsification": "Construct a Gaussian target and initial conditions where the stated error bounds are violated in the infinite-batch limit.",
+          "dependencies": [
+            "C02"
+          ]
+        }
+      ],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [
+        {
+          "id": "E01",
+          "title": "Gaussian Targets with Increasing Dimensions",
+          "setup": "Model: Full-covariance Gaussian variational approximation N(μ, Σ). Hardware: CPU/GPU via JAX (exact hardware not specified; wallclock shown in Fig E.1). Dataset: Synthetically generated Gaussian targets of dimension D ∈ {4, 16, 64, 256}; covariance Σ* = AA^T for random D×D matrix A. System: BaM (batch sizes B=2 and B=D-tuned: 5/15/40/150 for D=4/16/64/256), ADVI (B=2, ADAM), GSM (B=2), ADVI-Score (B=2), ADVI-Fisher (B=2).\n\nProcedure: (1) Generate random Gaussian target N(μ*, Σ*) where Σ* = AA^T for random A. (2) Initialize all methods with μ_0 ~ Uniform[0, 0.1] and Σ_0 = I. (3) For BaM: set λ_t = BD (constant); for ADVI/Score/Fisher: grid-search learning rate. (4) Run each method for at least 10^4 iterations. (5) At each iteration, compute forward KL divergence KL(p; q_t) and reverse KL divergence KL(q_t; p) empirically. (6) Repeat for 10 random seeds. (7) Plot mean (and individual) KL curves vs number of gradient evaluations.",
+          "metrics": "Forward KL divergence KL(p; q_t) and reverse KL divergence KL(q_t; p) as functions of gradient evaluations (= B × iterations). Baselines: ADVI (ELBO, ADAM), ADVI-Score (score-based divergence, ADAM), ADVI-Fisher (Fisher divergence, ADAM), GSM. Expected outcome: BaM with large batch size converges orders of magnitude faster (in gradient evaluations) than ADVI; BaM with B=2 and GSM perform similarly, BaM at larger batch sizes outperforms GSM; ADVI, Score-ADVI, and Fisher-ADVI have similar convergence to each other; BaM convergence improves with increasing batch size, GSM does not benefit from B>2."
+        }
+      ],
+      "artifact": [
+        {
+          "name": "Convergence Analysis (algorithm.md)",
+          "pointer": "logic/solution/algorithm.md#Convergence Analysis (Gaussian Target, Infinite Batch)",
+          "what": "Recipe section deriving Theorem 3.1 (exponential convergence) and Corollary D.5 (one-step convergence); the theorem itself is not implemented as code, only its statement and proof sketch."
+        }
+      ],
+      "built_on": [
+        {
+          "rw_id": "RW01",
+          "name": "Modi et al., 2023",
+          "relation_raw": "extends"
+        },
+        {
+          "rw_id": "RW03",
+          "name": "Asi and Duchi, 2019",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW07",
+          "name": "Theis and Hoffman, 2015",
+          "relation_raw": "extends"
+        },
+        {
+          "rw_id": "RW10",
+          "name": "Davis and Drusvyatskiy, 2019",
+          "relation_raw": "imports"
+        }
+      ],
+      "rejected_here": [],
+      "recipe_refs": [],
+      "concepts": [
+        "Normalized Error"
+      ]
+    },
+    {
+      "id": "N09",
+      "type": "decision",
+      "parent": "N08",
+      "title": "Proof strategy: sandwiching inequality for normalized covariance",
+      "body": "Choice: Introduce auxiliary matrices H_{t+1} ⪯ J_{t+1} ⪯ K_{t+1} that share eigenvectors with J_t, enabling scalar analysis via joint diagonalizability. alternatives: Direct spectral analysis of J_{t+1} recursion — complicated by εε^T outer product term; Lyapunov function approach — difficult to construct explicit function",
+      "thinking": "Proving Theorem 3.1 directly by tracking the eigenvalues of the covariance recursion is hard because of a stray rank-one outer-product term. The proof strategy instead sandwiches the normalized covariance between two auxiliary matrices that are constructed to share eigenvectors with the current iterate, which reduces the matrix inequality to a scalar one that can be analyzed directly. This sidesteps both the messy direct spectral analysis and the difficulty of constructing an explicit Lyapunov function.",
+      "depends_on": [],
+      "source_refs": [
+        "Lemma D.7 (joint diagonalizability) + Lemma B.4 (monotonicity of quadratic equation solutions) together enable the sandwich"
+      ],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [],
+      "built_on": [],
+      "rejected_here": [],
+      "recipe_refs": [],
+      "concepts": []
+    },
+    {
+      "id": "N10",
+      "type": "experiment",
+      "parent": "N04",
+      "depends_on": [
+        "N06"
+      ],
+      "title": "Verify BaM recovers GSM as B=1, λ→∞ special case",
+      "body": "In this limit, BaM updates match exactly GSM updates (Eqs. 42, 23 of Modi et al. 2023). Confirms BaM strictly generalizes GSM with principled regularization.",
+      "thinking": "A useful sanity check on the closed-form update from N07 is whether it reduces to a known method in a limiting case. Taking the batch size to B=1 and letting the regularization strength λ go to infinity, the BaM update collapses exactly onto the Gaussian Score Matching (GSM) update from Modi et al. (2023). That confirms BaM is a strict generalization of GSM, not a different algorithm that merely resembles it, and it explains why GSM lacks the principled regularization that gives BaM its stability.",
+      "source_refs": [
+        "Appendix C.3"
+      ],
+      "why": [
+        {
+          "id": "C03",
+          "title": "BaM recovers GSM as a special case",
+          "statement": "In the limit B=1 and λ_t → ∞, the BaM updates reduce exactly to the Gaussian Score Matching (GSM) updates of Modi et al. (2023): Σ_{t+1}g_t g_t^T Σ_{t+1} + Σ_{t+1} = Σ_t + (μ_t - z_t)(μ_t - z_t)^T and μ_{t+1} = Σ_{t+1}g_t + z_t.",
+          "status": "supported",
+          "falsification": "Show that the B=1, λ→∞ limit of BaM updates differs from Equations (42) and (23) of Modi et al. (2023).",
+          "dependencies": [
+            "C02"
+          ]
+        }
+      ],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [
+        {
+          "id": "E01",
+          "title": "Gaussian Targets with Increasing Dimensions",
+          "setup": "Model: Full-covariance Gaussian variational approximation N(μ, Σ). Hardware: CPU/GPU via JAX (exact hardware not specified; wallclock shown in Fig E.1). Dataset: Synthetically generated Gaussian targets of dimension D ∈ {4, 16, 64, 256}; covariance Σ* = AA^T for random D×D matrix A. System: BaM (batch sizes B=2 and B=D-tuned: 5/15/40/150 for D=4/16/64/256), ADVI (B=2, ADAM), GSM (B=2), ADVI-Score (B=2), ADVI-Fisher (B=2).\n\nProcedure: (1) Generate random Gaussian target N(μ*, Σ*) where Σ* = AA^T for random A. (2) Initialize all methods with μ_0 ~ Uniform[0, 0.1] and Σ_0 = I. (3) For BaM: set λ_t = BD (constant); for ADVI/Score/Fisher: grid-search learning rate. (4) Run each method for at least 10^4 iterations. (5) At each iteration, compute forward KL divergence KL(p; q_t) and reverse KL divergence KL(q_t; p) empirically. (6) Repeat for 10 random seeds. (7) Plot mean (and individual) KL curves vs number of gradient evaluations.",
+          "metrics": "Forward KL divergence KL(p; q_t) and reverse KL divergence KL(q_t; p) as functions of gradient evaluations (= B × iterations). Baselines: ADVI (ELBO, ADAM), ADVI-Score (score-based divergence, ADAM), ADVI-Fisher (Fisher divergence, ADAM), GSM. Expected outcome: BaM with large batch size converges orders of magnitude faster (in gradient evaluations) than ADVI; BaM with B=2 and GSM perform similarly, BaM at larger batch sizes outperforms GSM; ADVI, Score-ADVI, and Fisher-ADVI have similar convergence to each other; BaM convergence improves with increasing batch size, GSM does not benefit from B>2."
+        }
+      ],
+      "artifact": [
+        {
+          "name": "gsm.py",
+          "pointer": "src/execution/gsm.py",
+          "what": "Gaussian Score Matching (GSM) baseline (Algorithm 3) whose per-sample update this node shows BaM recovers exactly as a limiting case."
+        },
+        {
+          "name": "bam.py",
+          "pointer": "src/execution/bam.py",
+          "what": "BaM implementation exercised at B=1, λ→∞ to check the limiting equivalence."
+        }
+      ],
+      "built_on": [
+        {
+          "rw_id": "RW01",
+          "name": "Modi et al., 2023",
+          "relation_raw": "extends"
+        }
+      ],
+      "rejected_here": [],
+      "recipe_refs": [],
+      "concepts": []
+    },
+    {
+      "id": "N11",
+      "type": "experiment",
+      "parent": "N01",
+      "depends_on": [
+        "N07"
+      ],
+      "title": "Empirical evaluation: Gaussian and non-Gaussian targets",
+      "body": "BaM with large batch sizes converges orders of magnitude faster than ADVI in gradient evaluations. GSM competitive at B=2 but does not benefit from larger B. For non-Gaussian: BaM with decaying λ_t=BD/(t+1) outperforms ADVI; GSM diverges at s=1.8.",
+      "thinking": "With the theory in place, this step tests BaM empirically against ADVI and GSM. On synthetic Gaussian targets of increasing dimension, BaM with a large batch size converges orders of magnitude faster, in gradient evaluations, than ADVI; GSM only keeps pace with BaM's smallest batch size and does not improve as the batch grows. On non-Gaussian sinh-arcsinh targets, a decaying regularization schedule lets BaM still outperform ADVI, while GSM becomes unstable and diverges once the target is skewed enough. The same claims (C05, C06) that this evaluation grounds are later reused, unchanged, to cover the PosteriorDB and deep generative model experiments as well, so the figures cited here span the full empirical suite of the paper, not just the two target families named in the title.",
+      "source_refs": [
+        "§5.1"
+      ],
+      "why": [
+        {
+          "id": "C05",
+          "title": "BaM outperforms ADVI on convergence speed",
+          "statement": "BaM with appropriately chosen batch size converges to lower KL divergence (or lower relative mean error) in fewer gradient evaluations than ADVI on Gaussian targets, non-Gaussian sinh-arcsinh targets, hierarchical Bayesian models from PosteriorDB, and deep generative models (CIFAR-10 with D=256).",
+          "status": "supported",
+          "falsification": "Find a benchmark where ADVI achieves equal or lower KL/MSE at the same or fewer gradient evaluations than BaM.",
+          "dependencies": [
+            "C02",
+            "C04"
+          ]
+        },
+        {
+          "id": "C06",
+          "title": "BaM benefits from larger batch sizes; ADVI and GSM do not",
+          "statement": "For BaM, increasing the batch size B improves convergence speed and stability (e.g., larger B=15,40,150 for D=16,64,256 converge faster than B=2). For ADVI and GSM, increasing batch size yields marginal or no improvement.",
+          "status": "supported",
+          "falsification": "Show that ADVI or GSM achieves substantially faster convergence with larger batch sizes, or that BaM does not benefit from batch size increases.",
+          "dependencies": [
+            "C05"
+          ]
+        }
+      ],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [
+          {
+            "id": "Figure 5.1",
+            "caption": "Gaussian targets of increasing dimension. Solid curves indicate the mean over 10 runs (transparent curves). ADVI, Score, Fisher, and GSM use a batch size of B=2. The batch size for BaM is given in the legend.",
+            "markdown": "**Source**: Figure 5.1, Section 5.1\n\n## Experimental Conditions\n- Target: Random Gaussian N(μ*, Σ*) with Σ* = AA^T\n- Dimensions: D = 4, 16, 64, 256\n- Metric: Forward KL divergence KL(p; q_t) vs. number of gradient evaluations\n- Methods compared: BaM (large B), BaM-2, GSM, ADVI-Score, ADVI-Fisher, ADVI-ELBO\n\n## Configurations per Dimension\n| D | BaM large batch | BaM small batch | Other methods batch |\n|---|----------------|----------------|---------------------|\n| 4 | B=5 (BaM-5) | B=2 (BaM-2) | B=2 |\n| 16 | B=15 (BaM-15) | B=2 (BaM-2) | B=2 |\n| 64 | B=40 (BaM-40) | B=2 (BaM-2) | B=2 |\n| 256 | B=150 (BaM-150) | B=2 (BaM-2) | B=2 |\n\n## Qualitative Findings (from paper text)\n- BaM converges orders of magnitude faster than ADVI (in gradient evaluations)\n- GSM is competitive with BaM at B=2 but BaM at larger B converges more quickly\n- Gradient-based methods (ADVI, Score, Fisher) have similar performance to each other\n- Score divergence is typically more sensitive to learning rate than ELBO\n- BaM at larger batch sizes converges faster; GSM shows marginal gain beyond B=2 for Gaussian targets\n- Wallclock timings: all methods similar for D≤64; low-rank BaM similar for larger D (see Fig E.1)\n\nNote: Exact numerical KL values at each iteration are not reported in paper; figure shows qualitative convergence curves over 10 runs. Trend: BaM large-B converges to ~0 forward KL within ~100-1000 gradient evaluations; ADVI requires ~10× to 100× more."
+          },
+          {
+            "id": "Figure 5.2",
+            "caption": "Non-Gaussian targets constructed using the sinh-arcsinh distribution, varying the skew s and the tail weight t. The curves denote the mean of the forward KL divergence over 10 runs, and shaded regions denote their standard error. ADVI, Score, Fisher, and GSM use a batch size of B=5.",
+            "markdown": "**Source**: Figure 5.2, Section 5.1\n\n## Experimental Conditions\n- Distribution: D=10 sinh-arcsinh normal, z = sinh(τ^{-1}(sinh^{-1}(y)+s)), y ~ N(μ,Σ)\n- Learning rate: BaM: λ_t = BD/(t+1) (decaying); ADVI/Score/Fisher: grid-searched\n- Metric: Forward KL KL(p; q_t) vs. gradient evaluations\n\n## Configurations\n\n### Varying Skew (τ=1 fixed, normal tails)\n| s | BaM batches | Other batches |\n|---|-------------|---------------|\n| 0.2 | B=5 (BaM-5), B=10 (BaM-10) | B=5 |\n| 1.0 | B=5, B=10 | B=5 |\n| 1.8 | B=5, B=10 | B=5 |\n\n### Varying Tails (s=0 fixed, no skew)\n| τ | BaM batches | Other batches |\n|---|-------------|---------------|\n| 0.1 | B=5, B=10 | B=5 |\n| 0.9 | B=5, B=10 | B=5 |\n| 1.7 | B=5, B=10 | B=5 |\n\n## Qualitative Findings (from paper text)\n- BaM converges faster than ADVI for all skew/tail configurations\n- For large skew (s=1.0, 1.8): BaM converges to higher forward KL but similar reverse KL vs ADVI (Gaussian approximation is limited)\n- GSM reverse KL diverges for highly skewed target (s=1.8)\n- ADVI-Score also diverges for highly skewed targets; more sensitive to learning rate\n- For varying tails: all methods converge to similar reverse KL; BaM and ADVI converge to better values than GSM in some cases\n- BaM stabilizes more quickly with larger batch sizes\n- Decaying λ_t necessary for non-Gaussian convergence (constant λ_t fails)"
+          },
+          {
+            "id": "Figure 5.3",
+            "caption": "Posterior inference in Bayesian models. The curves denote the mean over 5 runs, and shaded regions denote their standard error. Solid curves (B=32) correspond to larger batch sizes than dashed curves (B=8).",
+            "markdown": "**Source**: Figure 5.3, Section 5.2\n\n## Experimental Conditions\n- Models from PosteriorDB (Magnusson et al., 2022)\n- Reference: HMC samples\n- Metric: Relative mean error = ||μ_VI - μ_HMC|| / ||μ_HMC|| vs. gradient evaluations\n- Seeds: 5\n\n## Models\n| Model | D | Type |\n|-------|---|------|\n| arK (nearly Gaussian) | 7 | Autoregressive |\n| gp-pois-regr (Gaussian Process) | 13 | Non-Gaussian |\n| eight-schools-centered (Hierarchical) | 10 | Non-Gaussian |\n\n## Method Configurations\n| Method | Batch Sizes | Learning Rate |\n|--------|-------------|---------------|\n| BaM | 8 (dashed), 32 (solid) | λ_t = BD/(t+1) |\n| ADVI | 8 (dashed), 32 (solid) | Grid searched |\n| GSM | 8 (dashed), 32 (solid) | N/A |\n\n## Qualitative Findings (from paper text)\n- BaM outperforms ADVI overall (lower relative mean error, faster convergence)\n- GSM can converge faster than BaM at smaller batch sizes (B=8) but oscillates around the solution\n- BaM improves with larger batch size (B=32 > B=8); ADVI and GSM do not benefit from larger batches\n- All 3 panels show same qualitative trend (arK, GP, hierarchical)\n- For relative SD error (Fig E.6): similar trends, except hierarchical model where BaM converges to larger relative SD error than GSM (potential for improvement with better learning rate tuning)"
+          },
+          {
+            "id": "Figure 5.4",
+            "caption": "(a) Image reconstruction across iterations with batch size, B = 300. (b) Reconstruction error for varying batch sizes.",
+            "markdown": "**Source**: Figure 5.4, Section 5.3\n\n## Experimental Conditions\n- Model: VAE on CIFAR-10; Gaussian likelihood with σ²=0.1; z∈R^256; x∈R^3072\n- Architecture: 5-layer convolutional encoder/decoder\n- Evaluation: MSE between reconstructed image Ω(E[z'|x'], θ̂) and test image x'\n- Initialization: N(0, I) for all VI methods\n- Pilot: 100 iterations for learning rate selection; Main: 1000 iterations\n\n## Panel (b): Reconstruction Error vs. Iterations\n\n### Batch Size B=10\n| Method | Notes |\n|--------|-------|\n| BaM | Performs poorly (MSE > 0.2); batch too small relative to D=256 |\n| ADVI | Converges to reasonable MSE |\n| GSM | Baseline performance |\n| Amortized VI | Fixed baseline (encoder network) |\n\n### Batch Size B=100\n| Method | Notes |\n|--------|-------|\n| BaM | Becoming competitive |\n| ADVI | Similar or slower than B=10 (no batch size benefit) |\n| GSM | Similar |\n\n### Batch Size B=300\n| Method | Notes |\n|--------|-------|\n| BaM | Converges order of magnitude (or more) faster than ADVI and GSM in iterations |\n| ADVI | Converges, but requires many more iterations |\n| GSM | Similar to ADVI |\n\n## Key Quantitative Comparisons (from paper text)\n| Comparison | Detail |\n|------------|--------|\n| 3000 gradient budget (ADVI) | B=10, T=300 → achieves lowest ADVI MSE |\n| 3000 gradient budget (BaM) | B=300, T=10 → achieves comparable MSE to ADVI |\n| Wallclock advantage of BaM | BaM B=300 converges faster in wallclock time (more parallelizable) |\n| BaM vs Amortized VI | Both BaM and ADVI eventually achieve lower MSE than AVI (full vs. factorized covariance) |\n\n## Selected BaM Learning Rates\n| B | λ (selected) | Search grid |\n|---|-------------|-------------|\n| 10 | 0.1 | {0.01, 0.1, 0.2, 10} |\n| 100 | 50 | {2, 20, 50, 100, 200} |\n| 300 | 7500 | {1000, 5000, 7500, 10000} |\n\nADVI learning rate: ℓ=0.02 consistently best from {0.001, 0.01, 0.02, 0.05}."
+          },
+          {
+            "id": "Figure E.1",
+            "caption": "Wallclock timings for the Gaussian targets example.",
+            "markdown": "**Source**: Figure E.1, Appendix E.2\n\n## Experimental Conditions\n- Dimensions: D = 4, 16, 64, 128, 256\n- Methods: BaM (full-rank and low-rank), ADVI, GSM, Score, Fisher\n\n## Key Observations (from paper text)\n| D Range | Observation |\n|---------|-------------|\n| D ≤ 64 | All methods (BaM, ADVI, GSM, Score, Fisher) have similar wallclock timing |\n| D = 128, 256 | Low-rank BaM solver has similar timing to other methods |\n\n## Implications\n- Gradient evaluations are a good proxy for computational cost in the lower-dimensional regime\n- BaM's O(D³) covariance update is not prohibitive because models with full covariance already assume O(D²) parameters\n- Low-rank solver (Lemma B.3): O(D²B + B³) costs applicable when B &lt;&lt; D\n- All paper experiments fit the lower-dimensional or low-rank regime, except deep generative model which additionally reports wallclock in Fig E.7\n\nNote: Exact timing values (in seconds) not reported numerically in paper; figure shows qualitative timing curves."
+          },
+          {
+            "id": "Figure E.3",
+            "caption": "Gaussian targets of increasing dimension. Solid curves indicate the mean over 10 runs (transparent curves). ADVI, Score, Fisher, and GSM use batch size of 2. The batch size for BaM is given in the legend.",
+            "markdown": "**Source**: Figure E.3, Appendix E.3\n\n## Experimental Conditions\n- Same setup as Figure 5.1 (Section 5.1)\n- Metric: Reverse KL divergence KL(q_t; p) vs. number of gradient evaluations\n- Configurations: D=4: BaM-5, BaM-2; D=16: BaM-15, BaM-2; D=64: BaM-40, BaM-2; D=256: BaM-150, BaM-2\n- ADVI, Score, Fisher, GSM all at B=2\n\n## Qualitative Findings (from paper text)\n- \"We observe largely the same conclusions as with the forward KL divergence presented in Section 5.\"\n- BaM with large batch size converges orders of magnitude faster in gradient evaluations\n- GSM competitive with BaM at B=2; BaM at larger B outperforms\n- Gradient-based methods (ADVI, Score, Fisher) similar to each other\n\nNote: Reverse KL results corroborate forward KL findings; consistent story across both directions."
+          },
+          {
+            "id": "Figure E.4",
+            "caption": "Non-Gaussian targets constructed using the sinh-arcsinh distribution, varying the skew s and the tail weight t. ADVI and GSM use a batch size of B=5.",
+            "markdown": "**Source**: Figure E.4, Appendix E.4\n\n## Experimental Conditions\n- Same setup as Figure 5.2 (D=10, sinh-arcsinh)\n- Metric: Reverse KL divergence KL(q_t; p) vs. gradient evaluations\n- Method configurations: BaM (B=5, B=10), ADVI, GSM, Score, Fisher (all at B=5 for non-BaM methods)\n- Learning rate: λ_t = BD/(t+1) for BaM\n\n## Key Observations (from paper text)\n\n### Varying Skew (τ=1)\n| s | Observation |\n|---|-------------|\n| 0.2 | BaM converges faster; GSM and ADVI often similar |\n| 1.0 | BaM converges to similar reverse KL as ADVI; GSM oscillates |\n| 1.8 | GSM reverse KL diverges (instability); Score method also diverges; BaM converges |\n\n### Varying Tails (s=0)\n| τ | Observation |\n|---|-------------|\n| 0.1, 0.9, 1.7 | All methods tend to converge to similar reverse KL values |\n| | In some cases BaM and ADVI converge to better values than GSM |\n| | BaM converges faster than ADVI |\n\n## Critical Finding\nGSM divergence for s=1.8 (highly skewed target) validates the need for BaM's regularization — GSM's lack of a proper divergence objective leads to instability on non-Gaussian targets."
+          },
+          {
+            "id": "Figure E.6",
+            "caption": "Posterior inference in Bayesian models measured by the relative standard deviation error. The curves denote the mean over 5 runs, and shaded regions denote their standard error. Solid curves (B=32) correspond to larger batch sizes than the dashed curves (B=8).",
+            "markdown": "**Source**: Figure E.6, Appendix E.5\n\n## Experimental Conditions\n- Same as Figure 5.3\n- Metric: Relative SD error = ||σ_VI - σ_HMC|| / ||σ_HMC|| vs. gradient evaluations (where σ denotes marginal standard deviation from equation 242)\n\n## Models\n| Model | D |\n|-------|---|\n| arK (nearly Gaussian) | 7 |\n| gp-pois-regr | 13 |\n| eight-schools-centered | 10 |\n\n## Key Observations (from paper text)\n- \"We typically observe the same trends as for the mean\" (BaM outperforms ADVI; GSM oscillates)\n- **Exception**: \"In the hierarchical example [eight-schools-centered], BaM converges to a larger relative SD error\" (compared to GSM and ADVI)\n- Note: \"the low error of GSM suggests that more robust tuning of the learning rate may lead to better performance with BaM\" in the hierarchical case\n- BaM benefits from B=32 over B=8; ADVI and GSM do not (consistent with mean error findings)\n\n## Y-axis Scale Note\nFor the hierarchical model SD error: scale reaches at least 2×10^0 = 2 (visible from \"2 × 10^0\" annotation in figure caption)"
+          }
+        ],
+        "data": []
+      },
+      "verified_by": [
+        {
+          "id": "E01",
+          "title": "Gaussian Targets with Increasing Dimensions",
+          "setup": "Model: Full-covariance Gaussian variational approximation N(μ, Σ). Hardware: CPU/GPU via JAX (exact hardware not specified; wallclock shown in Fig E.1). Dataset: Synthetically generated Gaussian targets of dimension D ∈ {4, 16, 64, 256}; covariance Σ* = AA^T for random D×D matrix A. System: BaM (batch sizes B=2 and B=D-tuned: 5/15/40/150 for D=4/16/64/256), ADVI (B=2, ADAM), GSM (B=2), ADVI-Score (B=2), ADVI-Fisher (B=2).\n\nProcedure: (1) Generate random Gaussian target N(μ*, Σ*) where Σ* = AA^T for random A. (2) Initialize all methods with μ_0 ~ Uniform[0, 0.1] and Σ_0 = I. (3) For BaM: set λ_t = BD (constant); for ADVI/Score/Fisher: grid-search learning rate. (4) Run each method for at least 10^4 iterations. (5) At each iteration, compute forward KL divergence KL(p; q_t) and reverse KL divergence KL(q_t; p) empirically. (6) Repeat for 10 random seeds. (7) Plot mean (and individual) KL curves vs number of gradient evaluations.",
+          "metrics": "Forward KL divergence KL(p; q_t) and reverse KL divergence KL(q_t; p) as functions of gradient evaluations (= B × iterations). Baselines: ADVI (ELBO, ADAM), ADVI-Score (score-based divergence, ADAM), ADVI-Fisher (Fisher divergence, ADAM), GSM. Expected outcome: BaM with large batch size converges orders of magnitude faster (in gradient evaluations) than ADVI; BaM with B=2 and GSM perform similarly, BaM at larger batch sizes outperforms GSM; ADVI, Score-ADVI, and Fisher-ADVI have similar convergence to each other; BaM convergence improves with increasing batch size, GSM does not benefit from B>2."
+        },
+        {
+          "id": "E02",
+          "title": "Non-Gaussian Targets (Sinh-Arcsinh Distribution)",
+          "setup": "Model: Full-covariance Gaussian variational approximation. Hardware: CPU/GPU via JAX. Dataset: D=10 sinh-arcsinh normal distributions; varying skew s ∈ {0.2, 1.0, 1.8} with τ=1; varying tails τ ∈ {0.1, 0.9, 1.7} with s=0. System: BaM (B=5 and B=10), ADVI (B=5), GSM (B=5), ADVI-Score (B=5), ADVI-Fisher (B=5).\n\nProcedure: (1) Construct sinh-arcsinh target distributions with specified (s, τ) parameters. (2) Initialize all methods with random μ_0 and Σ_0 = I. (3) For BaM: use decaying learning rate λ_t = BD/(t+1); for ADVI/Score/Fisher: grid-search learning rate. (4) Run each method for at least 10^4 iterations; 10 seeds. (5) Compute forward and reverse KL divergence at each iteration. (6) Report mean ± standard error curves.",
+          "metrics": "Forward KL KL(p; q_t) and reverse KL KL(q_t; p) vs gradient evaluations. Baselines: ADVI, ADVI-Score, ADVI-Fisher, GSM. Expected outcome: BaM converges faster than ADVI for all skew/tail configurations; for large skew (s=1.0, 1.8) BaM reaches higher forward KL but similar reverse KL vs ADVI; GSM reverse KL diverges for highly skewed targets (s=1.8), Score variant also diverges for high skew; for varying tails all methods converge to similar reverse KL, BaM typically converges in fewer iterations than ADVI; decaying learning rate λ_t = BD/(t+1) outperforms constant schedule for non-Gaussian targets."
+        },
+        {
+          "id": "E03",
+          "title": "Posterior Inference in Hierarchical Bayesian Models (PosteriorDB)",
+          "setup": "Model: Full-covariance Gaussian VI on 3 Stan/PosteriorDB models. Hardware: CPU/GPU via JAX. Dataset: (1) arK (autoregressive model, D=7, nearly Gaussian); (2) gp-pois-regr (Gaussian process Poisson regression, D=13, non-Gaussian); (3) eight-schools-centered (8-schools hierarchical, D=10, non-Gaussian). Reference samples from HMC provided by PosteriorDB. System: BaM (B=8 and B=32), ADVI (B=8 and B=32), GSM (B=8 and B=32). Score function computed via BridgeStan.\n\nProcedure: (1) Load Stan model and reference HMC samples from PosteriorDB. (2) Initialize all methods with μ_0 ~ Uniform[0, 0.1] and Σ_0 = I. (3) For BaM: use decaying learning rate λ_t = BD/(t+1). (4) For ADVI: grid-search over learning rates. (5) Run each method for at least 10^4 iterations; 5 seeds. (6) At each iteration, compute relative mean error = ||μ_VI - μ_HMC|| / ||μ_HMC|| and relative SD error = ||σ_VI - σ_HMC|| / ||σ_HMC||. (7) Report mean ± standard error over seeds.",
+          "metrics": "Relative posterior mean error and relative posterior SD error vs gradient evaluations (Equation 242). Baselines: ADVI, GSM. Expected outcome: BaM outperforms ADVI (lower mean error, faster convergence); GSM can converge faster than BaM at small batch sizes but oscillates around the solution; BaM benefits from larger batch sizes (B=32 > B=8), ADVI and GSM do not benefit from larger batches; for hierarchical model BaM converges to larger relative SD error than GSM (exception to trend)."
+        },
+        {
+          "id": "E04",
+          "title": "Deep Generative Model — CIFAR-10 Image Reconstruction",
+          "setup": "Model: VAE decoder network Ω(z, θ̂): R^256 → R^3072; 5-layer convolutional encoder and decoder; Gaussian likelihood x_n|z_n ~ N(Ω(z_n, θ̂), 0.1·I); latent z ∈ R^256; observation x ∈ R^3072. Hardware: GPU (JAX with JIT compilation). Dataset: CIFAR-10 (60,000 images, 32×32×3 = 3072 pixels); training split for VAE pre-training; test split for VI evaluation. System: BaM (B=10, 100, 300), ADVI (B=10, 100, 300), GSM, Amortized VI (factorized Gaussian encoder).\n\nProcedure: (1) Pre-train VAE on CIFAR-10 training split for 100 epochs using standard VAE training (ELBO, ADAM, factorized Gaussian encoder). (2) Sample test image x' from CIFAR-10 test set. (3) For BaM and ADVI: run 100-iteration pilot with candidate learning rates {λ} to select best λ per batch size. (4) Initialize all VI methods at N(0, I). (5) Run BaM for T=1000 iterations; run ADVI for T=1000 iterations; run GSM for T=1000 iterations. (6) At each iteration, evaluate E[z'|x'] and compute reconstructed image Ω(E[z'|x'], θ̂). (7) Compute MSE between reconstructed and original image at each iteration. (8) Compare 3000-gradient-evaluation budget: ADVI (B=10, T=300) vs BaM (B=300, T=10).",
+          "metrics": "Mean Squared Error (MSE) between reconstructed and test image, vs. iteration count and wallclock time. Baselines: ADVI (various batch sizes), GSM, Amortized VI (trained VAE encoder). Expected outcome: BaM with B=10 (small relative to D=256) performs poorly (high MSE); BaM with B=300 (comparable to D) converges an order of magnitude (or more) faster than ADVI and GSM; under 3000-gradient-evaluation budget BaM B=300,T=10 achieves comparable MSE to ADVI B=10,T=300; BaM B=300 is faster in wallclock time (more parallelizable) than ADVI; both BaM and ADVI (full covariance) eventually achieve lower MSE than Amortized VI (factorized Gaussian)."
+        }
+      ],
+      "artifact": [
+        {
+          "name": "experiment_runner.py",
+          "pointer": "src/execution/experiment_runner.py",
+          "what": "End-to-end experiment execution for the Gaussian/non-Gaussian/PosteriorDB/deep-generative benchmarks (Sections 5.1-5.3)."
+        },
+        {
+          "name": "metrics.py",
+          "pointer": "src/execution/metrics.py",
+          "what": "Forward/reverse KL divergence, relative mean/SD error, and MSE metrics used to score BaM vs. ADVI vs. GSM."
+        },
+        {
+          "name": "targets.py",
+          "pointer": "src/execution/targets.py",
+          "what": "Gaussian and sinh-arcsinh non-Gaussian target distributions used in this evaluation."
+        }
+      ],
+      "built_on": [
+        {
+          "rw_id": "RW01",
+          "name": "Modi et al., 2023",
+          "relation_raw": "extends"
+        },
+        {
+          "rw_id": "RW02",
+          "name": "Kucukelbir et al., 2017",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW06",
+          "name": "Kingma and Welling, 2014",
+          "relation_raw": "baseline"
+        }
+      ],
+      "rejected_here": [],
+      "recipe_refs": [],
+      "concepts": []
+    },
+    {
+      "id": "N12",
+      "type": "dead_end",
+      "parent": "N11",
+      "title": "Constant learning rate for non-Gaussian targets",
+      "body": "Hypothesis: Constant λ_t = BD works for non-Gaussian targets as well as Gaussian. Failure mode: Constant λ_t does not converge for non-Gaussian targets; algorithm oscillates. Decaying λ_t = BD/(t+1) is required (verified in Figure E.5). Lesson: Non-Gaussian targets require decaying regularization schedule; constant schedule valid only when target is Gaussian or very close to Gaussian.",
+      "thinking": "Since a constant regularization schedule λ_t = BD works cleanly for Gaussian targets (Theorem 3.1 covers any fixed λ>0), it was natural to try carrying that same constant schedule over to the non-Gaussian sinh-arcsinh experiments. It does not survive contact with non-Gaussian targets: the algorithm oscillates instead of converging. Switching to a decaying schedule, λ_t = BD/(t+1), fixes it. The lesson is that the convergence guarantee for a constant schedule is tied to the Gaussian assumption in the proof, not a general property of BaM.",
+      "depends_on": [],
+      "source_refs": [],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [
+        {
+          "name": "bam.py",
+          "pointer": "src/execution/bam.py",
+          "what": "Learning Rate Schedule component (constant vs. decaying λ_t) that this dead end shows must be decaying for non-Gaussian targets."
+        },
+        {
+          "name": "H02: Decaying learning rate for non-Gaussian targets",
+          "pointer": "logic/solution/heuristics.md#H02",
+          "what": "Heuristic recipe recording the fix: λ_t = BD/(t+1) preferred over the constant schedule for non-Gaussian targets and PosteriorDB."
+        }
+      ],
+      "built_on": [],
+      "rejected_here": [],
+      "recipe_refs": [],
+      "concepts": [
+        "Inverse Regularization Parameter"
+      ]
+    }
+  ],
+  "context": {
+    "title": "Problem",
+    "summary": "Choosing the covariance matrix Cov(q) as the weight matrix in the weighted Fisher divergence yields an affine-invariant score-based divergence D(q;p) = E_q[||∇log(q/p)||²_{Cov(q)}] that admits a global closed-form minimum when combined with a KL-divergence regularizer, because the resulting stationarity condition is a quadratic matrix equation with a known positive-definite solution.",
+    "sections": [
+      {
+        "role": "setting",
+        "heading": "Setting",
+        "present": false,
+        "entries": []
+      },
+      {
+        "role": "observations",
+        "heading": "Observations",
+        "present": true,
+        "entries": [
+          {
+            "ent_id": "O1",
+            "inferred_id": false,
+            "ent_title": "ELBO-based BBVI suffers from high-variance gradients",
+            "text": "Gradient estimates of the ELBO via the reparameterization trick are stochastic, leading to high variance particularly in high-dimensional settings and when using richer (full-covariance) variational families.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Evidence",
+                "value": "Section 1, §2.1; Dhaka et al. (2020, 2021) cited for empirical evidence; Figure 5.1 shows ADVI converges orders of magnitude slower than BaM."
+              },
+              {
+                "label": "Implication",
+                "value": "BBVI based on ELBO requires many iterations to converge and is sensitive to learning rate choices."
+              }
+            ],
+            "refs": []
+          },
+          {
+            "ent_id": "O2",
+            "inferred_id": false,
+            "ent_title": "ELBO-based BBVI is sensitive to hyperparameters",
+            "text": "ADVI and related ELBO-based methods require careful tuning of learning rates; the score-based divergence variant is even more sensitive (different learning rates selected for each dimension: [0.01, 0.005, 0.001, 0.001] for D=4, 16, 64, 256).",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Evidence",
+                "value": "Section 5.1, Appendix E.3; Dhaka et al. (2020, 2021)."
+              },
+              {
+                "label": "Implication",
+                "value": "Practitioners must run grid searches over learning rates, adding computational overhead and brittleness."
+              }
+            ],
+            "refs": []
+          },
+          {
+            "ent_id": "O3",
+            "inferred_id": false,
+            "ent_title": "GSM lacks a principled objective and requires heuristics for non-Gaussian targets",
+            "text": "GSM (Modi et al., 2023) solves score-matching equations exactly per sample but has no proper divergence, causing divergence (oscillation or instability) for highly non-Gaussian targets (e.g., s=1.8 sinh-arcsinh). GSM batch updates use ad hoc averaging.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Evidence",
+                "value": "Section 4; Figure 5.2 (reverse KL diverges for GSM at s=1.8)."
+              },
+              {
+                "label": "Implication",
+                "value": "A principled score-based divergence with regularization is needed."
+              }
+            ],
+            "refs": []
+          },
+          {
+            "ent_id": "O4",
+            "inferred_id": false,
+            "ent_title": "Full-covariance Gaussian VI is computationally tractable but underutilized",
+            "text": "Using full-covariance Gaussian approximations requires estimating O(D²) parameters but can provide better compression. Standard mean-field families miss correlations between latent variables.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Evidence",
+                "value": "Section 5.3; deep generative model experiment: BaM/ADVI with full covariance outperform AVI (factorized Gaussian)."
+              },
+              {
+                "label": "Implication",
+                "value": "Methods that efficiently optimize full-covariance Gaussian families are desirable."
+              }
+            ],
+            "refs": []
+          }
+        ]
+      },
+      {
+        "role": "gaps",
+        "heading": "Gaps",
+        "present": true,
+        "entries": [
+          {
+            "ent_id": "G1",
+            "inferred_id": false,
+            "ent_title": "No affine-invariant, unnormalized-computable divergence for BBVI",
+            "text": "The KL divergence requires normalization constants; the Fisher divergence is not affine invariant; the weighted Fisher divergence with fixed M is not adapted to the variational family.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Caused by",
+                "value": "O1, O2, O3"
+              },
+              {
+                "label": "Existing attempts",
+                "value": "KL divergence (ELBO), Fisher divergence, weighted Fisher divergence (Barp et al., 2019)"
+              },
+              {
+                "label": "Why they fail",
+                "value": "KL requires normalized density; Fisher divergence lacks affine invariance (Theorem A.4); no method simultaneously has all three: unnormalized evaluation, affine invariance, closed-form optimization."
+              }
+            ],
+            "refs": []
+          },
+          {
+            "ent_id": "G2",
+            "inferred_id": false,
+            "ent_title": "No BBVI algorithm with closed-form, non-gradient updates for full-covariance Gaussians with provable convergence",
+            "text": "Existing proximal BBVI methods either linearize (Khan et al., 2015, 2016) or cannot solve their proximal steps in closed form (Lambert et al., 2022). GSM solves updates exactly but without regularization, losing stability.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Caused by",
+                "value": "O1, O2, O3"
+              },
+              {
+                "label": "Existing attempts",
+                "value": "GSM, KL-proximal BBVI (Theis & Hoffman, 2015), SPP methods"
+              },
+              {
+                "label": "Why they fail",
+                "value": "Linearization introduces approximation error; no provable convergence for non-Gaussian targets; GSM is unstable without regularization."
+              }
+            ],
+            "refs": []
+          }
+        ]
+      },
+      {
+        "role": "insight",
+        "heading": "Key Insight",
+        "present": true,
+        "entries": [
+          {
+            "ent_id": "1",
+            "inferred_id": true,
+            "ent_title": "Insight",
+            "text": "Choosing the covariance matrix Cov(q) as the weight matrix in the weighted Fisher divergence yields an affine-invariant score-based divergence D(q;p) = E_q[||∇log(q/p)||²_{Cov(q)}] that admits a global closed-form minimum when combined with a KL-divergence regularizer, because the resulting stationarity condition is a quadratic matrix equation with a known positive-definite solution.",
+            "unstructured": true,
+            "fields": [],
+            "refs": []
+          },
+          {
+            "ent_id": "2",
+            "inferred_id": true,
+            "ent_title": "Derived from",
+            "text": "O1, O2, O3, O4",
+            "unstructured": true,
+            "fields": [],
+            "refs": []
+          },
+          {
+            "ent_id": "3",
+            "inferred_id": true,
+            "ent_title": "Enables",
+            "text": "A stochastic proximal point algorithm (BaM) with provably convergent, closed-form, non-gradient updates that are stable for any regularization strength λ>0.",
+            "unstructured": true,
+            "fields": [],
+            "refs": []
+          }
+        ]
+      },
+      {
+        "role": "assumptions",
+        "heading": "Assumptions",
+        "present": true,
+        "entries": [
+          {
+            "ent_id": "A1",
+            "inferred_id": false,
+            "ent_title": "A1",
+            "text": "A1: The log target density log p(z) is differentiable and its gradient ∇log p(z) can be efficiently evaluated (score oracle is available). A2: The target distribution p has positive density everywhere on R^D. A3: The variational family is Q = {N(μ, Σ) : μ ∈ R^D, Σ ∈ S^D_{++}}. A4: Gradient evaluations dominate computational cost (valid for lower-dimensional settings per Appendix E.2). A5: For deep generative models, the neural network parameters θ̂ are fixed (pre-trained) before running VI.",
+            "unstructured": true,
+            "fields": [],
+            "refs": []
+          }
+        ]
+      }
+    ]
+  },
+  "glossary": {
+    "title": "Concepts",
+    "groups": [],
+    "terms": [
+      {
+        "term_id": "G01",
+        "name": "Score-Based Divergence",
+        "aliases": [],
+        "group": "",
+        "definition": "A divergence between distributions q and p measuring agreement of their score functions (gradients of log densities), weighted by the covariance matrix of q. For general q: D(q;p) = E_q[(∇log q - ∇log p)^T Γ_q^{-1} (∇log q - ∇log p)], where Γ_q = E_q[(∇log q)(∇log q)^T]. For Gaussian q = N(ν, Ψ): Γ_q = Ψ^{-1} = [Cov(q)]^{-1}, so D(q;p) = E_q[||∇log(q/p)||²_Ψ].",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "D(q;p) = E_q[||∇log(q/p)||²_{Cov(q)}] = E_q[(∇log q - ∇log p)^T Cov(q) (∇log q - ∇log p)]"
+          },
+          {
+            "label": "Boundary conditions",
+            "value": "Requires p(z)>0, q(z)>0 for all z ∈ R^D; ∇log p exists and can be evaluated (but p need not be normalized); E_q[||∇log q||²] &lt; ∞."
+          },
+          {
+            "label": "Related concepts",
+            "value": "Fisher Divergence, Weighted Fisher Divergence, KL Divergence, Score Function"
+          }
+        ],
+        "related": [
+          "G09",
+          "G02"
+        ],
+        "refs": []
+      },
+      {
+        "term_id": "G02",
+        "name": "Score Function",
+        "aliases": [],
+        "group": "",
+        "definition": "The gradient of the log (unnormalized) target density with respect to the latent variable z. Crucially, s(z) = ∇log p̃(z) for unnormalized p̃ = c·p, since the constant c vanishes in differentiation.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "s(z) = ∇_z log p(z) ∈ R^D"
+          },
+          {
+            "label": "Boundary conditions",
+            "value": "Requires log p to be differentiable. Computable via automatic differentiation even when p is intractable."
+          },
+          {
+            "label": "Related concepts",
+            "value": "Score-Based Divergence, Fisher Divergence, BBVI"
+          }
+        ],
+        "related": [
+          "G01"
+        ],
+        "refs": []
+      },
+      {
+        "term_id": "G03",
+        "name": "BaM Algorithm",
+        "aliases": [
+          "Batch and Match"
+        ],
+        "group": "",
+        "definition": "An iterative BBVI algorithm alternating between (1) a batch step that draws B samples z_b ~ N(μ_t, Σ_t) and computes sufficient statistics (z̄, ḡ, C, Γ), and (2) a match step that minimizes the regularized empirical score-based divergence L_BaM(q) = D̂_{q_t}(q;p) + (2/λ_t) KL(q_t; q) in closed form.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "Algorithm 1; iterates (μ_t, Σ_t) → (μ_{t+1}, Σ_{t+1})"
+          },
+          {
+            "label": "Boundary conditions",
+            "value": "Variational family must be Gaussian; λ_t > 0 required; convergence proof only covers Gaussian targets; finite-batch non-Gaussian convergence is empirical."
+          },
+          {
+            "label": "Related concepts",
+            "value": "Score-Based Divergence, Quadratic Matrix Equation, Stochastic Proximal Point Method"
+          }
+        ],
+        "related": [
+          "G01",
+          "G04"
+        ],
+        "refs": []
+      },
+      {
+        "term_id": "G04",
+        "name": "Quadratic Matrix Equation",
+        "aliases": [
+          "BaM covariance update"
+        ],
+        "group": "",
+        "definition": "A matrix equation in Σ where U ⪰ 0 and V ≻ 0 are given PSD matrices. The unique symmetric positive-definite solution is given by Lemma B.1. For low-rank U = QQ^T (B &lt;&lt; D): Σ = V - V^T Q (2I + (Q^T V Q + I)^{1/2})^{-2} Q^T V, costing O(D²B + B³) instead of O(D³).",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "ΣUΣ + Σ = V; solution Σ = 2V[I + (I + 4UV)^{1/2}]^{-1}"
+          },
+          {
+            "label": "Boundary conditions",
+            "value": "V must be positive definite; U must be positive semidefinite. Cost O(D³) generally, O(D²B + B³) when B &lt;&lt; D."
+          },
+          {
+            "label": "Related concepts",
+            "value": "BaM Algorithm, Match Step"
+          }
+        ],
+        "related": [
+          "G03"
+        ],
+        "refs": []
+      },
+      {
+        "term_id": "G05",
+        "name": "Batch Step Statistics",
+        "aliases": [],
+        "group": "",
+        "definition": "For B samples z_b ~ N(μ_t, Σ_t) with scores g_b = ∇log p(z_b): z̄ and ḡ are sample means; C and Γ are sample covariance matrices of positions and scores. Used to form U = λ_t Γ + (λ_t/(1+λ_t)) ḡḡ^T and V = Σ_t + λ_t C + (λ_t/(1+λ_t))(μ_t - z̄)(μ_t - z̄)^T.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "z̄ = (1/B)Σz_b, C = (1/B)Σ(z_b-z̄)(z_b-z̄)^T, ḡ = (1/B)Σg_b, Γ = (1/B)Σ(g_b-ḡ)(g_b-ḡ)^T"
+          },
+          {
+            "label": "Boundary conditions",
+            "value": "By the law of large numbers, as B→∞: z̄→μ_t, C→Σ_t, ḡ→Σ*^{-1}(μ*-μ_t), Γ→Σ*^{-1}Σ_t Σ*^{-1} for Gaussian target."
+          },
+          {
+            "label": "Related concepts",
+            "value": "BaM Algorithm, Batch Step, Quadratic Matrix Equation"
+          }
+        ],
+        "related": [
+          "G03",
+          "G04"
+        ],
+        "refs": []
+      },
+      {
+        "term_id": "G06",
+        "name": "Inverse Regularization Parameter",
+        "aliases": [
+          "λ_t"
+        ],
+        "group": "",
+        "definition": "Controls trade-off between fitting the empirical score-based divergence and staying close to the current iterate. Small λ → strong regularization (conservative update); large λ → aggressive update. In convergence analysis, δ = λβ/(1+λ) is the per-iteration error decay rate. Unlike SGD learning rates, convergence holds for any fixed λ>0.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "λ_t > 0; can be fixed (λ_t = BD for Gaussian) or decaying (λ_t = BD/(t+1) for non-Gaussian)"
+          },
+          {
+            "label": "Boundary conditions",
+            "value": "λ_t > 0 required; λ_t → 0 recovers no update; λ_t → ∞ with B=1 recovers GSM."
+          },
+          {
+            "label": "Related concepts",
+            "value": "BaM Algorithm, Stochastic Proximal Point Method, Convergence Rate"
+          }
+        ],
+        "related": [
+          "G03"
+        ],
+        "refs": []
+      },
+      {
+        "term_id": "G07",
+        "name": "Normalized Error",
+        "aliases": [
+          "Convergence Analysis"
+        ],
+        "group": "",
+        "definition": "Whitened (Σ*-normalized) errors measuring the distance of the current variational parameters from the target. Convergence theorem shows ||ε_t|| ≤ (1-δ)^t||ε_0|| and ||Δ_t|| ≤ (1-δ)^t||Δ_0|| + t(1-δ)^{t-1}||ε_0||².",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "ε_t = Σ*^{-1/2}(μ_t - μ*) ∈ R^D; Δ_t = Σ*^{-1/2}Σ_t Σ*^{-1/2} - I ∈ R^{D×D}; J_t = Σ*^{-1/2}Σ_t Σ*^{-1/2} = I + Δ_t"
+          },
+          {
+            "label": "Boundary conditions",
+            "value": "Valid only in the infinite-batch limit (B→∞) and for Gaussian targets. α = min eigenvalue of J_0 must be positive (Σ_0 ≻ 0)."
+          },
+          {
+            "label": "Related concepts",
+            "value": "Convergence Rate, BaM Algorithm"
+          }
+        ],
+        "related": [
+          "G03"
+        ],
+        "refs": []
+      },
+      {
+        "term_id": "G08",
+        "name": "Affine Invariance",
+        "aliases": [],
+        "group": "",
+        "definition": "A divergence is affine invariant if applying any invertible affine transformation to all distributions leaves the divergence value unchanged. The score-based divergence D(q;p) is affine invariant due to the Cov(q) weighting. The unweighted Fisher divergence E_q[||∇log(q/p)||²] is NOT affine invariant.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "D(q;p) = D(h#q; h#p) for affine h(z) = Az + b"
+          },
+          {
+            "label": "Boundary conditions",
+            "value": "Requires the weight matrix to transform appropriately under affine maps. Covariance matrix Cov(q) transforms as A Cov(q) A^T, ensuring cancellation (Theorem A.4)."
+          },
+          {
+            "label": "Related concepts",
+            "value": "Score-Based Divergence, Fisher Divergence"
+          }
+        ],
+        "related": [
+          "G01"
+        ],
+        "refs": []
+      },
+      {
+        "term_id": "G09",
+        "name": "Weighted Fisher Divergence",
+        "aliases": [],
+        "group": "",
+        "definition": "Generalization of Fisher divergence with fixed weighting matrix M. The score-based divergence of BaM is the special case M = Cov(q) (which depends on q), making it a non-standard weighted Fisher divergence where the weight adapts to the variational distribution.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "D_M(q;p) = E_q[||∇log(q/p)||²_M] for fixed M ∈ R^{D×D}"
+          },
+          {
+            "label": "Boundary conditions",
+            "value": "For fixed M, not affine invariant. Only the choice M = Cov(q) yields affine invariance."
+          },
+          {
+            "label": "Related concepts",
+            "value": "Score-Based Divergence, Fisher Divergence, Affine Invariance"
+          }
+        ],
+        "related": [
+          "G01",
+          "G08"
+        ],
+        "refs": []
+      },
+      {
+        "term_id": "G10",
+        "name": "Sinh-Arcsinh Normal Distribution",
+        "aliases": [],
+        "group": "",
+        "definition": "A family of non-Gaussian distributions obtained by transforming a Gaussian via the sinh function and its inverse. Parameter s ∈ R controls skewness (s=0 → symmetric), τ>0 controls tail heaviness (τ=1 → Gaussian tails). Used in paper as a controlled test of non-Gaussianity.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "z = sinh(τ^{-1} (sinh^{-1}(y) + s)) where y ~ N(μ, Σ)"
+          },
+          {
+            "label": "Boundary conditions",
+            "value": "Recovers standard Gaussian when s=0, τ=1. Used with D=10 dimensional targets."
+          },
+          {
+            "label": "Related concepts",
+            "value": "Non-Gaussian targets, BaM Algorithm"
+          }
+        ],
+        "related": [
+          "G03"
+        ],
+        "refs": []
+      }
+    ],
+    "lexicon": {
+      "score-based divergence": "G01",
+      "score function": "G02",
+      "bam algorithm": "G03",
+      "batch and match": "G03",
+      "quadratic matrix equation": "G04",
+      "bam covariance update": "G04",
+      "batch step statistics": "G05",
+      "inverse regularization parameter": "G06",
+      "λ_t": "G06",
+      "normalized error": "G07",
+      "convergence analysis": "G07",
+      "affine invariance": "G08",
+      "weighted fisher divergence": "G09",
+      "sinh-arcsinh normal distribution": "G10"
+    }
+  },
+  "dependencies": {
+    "title": "Related Work / Dependencies",
+    "preamble": "",
+    "legend": [],
+    "attribution": "",
+    "entries": [
+      {
+        "rw_id": "RW01",
+        "inferred_id": false,
+        "name": "Modi et al., 2023",
+        "relation_raw": "extends",
+        "relation_norm": "extends",
+        "delta": "What changed: BaM generalizes GSM by optimizing a proper score-based divergence with KL regularization, instead of solving exact score-matching equations. BaM recovers GSM as the B=1, λ→∞ limiting case. Why: GSM lacks a proper divergence objective, uses ad hoc batch averaging, and diverges on highly non-Gaussian targets.",
+        "adopted": "Full-covariance Gaussian variational family; iterative score-matching framework; closed-form update structure.",
+        "grounding": [
+          {
+            "raw": "NeurIPS 2023 (Advances in Neural Information Processing Systems, 36)",
+            "kind": "source",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C03",
+          "C04",
+          "C05",
+          "C06"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW02",
+        "inferred_id": false,
+        "name": "Kucukelbir et al., 2017",
+        "relation_raw": "baseline",
+        "relation_norm": "baseline",
+        "delta": "What changed: BaM replaces stochastic ELBO gradient optimization (ADAM) with closed-form proximal score-based divergence optimization. Why: ELBO gradients have high variance; convergence is sensitive to learning rate; no closed-form updates available.",
+        "adopted": "Full-covariance Gaussian VI paradigm; reparameterization trick (used in ADVI baseline but not BaM).",
+        "grounding": [
+          {
+            "raw": "Journal of Machine Learning Research (ADVI paper)",
+            "kind": "source",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C05",
+          "C06"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW03",
+        "inferred_id": false,
+        "name": "Asi and Duchi, 2019",
+        "relation_raw": "imports",
+        "relation_norm": "imports",
+        "delta": "What changed: BaM adapts stochastic proximal point (SPP) ideas to VI with a KL regularizer (instead of Euclidean distance) and exploits Gaussian family structure for closed-form solutions. Why: SPP methods are stable with respect to learning rate; BaM inherits this robustness (Theorem 3.1 holds for all λ>0).",
+        "adopted": "SPP framework of minimizing stochastic estimate of objective + regularizer; stability analysis approach.",
+        "grounding": [
+          {
+            "raw": "SIAM Journal on Optimization, 29(3):2257-2290",
+            "kind": "source",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C02",
+          "C04"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW04",
+        "inferred_id": false,
+        "name": "Hyvärinen, 2005",
+        "relation_raw": "imports",
+        "relation_norm": "imports",
+        "delta": "What changed: BaM uses a Cov(q)-weighted variant of score matching (making it affine invariant) rather than the standard Fisher divergence, and applies it to VI rather than density estimation. Why: Standard Fisher divergence is not affine invariant; VI requires dealing with unnormalized targets.",
+        "adopted": "Score matching principle; connection between score agreement and density estimation.",
+        "grounding": [
+          {
+            "raw": "Journal of Machine Learning Research, 6(4)",
+            "kind": "source",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C01"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW05",
+        "inferred_id": false,
+        "name": "Barp et al., 2019",
+        "relation_raw": "bounds",
+        "relation_norm": "bounds",
+        "delta": "What changed: BaM's score-based divergence is a special case of the weighted Fisher divergence with M = Cov(q) (data-dependent weighting), which enables affine invariance. Why: BaM needs M to adapt to the variational distribution for affine invariance; fixed M does not achieve this.",
+        "adopted": "Weighted Fisher divergence framework; minimum Stein discrepancy perspective.",
+        "grounding": [
+          {
+            "raw": "NeurIPS 2019 (Advances in Neural Information Processing Systems, 32)",
+            "kind": "source",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C01"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW06",
+        "inferred_id": false,
+        "name": "Kingma and Welling, 2014",
+        "relation_raw": "baseline",
+        "relation_norm": "baseline",
+        "delta": "What changed: BaM proposes closed-form updates instead of gradient-based ELBO optimization for Gaussian VI. Why: Gradient-based VI is used in VAE training but is sensitive to hyperparameters and converges slowly for posterior inference.",
+        "adopted": "Variational autoencoder framework; amortized inference baseline for Section 5.3.",
+        "grounding": [
+          {
+            "raw": "ICLR 2014",
+            "kind": "source",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C05"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW07",
+        "inferred_id": false,
+        "name": "Theis and Hoffman, 2015",
+        "relation_raw": "extends",
+        "relation_norm": "extends",
+        "delta": "What changed: BaM uses score-based divergence as its objective and obtains a fully closed-form solution; Theis & Hoffman use ELBO with KL regularizer and alternating coordinate ascent (not closed-form). Why: Linearization in Theis & Hoffman introduces approximation error.",
+        "adopted": "KL divergence as regularizer in proximal VI; trust-region interpretation.",
+        "grounding": [
+          {
+            "raw": "ICML 2015",
+            "kind": "source",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C02",
+          "C04"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW08",
+        "inferred_id": false,
+        "name": "Khan et al., 2015 and 2016",
+        "relation_raw": "refutes",
+        "relation_norm": "refutes",
+        "delta": "What changed: BaM achieves closed-form Gaussian updates without linearizing difficult terms and without requiring additional structural knowledge of the target. Why: Khan et al.'s linearization introduces approximation error; BaM solves the full quadratic exactly.",
+        "adopted": "KL-proximal variational inference concept; Gaussian variational family.",
+        "grounding": [
+          {
+            "raw": "NeurIPS 2015; UAI 2016",
+            "kind": "source",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C02"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW09",
+        "inferred_id": false,
+        "name": "Lambert et al., 2022",
+        "relation_raw": "extends",
+        "relation_norm": "extends",
+        "delta": "What changed: BaM uses KL divergence as regularizer (yielding closed-form solution); Lambert et al. use Wasserstein metric as regularizer (no closed-form solution for proximal step). Why: KL regularizer for Gaussians admits quadratic matrix equation with known closed-form solution.",
+        "adopted": "Proximal Gaussian VI framework; Wasserstein-inspired motivation.",
+        "grounding": [
+          {
+            "raw": "NeurIPS 2022 (Advances in Neural Information Processing Systems, 35)",
+            "kind": "source",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C02"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW10",
+        "inferred_id": false,
+        "name": "Davis and Drusvyatskiy, 2019",
+        "relation_raw": "imports",
+        "relation_norm": "imports",
+        "delta": "What changed: BaM adapts stochastic model-based minimization to the VI setting with Gaussian family structure. Why: General SPP theory provides theoretical backing for stability; BaM exploits specific structure for closed-form solutions.",
+        "adopted": "Theoretical convergence framework for stochastic proximal methods.",
+        "grounding": [
+          {
+            "raw": "SIAM Journal on Optimization, 29(1):207-239",
+            "kind": "source",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C04"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW11",
+        "inferred_id": false,
+        "name": "Yu and Zhang, 2023",
+        "relation_raw": "refutes",
+        "relation_norm": "refutes",
+        "delta": "What changed: BaM uses Gaussian family with affine-invariant score-based divergence and closed-form updates; Yu & Zhang use semi-implicit family with Fisher divergence and stochastic gradient. Why: BaM's Gaussian family and affine-invariant divergence enable analytical optimization.",
+        "adopted": "Score-matching approach to VI.",
+        "grounding": [
+          {
+            "raw": "ICLR 2023",
+            "kind": "source",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C01",
+          "C02"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW12",
+        "inferred_id": false,
+        "name": "Diao et al., 2023",
+        "relation_raw": "extends",
+        "relation_norm": "extends",
+        "delta": "What changed: BaM uses score-based divergence with KL regularizer (not forward KL with Wasserstein metric as in Diao et al.) but both achieve closed-form Gaussian updates. Why: Different divergence and regularizer choices; BaM recovers GSM as special case.",
+        "adopted": "Forward-backward Gaussian VI with closed-form proximal steps.",
+        "grounding": [
+          {
+            "raw": "ICML 2023",
+            "kind": "source",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C02"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      }
+    ],
+    "footprint": []
+  },
+  "recipes": {
+    "title": "Solution",
+    "files": [
+      {
+        "file": "algorithm.md",
+        "role": "algorithm",
+        "file_title": "Algorithm: Batch and Match Variational Inference",
+        "sections": [
+          {
+            "sec_id": "",
+            "heading": "Mathematical Formulation",
+            "kind": "math",
+            "text": "Score-Based Divergence: D(q; p) = E_q[||∇_z log (q(z)/p(z))||²_Cov(q)]. For Gaussian q = N(ν, Ψ), this simplifies to D(q; p) = tr(ΓΨ) + tr(CΨ^{-1}) + ||μ - z̄ - Ψḡ||²_{Ψ^{-1}} + const, where statistics are computed over batch samples.\n\nBaM Objective (Match Step): L_BaM(q) = D̂_{q_t}(q; p) + (2/λ_t) KL(q_t; q), where D̂_{q_t}(q;p) is the empirical score-based divergence estimated with samples from q_t.\n\nU and V Matrices: U = λ_t Γ + (λ_t/(1+λ_t)) ḡḡ^T (PSD); V = Σ_t + λ_t C + (λ_t/(1+λ_t))(μ_t - z̄)(μ_t - z̄)^T (PD).\n\nQuadratic Matrix Equation (Covariance Update): Σ_{t+1} U Σ_{t+1} + Σ_{t+1} = V. Closed-form solution (Lemma B.1): Σ_{t+1} = 2V[I + (I + 4UV)^{1/2}]^{-1}. Low-rank solution when U = QQ^T, Q ∈ R^{D×K} (Lemma B.3): Σ_{t+1} = V - V^T Q (2I + (Q^T V Q + I)^{1/2})^{-2} Q^T V.\n\nMean Update: μ_{t+1} = (λ_t/(1+λ_t)) μ_t + (1/(1+λ_t))(Σ_{t+1} ḡ + z̄). Important: Must be computed AFTER Σ_{t+1}.",
+            "code": "D(q; p) = E_q[||∇_z log(q(z)/p(z))||²_Cov(q)]\nΣ_{t+1} U Σ_{t+1} + Σ_{t+1} = V\nΣ_{t+1} = 2V[I + (I + 4UV)^{1/2}]^{-1}\nμ_{t+1} = (λ_t/(1+λ_t)) μ_t + (1/(1+λ_t))(Σ_{t+1} ḡ + z̄)",
+            "fields": [],
+            "steps": [],
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "",
+            "heading": "Pseudocode",
+            "kind": "code",
+            "text": "Algorithm 1: Batch and Match VI pseudocode.",
+            "code": "Algorithm 1: Batch and Match VI\nInput: T (iterations), B (batch size), λ_t (inverse regularization),\n       s = ∇log p (score function), μ_0 ∈ R^D, Σ_0 ∈ S^D_{++}\n\nfor t = 0, ..., T-1:\n  // Batch Step\n  Sample z_b ~ N(μ_t, Σ_t) for b = 1, ..., B\n  Compute g_b = s(z_b) for b = 1, ..., B\n\n  z̄ = (1/B) Σ_b z_b\n  C = (1/B) Σ_b (z_b - z̄)(z_b - z̄)^T\n  ḡ = (1/B) Σ_b g_b\n  Γ = (1/B) Σ_b (g_b - ḡ)(g_b - ḡ)^T\n\n  // Compute U and V\n  U = λ_t * Γ + (λ_t / (1+λ_t)) * outer(ḡ, ḡ)\n  V = Σ_t + λ_t * C + (λ_t / (1+λ_t)) * outer(μ_t - z̄, μ_t - z̄)\n\n  // Match Step: Covariance Update\n  Σ_{t+1} = 2V @ inv(I + sqrtm(I + 4 * U @ V))\n\n  // Match Step: Mean Update\n  μ_{t+1} = (λ_t/(1+λ_t)) * μ_t + (1/(1+λ_t)) * (Σ_{t+1} @ ḡ + z̄)\n\nOutput: μ_T, Σ_T",
+            "fields": [],
+            "steps": [],
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "",
+            "heading": "Convergence Analysis (Gaussian Target, Infinite Batch)",
+            "kind": "math",
+            "text": "Setup: p = N(μ*, Σ*), B → ∞, fixed λ > 0. Normalized errors: ε_t = Σ*^{-1/2}(μ_t - μ*) ∈ R^D; Δ_t = Σ*^{-1/2}Σ_t Σ*^{-1/2} - I ∈ R^{D×D}.\n\nTheorem 3.1 (Exponential Convergence): Let α = min eigenvalue of Σ*^{-1/2}Σ_0 Σ*^{-1/2}. Define β = min(α, (1+λ)/(1+λ+||ε_0||²)) ∈ (0,1], δ = λβ/(1+λ) ∈ (0,1). Then for all t ≥ 0: ||ε_t|| ≤ (1-δ)^t ||ε_0|| and ||Δ_t|| ≤ (1-δ)^t ||Δ_0|| + t(1-δ)^{t-1}||ε_0||².\n\nKey property: Holds for ANY λ > 0 and ANY initialization (μ_0, Σ_0 ≻ 0). No requirement that λ scale with problem eigenvalues (unlike gradient methods).\n\nCorollary D.5 (One-step convergence): With B → ∞ then λ_0 → ∞: BaM converges exactly in one step.",
+            "code": "||ε_t|| ≤ (1-δ)^t ||ε_0||\n||Δ_t|| ≤ (1-δ)^t ||Δ_0|| + t(1-δ)^{t-1}||ε_0||²\nβ = min(α, (1+λ)/(1+λ+||ε_0||²)), δ = λβ/(1+λ)",
+            "fields": [],
+            "steps": [],
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "",
+            "heading": "Complexity Analysis",
+            "kind": "table",
+            "text": "Per-iteration cost breakdown of BaM.",
+            "markdown": "| Operation | Cost | Notes |\n|-----------|------|-------|\n| Batch step (B score evaluations) | O(B · cost_of_score) | Parallelizable |\n| Batch statistics (z̄, ḡ, C, Γ) | O(BD²) | Matrix outer products |\n| U, V construction | O(D²) | |\n| Full-rank covariance update | O(D³) | Matrix square root + inverse |\n| Low-rank covariance update | O(D²B + B³) | When B &lt;&lt; D via Lemma B.3 |\n| Mean update | O(D²) | Matrix-vector product |\n\nTotal per iteration: O(D³) general; O(D²B + B³) when B &lt;&lt; D (low-rank regime). Note: Per Appendix E.2, gradient evaluations dominate for lower-dimensional settings (D ≤ 64). For D = 256, low-rank BaM and full-rank BaM have similar wallclock times.",
+            "fields": [],
+            "steps": [],
+            "code": "",
+            "warn": "",
+            "refs": []
+          }
+        ]
+      },
+      {
+        "file": "architecture.md",
+        "role": "architecture",
+        "file_title": "System Architecture: Batch and Match (BaM)",
+        "sections": [
+          {
+            "sec_id": "",
+            "heading": "Component Overview",
+            "kind": "code",
+            "text": "Target distribution p(z), via score oracle ∇log p, feeds the BaM Algorithm which alternates Batch Step (stochastic) and Match Step (deterministic) for T iterations, producing variational parameters (μ_T, Σ_T).",
+            "code": "Target Distribution p(z)\n    │ (score oracle: ∇log p)\n    ▼\n┌─────────────────────────────────────────┐\n│              BaM Algorithm              │\n│                                         │\n│  ┌───────────────┐   ┌───────────────┐  │\n│  │  Batch Step   │──▶│  Match Step   │  │\n│  │ (Stochastic)  │   │ (Deterministic│  │\n│  └───────────────┘   └───────────────┘  │\n│         ▲                   │           │\n│         └───────────────────┘           │\n│              iterate T times            │\n└─────────────────────────────────────────┘\n    │\n    ▼\nVariational parameters (μ_T, Σ_T)",
+            "fields": [],
+            "steps": [],
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "",
+            "heading": "Component 1: Score Oracle",
+            "kind": "kv",
+            "text": "Evaluate target score s(z) = ∇_z log p(z) at given points.",
+            "fields": [
+              {
+                "label": "Purpose",
+                "value": "Evaluate target score s(z) = ∇_z log p(z) at given points"
+              },
+              {
+                "label": "Inputs",
+                "value": "Latent sample z ∈ R^D"
+              },
+              {
+                "label": "Outputs",
+                "value": "Score vector s(z) ∈ R^D"
+              },
+              {
+                "label": "Key design choice",
+                "value": "Only requires unnormalized log target; computable via automatic differentiation (JAX). Works for any differentiable probabilistic model."
+              },
+              {
+                "label": "Interactions",
+                "value": "Called B times per iteration by Batch Step"
+              }
+            ],
+            "steps": [],
+            "code": "",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "",
+            "heading": "Component 2: Batch Step",
+            "kind": "kv",
+            "text": "Draw samples from current variational approximation and compute sufficient statistics for score-matching objective.",
+            "fields": [
+              {
+                "label": "Purpose",
+                "value": "Draw samples from current variational approximation and compute sufficient statistics for score-matching objective"
+              },
+              {
+                "label": "Inputs",
+                "value": "Current parameters (μ_t, Σ_t), batch size B, score oracle"
+              },
+              {
+                "label": "Outputs",
+                "value": "Batch statistics (z̄, ḡ, C, Γ) ∈ R^D × R^D × R^{D×D} × R^{D×D}"
+              },
+              {
+                "label": "Key design choice",
+                "value": "Uses samples from q_t (not from p) to estimate the biased divergence D̂_{q_t}(q;p); this is the \"batch\" in batch-and-match."
+              },
+              {
+                "label": "Computation",
+                "value": "Sample z_1,...,z_B ~ N(μ_t, Σ_t); compute g_b = ∇log p(z_b) for each b; z̄ = (1/B) Σ z_b; ḡ = (1/B) Σ g_b; C = (1/B) Σ (z_b - z̄)(z_b - z̄)^T; Γ = (1/B) Σ (g_b - ḡ)(g_b - ḡ)^T"
+              },
+              {
+                "label": "Interactions",
+                "value": "Calls Score Oracle B times; outputs to Match Step"
+              }
+            ],
+            "steps": [],
+            "code": "",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "",
+            "heading": "Component 3: U/V Matrix Construction",
+            "kind": "kv",
+            "text": "Form the matrices U and V for the quadratic matrix equation.",
+            "fields": [
+              {
+                "label": "Purpose",
+                "value": "Form the matrices U and V for the quadratic matrix equation"
+              },
+              {
+                "label": "Inputs",
+                "value": "Batch statistics (z̄, ḡ, C, Γ), current (μ_t, Σ_t), regularization λ_t"
+              },
+              {
+                "label": "Outputs",
+                "value": "U ∈ S^D_{+} (PSD), V ∈ S^D_{++} (PD)"
+              },
+              {
+                "label": "Formulas",
+                "value": "U = λ_t Γ + (λ_t/(1+λ_t)) ḡḡ^T; V = Σ_t + λ_t C + (λ_t/(1+λ_t)) (μ_t - z̄)(μ_t - z̄)^T"
+              },
+              {
+                "label": "Key design choice",
+                "value": "U is PSD (rank ≤ D+1 when B &lt; D, due to low-rank structure of Γ and outer product of ḡ). V is PD (inherits positive definiteness from Σ_t)."
+              },
+              {
+                "label": "Interactions",
+                "value": "Called by Match Step"
+              }
+            ],
+            "steps": [],
+            "code": "",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "",
+            "heading": "Component 4: Quadratic Matrix Equation Solver",
+            "kind": "kv",
+            "text": "Compute the closed-form positive-definite solution to ΣUΣ + Σ = V.",
+            "fields": [
+              {
+                "label": "Purpose",
+                "value": "Compute the closed-form positive-definite solution to ΣUΣ + Σ = V"
+              },
+              {
+                "label": "Inputs",
+                "value": "U ∈ S^D_{+}, V ∈ S^D_{++}"
+              },
+              {
+                "label": "Outputs",
+                "value": "Σ_{t+1} = 2V[I + (I + 4UV)^{1/2}]^{-1}"
+              },
+              {
+                "label": "Key design choice",
+                "value": "Full-rank solver: O(D³) via matrix square root and inversion. Low-rank solver (Lemma B.3): O(D²B + B³) when U = QQ^T with Q ∈ R^{D×K}, K &lt;&lt; D. Low-rank applies when B &lt;&lt; D."
+              },
+              {
+                "label": "Interactions",
+                "value": "Core of Match Step; called once per iteration"
+              }
+            ],
+            "steps": [],
+            "code": "",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "",
+            "heading": "Component 5: Mean Update",
+            "kind": "kv",
+            "text": "Compute updated variational mean given updated covariance.",
+            "fields": [
+              {
+                "label": "Purpose",
+                "value": "Compute updated variational mean given updated covariance"
+              },
+              {
+                "label": "Inputs",
+                "value": "μ_t, Σ_{t+1}, ḡ, z̄, λ_t"
+              },
+              {
+                "label": "Outputs",
+                "value": "μ_{t+1} = (λ_t/(1+λ_t)) μ_t + (1/(1+λ_t)) (Σ_{t+1} ḡ + z̄)"
+              },
+              {
+                "label": "Key design choice",
+                "value": "Mean update depends on updated covariance Σ_{t+1} (not Σ_t); order matters."
+              },
+              {
+                "label": "Interactions",
+                "value": "Must be called after Quadratic Solver; produces final iterate output"
+              }
+            ],
+            "steps": [],
+            "code": "",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "",
+            "heading": "Component 6: Learning Rate Schedule",
+            "kind": "kv",
+            "text": "Set λ_t per iteration based on problem type.",
+            "fields": [
+              {
+                "label": "Purpose",
+                "value": "Set λ_t per iteration based on problem type"
+              },
+              {
+                "label": "Inputs",
+                "value": "Iteration t, batch size B, dimension D"
+              },
+              {
+                "label": "Outputs",
+                "value": "λ_t > 0"
+              },
+              {
+                "label": "Schedules",
+                "value": "Gaussian targets: λ_t = BD (constant); Non-Gaussian/posteriordb: λ_t = BD/(t+1) (decaying); Deep generative (pilot-tuned): B=10 → λ=0.1; B=100 → λ=50; B=300 → λ=7500"
+              },
+              {
+                "label": "Interactions",
+                "value": "Called by Match Step at each iteration"
+              }
+            ],
+            "steps": [],
+            "code": "",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "",
+            "heading": "Data Flow Summary",
+            "kind": "code",
+            "text": "Full per-iteration data flow from initialization through Batch Step, U/V construction, and Match Step to the final output.",
+            "code": "t=0: Initialize (μ_0, Σ_0) = (uniform[0,0.1], I)\n\nFor t = 0, ..., T-1:\n  [Batch Step]:\n    z_1,...,z_B ~ N(μ_t, Σ_t)\n    g_b = ∇log p(z_b)  [B score evaluations]\n    (z̄, ḡ, C, Γ) = sufficient_statistics(z_b, g_b)\n\n  [U/V Construction]:\n    U = λ_t * Γ + (λ_t/(1+λ_t)) * outer(ḡ, ḡ)\n    V = Σ_t + λ_t * C + (λ_t/(1+λ_t)) * outer(μ_t - z̄, μ_t - z̄)\n\n  [Match Step - Covariance]:\n    Σ_{t+1} = 2V @ inv(I + sqrtm(I + 4*U@V))\n\n  [Match Step - Mean]:\n    μ_{t+1} = (λ_t/(1+λ_t))*μ_t + (1/(1+λ_t))*(Σ_{t+1}@ḡ + z̄)\n\nOutput: (μ_T, Σ_T)",
+            "fields": [],
+            "steps": [],
+            "warn": "",
+            "refs": []
+          }
+        ]
+      },
+      {
+        "file": "constraints.md",
+        "role": "constraints",
+        "file_title": "Boundary Conditions and Limitations",
+        "sections": [
+          {
+            "sec_id": "R1",
+            "heading": "R1: Gaussian Variational Family",
+            "kind": "kv",
+            "text": "BaM is designed exclusively for Q = {N(μ, Σ) : μ ∈ R^D, Σ ∈ S^D_{++}}. The closed-form solution to ΣUΣ + Σ = V relies on this structure.",
+            "fields": [
+              {
+                "label": "Constraint",
+                "value": "BaM is designed exclusively for Q = {N(μ, Σ) : μ ∈ R^D, Σ ∈ S^D_{++}}. The closed-form solution to ΣUΣ + Σ = V relies on this structure."
+              },
+              {
+                "label": "Implication",
+                "value": "Cannot directly handle multimodal or heavy-tailed approximations. Full covariance requires O(D²) parameters, limiting practical D."
+              },
+              {
+                "label": "Mitigation",
+                "value": "Authors note future work on non-Gaussian variational families."
+              }
+            ],
+            "steps": [],
+            "code": "",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "R2",
+            "heading": "R2: Differentiable Log-Target Density",
+            "kind": "kv",
+            "text": "The score function s(z) = ∇_z log p(z) must be computable. This requires log p to be differentiable everywhere on R^D.",
+            "fields": [
+              {
+                "label": "Constraint",
+                "value": "The score function s(z) = ∇_z log p(z) must be computable. This requires log p to be differentiable everywhere on R^D."
+              },
+              {
+                "label": "Implication",
+                "value": "Cannot handle discrete latent variables or non-differentiable likelihoods directly."
+              }
+            ],
+            "steps": [],
+            "code": "",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "R3",
+            "heading": "R3: Full-Support Target Density",
+            "kind": "kv",
+            "text": "Both p(z) > 0 and q(z) > 0 for all z ∈ R^D required for theoretical guarantees (Appendix A conditions).",
+            "fields": [
+              {
+                "label": "Constraint",
+                "value": "Both p(z) > 0 and q(z) > 0 for all z ∈ R^D required for theoretical guarantees (Appendix A conditions)."
+              },
+              {
+                "label": "Implication",
+                "value": "Bounded-support distributions require reparameterization."
+              }
+            ],
+            "steps": [],
+            "code": "",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "R4",
+            "heading": "R4: Positive Definite Initial Covariance",
+            "kind": "kv",
+            "text": "Σ_0 ≻ 0 required for convergence proof (α > 0).",
+            "fields": [
+              {
+                "label": "Constraint",
+                "value": "Σ_0 ≻ 0 required for convergence proof (α > 0)."
+              },
+              {
+                "label": "Implication",
+                "value": "Initializing with Σ_0 = I satisfies this in practice."
+              }
+            ],
+            "steps": [],
+            "code": "",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "L1",
+            "heading": "L1: Convergence Proof Only Covers Gaussian Targets and Infinite Batch",
+            "kind": "kv",
+            "text": "Theorem 3.1 requires p to be Gaussian and B → ∞. For non-Gaussian targets and finite B, convergence is empirically observed but not theoretically guaranteed.",
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "Theorem 3.1 requires p to be Gaussian and B → ∞. For non-Gaussian targets and finite B, convergence is empirically observed but not theoretically guaranteed."
+              },
+              {
+                "label": "Practical impact",
+                "value": "BaM works empirically on non-Gaussian targets, but may require tuning of decaying learning rate schedule λ_t = BD/(t+1)."
+              }
+            ],
+            "steps": [],
+            "code": "",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "L2",
+            "heading": "L2: Gaussian Approximation Bias for Non-Gaussian Targets",
+            "kind": "kv",
+            "text": "For highly non-Gaussian targets (e.g., s=1.8 sinh-arcsinh), BaM converges to a higher forward KL divergence than ADVI (Figure 5.2), indicating the Gaussian approximation is limited.",
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "For highly non-Gaussian targets (e.g., s=1.8 sinh-arcsinh), BaM converges to a higher forward KL divergence than ADVI (Figure 5.2), indicating the Gaussian approximation is limited."
+              },
+              {
+                "label": "Practical impact",
+                "value": "Both BaM and ADVI are limited by the Gaussian family; BaM's advantage is speed, not approximation quality."
+              }
+            ],
+            "steps": [],
+            "code": "",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "L3",
+            "heading": "L3: Small Batch Size Fails for High-Dimensional Latent Variables",
+            "kind": "kv",
+            "text": "For the deep generative model (D=256), BaM with B=10 performs poorly. The batch size should be comparable to D for stable convergence.",
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "For the deep generative model (D=256), BaM with B=10 performs poorly. The batch size should be comparable to D for stable convergence."
+              },
+              {
+                "label": "Rule of thumb",
+                "value": "B should be O(D) or larger for high-dimensional problems."
+              }
+            ],
+            "steps": [],
+            "code": "",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "L4",
+            "heading": "L4: Pilot Tuning Required for Deep Generative Models",
+            "kind": "kv",
+            "text": "BaM with non-Gaussian targets (especially deep generative) requires a pilot run of 100 iterations to select the learning rate λ from a grid search.",
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "BaM with non-Gaussian targets (especially deep generative) requires a pilot run of 100 iterations to select the learning rate λ from a grid search."
+              },
+              {
+                "label": "Practical impact",
+                "value": "Adds overhead; GSM does not require this tuning step."
+              }
+            ],
+            "steps": [],
+            "code": "",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "L5",
+            "heading": "L5: Higher Relative SD Error for Hierarchical Models",
+            "kind": "kv",
+            "text": "For the eight-schools-centered hierarchical model, BaM converges to a larger relative standard deviation error than GSM (Figure E.6), suggesting potential room for better regularization tuning.",
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "For the eight-schools-centered hierarchical model, BaM converges to a larger relative standard deviation error than GSM (Figure E.6), suggesting potential room for better regularization tuning."
+              }
+            ],
+            "steps": [],
+            "code": "",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "L6",
+            "heading": "L6: O(D³) Computational Cost per Iteration",
+            "kind": "kv",
+            "text": "The full-rank covariance update costs O(D³). While manageable for models with O(D²) parameters (which is already assumed), this limits scalability to very large D.",
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "The full-rank covariance update costs O(D³). While manageable for models with O(D²) parameters (which is already assumed), this limits scalability to very large D."
+              },
+              {
+                "label": "Mitigation",
+                "value": "Low-rank solver (Lemma B.3) reduces cost to O(D²B + B³) when B &lt;&lt; D."
+              }
+            ],
+            "steps": [],
+            "code": "",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "",
+            "heading": "Assumptions Made in Derivation",
+            "kind": "prose",
+            "text": "A1: Empirical score-based divergence D̂_{q_t}(q;p) is a good proxy for D(q;p) when q_t ≈ q (ensured by regularization). A2: The quadratic matrix equation ΣUΣ + Σ = V has a unique PD solution (guaranteed by Lemma B.2 when V ≻ 0, U ⪰ 0). A3: For the convergence proof, target scores at samples from q_t converge to their expectations via the law of large numbers (B → ∞ limit).",
+            "fields": [],
+            "steps": [],
+            "code": "",
+            "warn": "",
+            "refs": []
+          }
+        ]
+      },
+      {
+        "file": "heuristics.md",
+        "role": "heuristics",
+        "file_title": "Convergence Tricks and Heuristics",
+        "sections": [
+          {
+            "sec_id": "H01",
+            "heading": "H01: Constant learning rate for Gaussian targets",
+            "kind": "kv",
+            "text": "For Gaussian targets, the optimal regularization is independent of iteration since the problem structure is fixed. Theorem 3.1 guarantees convergence for any fixed λ > 0, so a constant schedule suffices and simplifies tuning.",
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "For Gaussian targets, the optimal regularization is independent of iteration since the problem structure is fixed. Theorem 3.1 guarantees convergence for any fixed λ > 0, so a constant schedule suffices and simplifies tuning."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "low"
+              },
+              {
+                "label": "Bounds",
+                "value": "λ_t = BD; typical values: B=2 → λ=8 (D=4), B=5 → λ=20 (D=4), B=150 → λ=38400 (D=256). Convergence rate improves with larger λ up to a point (β decreases with ||ε_0||)."
+              },
+              {
+                "label": "Code ref",
+                "value": "src/execution/bam.py"
+              },
+              {
+                "label": "Source",
+                "value": "Section 5.1, Appendix E.3"
+              }
+            ],
+            "steps": [],
+            "code": "",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "H02",
+            "heading": "H02: Decaying learning rate for non-Gaussian targets",
+            "kind": "kv",
+            "text": "For non-Gaussian targets, a constant λ_t tends not to converge; decay is needed to allow the algorithm to stabilize around a fixed point. λ_t = BD/(t+1) was found to converge faster than other schedules (λ_t = BD/√(t+1) or λ_t = BD).",
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "For non-Gaussian targets, a constant λ_t tends not to converge; decay is needed to allow the algorithm to stabilize around a fixed point. λ_t = BD/(t+1) was found to converge faster than other schedules (λ_t = BD/√(t+1) or λ_t = BD)."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "medium"
+              },
+              {
+                "label": "Bounds",
+                "value": "λ_t = BD/(t+1); alternative schedules tested: BD, BD/√(t+1), BD/(t+1). BD/(t+1) preferred for non-Gaussian targets and posteriordb."
+              },
+              {
+                "label": "Code ref",
+                "value": "src/execution/bam.py"
+              },
+              {
+                "label": "Source",
+                "value": "Section 5.1-5.2, Appendix E.4 (Figure E.5)"
+              }
+            ],
+            "steps": [],
+            "code": "",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "H03",
+            "heading": "H03: Batch size proportional to dimension for deep generative models",
+            "kind": "kv",
+            "text": "For D=256 latent space, B=10 is insufficient; the covariance matrix U has effective rank B, so B should be at least O(D) to capture full covariance structure. B=300 ≈ D yields stable convergence.",
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "For D=256 latent space, B=10 is insufficient; the covariance matrix U has effective rank B, so B should be at least O(D) to capture full covariance structure. B=300 ≈ D yields stable convergence."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "high"
+              },
+              {
+                "label": "Bounds",
+                "value": "B should be comparable to D. For D=256: B=10 fails, B=100 borderline, B=300 works. Rule: B ≥ D/2 to D for high-dimensional problems."
+              },
+              {
+                "label": "Code ref",
+                "value": "src/execution/bam.py"
+              },
+              {
+                "label": "Source",
+                "value": "Section 5.3, Figure 5.4"
+              }
+            ],
+            "steps": [],
+            "code": "",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "H04",
+            "heading": "H04: Pilot run for learning rate selection in deep generative models",
+            "kind": "kv",
+            "text": "The optimal λ depends on batch size and problem structure in ways difficult to predict analytically for complex non-Gaussian targets. A 100-iteration pilot with candidate λ values enables data-driven selection.",
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "The optimal λ depends on batch size and problem structure in ways difficult to predict analytically for complex non-Gaussian targets. A 100-iteration pilot with candidate λ values enables data-driven selection."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "medium"
+              },
+              {
+                "label": "Bounds",
+                "value": "For B=10: λ searched over {0.01, 0.1, 0.2, 10}, selected λ=0.1. For B=100: λ searched over {2, 20, 50, 100, 200}, selected λ=50. For B=300: λ searched over {1000, 5000, 7500, 10000}, selected λ=7500. ADVI: best learning rate consistently ℓ=0.02 from search {0.001, 0.01, 0.02, 0.05}."
+              },
+              {
+                "label": "Code ref",
+                "value": "src/execution/bam.py, src/execution/advi.py"
+              },
+              {
+                "label": "Source",
+                "value": "Appendix E.6"
+              }
+            ],
+            "steps": [],
+            "code": "",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "H05",
+            "heading": "H05: Initialize variational distribution at standard Gaussian",
+            "kind": "kv",
+            "text": "All experiments initialize at Σ_0 = I (identity covariance), μ_0 ~ Uniform[0, 0.1] or μ_0 = 0. This ensures Σ_0 ≻ 0 (required by convergence theory) and provides a neutral starting point. For deep generative model: initialize at N(0, I).",
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "All experiments initialize at Σ_0 = I (identity covariance), μ_0 ~ Uniform[0, 0.1] or μ_0 = 0. This ensures Σ_0 ≻ 0 (required by convergence theory) and provides a neutral starting point. For deep generative model: initialize at N(0, I)."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "low"
+              },
+              {
+                "label": "Bounds",
+                "value": "Σ_0 must be positive definite. Convergence rate depends on α = min_eigenvalue(Σ*^{-1/2}Σ_0 Σ*^{-1/2}); initializing at I works well in practice. β degrades when initial mean is far from target (large ||ε_0||)."
+              },
+              {
+                "label": "Code ref",
+                "value": "src/execution/bam.py"
+              },
+              {
+                "label": "Source",
+                "value": "Section 3.2, Appendix E.3, E.5, E.6"
+              }
+            ],
+            "steps": [],
+            "code": "",
+            "warn": "",
+            "refs": []
+          }
+        ]
+      }
+    ]
+  }
+}
+/* __ARA_DATA_END__ */
+</script>
+
+<script>
+"use strict";
+(function () {
+  const GLYPH = { question:"Q", experiment:"✦", decision:"→", dead_end:"✗", pivot:"↻", insight:"!", default:"•" };
+  const TYPES = ["question","experiment","decision","dead_end","pivot","insight"];
+
+  let DATA;
+  try {
+    // The payload sits between the BEGIN/END marker comments (kept in-file so the
+    // skill can re-inject). Strip ONLY those two named markers before parsing; the
+    // rest of textContent is pure JSON. (Marker text is not written literally here,
+    // so it stays a single injection site.)
+    var raw = document.getElementById("ara-data").textContent
+                .replace(/\/\*\s*__ARA_DATA_(?:BEGIN|END)__\s*\*\//g, "");
+    DATA = JSON.parse(raw);
+  } catch (e) {
+    document.getElementById("detail").innerHTML =
+      '<div class="none">Could not parse embedded ARA data: ' + String(e) + '</div>';
+    return;
+  }
+
+  const nodes = DATA.nodes || [];
+  const byId = new Map(nodes.map(n => [n.id, n]));
+  const kids = new Map();
+  nodes.forEach(n => kids.set(n.id, []));
+  let roots = [];
+  nodes.forEach(n => {
+    if (n.parent && byId.has(n.parent)) kids.get(n.parent).push(n.id);
+    else roots.push(n.id);
+  });
+  // Traversal order: explicit DATA.order if given, else DFS from roots.
+  let order = Array.isArray(DATA.order) && DATA.order.length ? DATA.order.filter(id => byId.has(id)) : [];
+  if (!order.length) { const seen=new Set(); const dfs=id=>{if(seen.has(id))return;seen.add(id);order.push(id);(kids.get(id)||[]).forEach(dfs)}; roots.forEach(dfs); }
+
+  const esc = s => String(s==null?"":s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  const glyph = t => GLYPH[t] || GLYPH.default;
+  const cls = t => TYPES.includes(t) ? t : "default";
+
+  // ---- header ----
+  const m = DATA.meta || {};
+  document.getElementById("h-title").textContent = m.title || "ARA Trajectory";
+  document.getElementById("h-sub").textContent =
+    [ (m.authors||[]).join(", "), m.venue, m.year ].filter(Boolean).join(" · ");
+  if (m.abstract) document.getElementById("h-abstract").textContent = m.abstract;
+  else document.getElementById("h-abstract-wrap").style.display = "none";
+
+  const ftype = document.getElementById("ftype");
+  const present = [...new Set(nodes.map(n => n.type))];
+  TYPES.concat(present.filter(t=>!TYPES.includes(t))).filter(t=>present.includes(t))
+    .forEach(t => { const o=document.createElement("option"); o.value=t; o.textContent=t; ftype.appendChild(o); });
+
+  // ---- minimal markdown-table renderer ----
+  function renderMd(md){
+    if(!md) return "";
+    const lines = String(md).split("\n");
+    let out=[], i=0;
+    while(i<lines.length){
+      if(/^\s*\|/.test(lines[i]) && i+1<lines.length && /^\s*\|?[\s:|-]+\|?\s*$/.test(lines[i+1])){
+        const row = l => l.replace(/^\s*\|/,"").replace(/\|\s*$/,"").split("|").map(c=>c.trim());
+        const head = row(lines[i]); i+=2; const body=[];
+        while(i<lines.length && /^\s*\|/.test(lines[i])){ body.push(row(lines[i])); i++; }
+        out.push('<table class="md"><thead><tr>'+head.map(h=>"<th>"+esc(h)+"</th>").join("")+
+          '</tr></thead><tbody>'+body.map(r=>"<tr>"+r.map(c=>"<td>"+esc(c)+"</td>").join("")+"</tr>").join("")+"</tbody></table>");
+      } else { if(lines[i].trim()) out.push("<div>"+esc(lines[i])+"</div>"); i++; }
+    }
+    return out.join("");
+  }
+
+  // ---- detail pane ----
+  function block(title, tag, inner, open, cls){
+    return '<details class="block'+(cls?" "+cls:"")+'"'+(open?" open":"")+'><summary>'+esc(title)+
+      (tag?'<span class="tag">'+esc(tag)+'</span>':'')+'</summary><div class="body">'+inner+'</div></details>';
+  }
+  function chips(arr, klass){ return arr&&arr.length ? '<div class="chips">'+arr.map(x=>'<span class="chip '+(klass||"")+'">'+esc(x)+'</span>').join("")+'</div>' : ""; }
+
+  function renderDetail(n){
+    const d = document.getElementById("detail");
+    let h = '<div class="dhead"><span class="badge '+cls(n.type)+'">'+esc(n.type)+'</span>'+
+      '<span class="did">'+esc(n.id)+'</span>'+
+      (n.support_level?'<span class="pill '+esc(n.support_level)+'">'+esc(n.support_level)+'</span>':'')+
+      (n.isolated?'<span class="pill iso">isolated</span>':'')+'</div>';
+    h += '<div class="dtitle">'+esc(n.title||"(untitled)")+'</div>';
+
+    // reasoning (primary, always open) — the agent's thinking IS the content of a step
+    let reason="";
+    if(n.thinking){
+      reason += '<div class="lead">'+esc(n.thinking)+'</div>';
+      if(n.body) reason += '<div class="didwhat">what it did</div><div>'+esc(n.body)+'</div>';
+    } else {
+      reason += n.body ? '<div class="lead">'+esc(n.body)+'</div>' : '<div class="empty">No description.</div>';
+    }
+    if(n.depends_on&&n.depends_on.length) reason += chips(n.depends_on.map(x=>"⇠ depends on "+x));
+    if(n.source_refs&&n.source_refs.length) reason += chips(n.source_refs, "ext");
+    if(n.built_on&&n.built_on.length) reason += chipRow("built on", n.built_on, "chip-built");
+    if(n.rejected_here&&n.rejected_here.length) reason += chipRow("rejected here", n.rejected_here, "chip-rej");
+    if(n.recipe_refs&&n.recipe_refs.length) reason += recipeChips(n.recipe_refs);
+    h += block(n.thinking?"reasoning":"what", n.type, reason, true, "reason");
+
+    // result (the grounded payload) — open
+    const r = n.result||{};
+    if((r.sources&&r.sources.length)||(r.figures&&r.figures.length)||(r.tables&&r.tables.length)||(r.data&&r.data.length)){
+      let s="";
+      (r.figures||[]).forEach(f=>{ s+='<figure><img src="'+esc(f.img)+'" alt="'+esc(f.caption||f.id)+'"/>'+
+        (f.caption?'<figcaption>'+esc(f.caption)+'</figcaption>':'')+'</figure>'; });
+      (r.tables||[]).forEach(t=>{ s+=(t.caption?'<div class="empty">'+esc(t.caption)+'</div>':'')+renderMd(t.markdown); });
+      (r.sources||[]).forEach(q=>{ s+='<div class="quote">'+esc(q.quote)+(q.ref?'<div class="ref">← '+esc(q.ref)+'</div>':'')+'</div>'; });
+      (r.data||[]).forEach(x=>{ s+='<div class="ptr">⛁ <span class="path">'+esc(x.path)+'</span>'+(x.note?' — '+esc(x.note):'')+'</div>'; });
+      h += block("result", "", s, true);
+    }
+
+    // why (claims) — supporting detail, collapsed
+    if(n.why&&n.why.length){
+      const w = n.why.map(c=>{
+        let s='<div class="claim"><h4>'+esc(c.id)+(c.title?' — '+esc(c.title):'')+'</h4>';
+        if(c.statement) s+='<div class="kv">'+esc(c.statement)+'</div>';
+        if(c.status) s+='<div class="kv"><b>status</b> <span class="status '+esc(String(c.status).toLowerCase())+'">'+esc(c.status)+'</span></div>';
+        if(c.conditions) s+='<div class="kv"><b>conditions</b> '+esc(c.conditions)+'</div>';
+        if(c.falsification) s+='<div class="kv"><b>falsified if</b> '+esc(c.falsification)+'</div>';
+        if(c.dependencies&&c.dependencies.length) s+='<div class="kv"><b>depends on</b> '+esc(c.dependencies.join(", "))+'</div>';
+        if(c.provenance) s+='<div class="kv"><span class="prov">provenance: '+esc(c.provenance)+'</span></div>';
+        return s+'</div>';
+      }).join("");
+      h += block("why", n.why.map(c=>c.id).join(" · "), w);
+    }
+
+    // how verified (experiments) — supporting detail, collapsed
+    if(n.verified_by&&n.verified_by.length){
+      const v = n.verified_by.map(e=>'<div class="claim"><h4>'+esc(e.id)+(e.title?' — '+esc(e.title):'')+'</h4>'+
+        (e.run?'<div class="kv"><b>run</b> <span class="path mono">'+esc(e.run)+'</span></div>':'')+
+        (e.setup?'<div class="kv"><b>setup</b> '+esc(e.setup)+'</div>':'')+
+        (e.metrics?'<div class="kv"><b>metrics</b> '+esc(e.metrics)+'</div>':'')+'</div>').join("");
+      h += block("how verified", n.verified_by.map(e=>e.id).join(" · "), v);
+    }
+
+    // artifact pointers (src/artifacts.md) — collapsed
+    if(n.artifact&&n.artifact.length){
+      const a = n.artifact.map(x=>'<div class="ptr">▸ <b>'+esc(x.name)+'</b> — <span class="path">'+esc(x.pointer)+'</span>'+
+        (x.what?'<div class="empty">'+esc(x.what)+'</div>':'')+'</div>').join("");
+      h += block("artifact", "pointer", a);
+    }
+
+    d.innerHTML = h;
+    if(typeof LEX!=="undefined" && LEX) linkifyConcepts(d);
+    d.scrollTop = 0;
+  }
+
+  // ---- map ----
+  let selected = null;
+  function selectNode(id){
+    if(!byId.has(id)) return;
+    selected = id;
+    document.querySelectorAll(".node").forEach(el=>el.classList.toggle("sel", el.dataset.id===id));
+    const el = document.querySelector('.node[data-id="'+CSS.escape(id)+'"]');
+    if(el) el.scrollIntoView({block:"nearest"});
+    renderDetail(byId.get(id));
+    rstat();
+  }
+
+  function nodeRow(n){
+    const row = document.createElement("div");
+    row.className = "node "+(n.type==="dead_end"?"dead":"");
+    row.dataset.id = n.id; row.dataset.type = n.type;
+    // calmer than before: one glyph + id + (quiet) cross-edge marker; the ⊕/⊘ count soup is gone.
+    row.innerHTML = '<span class="glyph '+cls(n.type)+'">'+glyph(n.type)+'</span>'+
+      '<span><span class="meta"><span class="nid">'+esc(n.id)+'</span>'+
+      (n.depends_on&&n.depends_on.length?'<span class="dep" title="depends on '+esc(n.depends_on.join(", "))+'">⇠ '+esc(n.depends_on.join(","))+'</span>':'')+
+      '</span><div class="ntitle">'+esc(n.title||n.body||"(untitled)")+'</div></span>';
+    row.addEventListener("click", ()=>selectNode(n.id));
+    // hover a node to highlight its cross-edge targets (gentler than always-on connectors)
+    if(n.depends_on&&n.depends_on.length){
+      row.addEventListener("mouseenter", ()=>n.depends_on.forEach(t=>{ const el=document.querySelector('.node[data-id="'+CSS.escape(t)+'"]'); if(el) el.classList.add("deptarget"); }));
+      row.addEventListener("mouseleave", ()=>document.querySelectorAll(".node.deptarget").forEach(el=>el.classList.remove("deptarget")));
+    }
+    return row;
+  }
+  function renderSubtree(id, container){
+    const n = byId.get(id); if(!n) return;
+    container.appendChild(nodeRow(n));
+    const cs = kids.get(id)||[];
+    if(cs.length){ const wrap=document.createElement("div"); wrap.className="kid"; cs.forEach(c=>renderSubtree(c,wrap)); container.appendChild(wrap); }
+  }
+  function renderMap(){
+    const map = document.getElementById("map"); map.innerHTML="";
+    const normalRoots = roots.filter(id=>!byId.get(id).isolated);
+    const isoRoots = roots.filter(id=>byId.get(id).isolated);
+    normalRoots.forEach(id=>renderSubtree(id, map));
+    if(isoRoots.length){
+      const box=document.createElement("div"); box.className="isobox";
+      const hdr=document.createElement("div"); hdr.className="isohdr"; hdr.textContent="isolated subtree"; box.appendChild(hdr);
+      isoRoots.forEach(id=>renderSubtree(id, box)); map.appendChild(box);
+    }
+  }
+
+  // ---- filter / search ----
+  function applyFilters(){
+    const q = document.getElementById("q").value.trim().toLowerCase();
+    const ty = document.getElementById("ftype").value;
+    const deadOnly = document.getElementById("fdead").checked;
+    let shown=0;
+    document.querySelectorAll(".node").forEach(el=>{
+      const n = byId.get(el.dataset.id);
+      const text = (n.id+" "+(n.title||"")+" "+(n.body||"")).toLowerCase();
+      const ok = (!q||text.includes(q)) && (!ty||n.type===ty) && (!deadOnly||n.type==="dead_end");
+      el.classList.toggle("dim", !ok);
+      if(ok) shown++;
+    });
+    document.getElementById("rstat").textContent = shown+" / "+nodes.length+" steps";
+  }
+  function rstat(){
+    const i = selected?order.indexOf(selected):-1;
+    document.getElementById("rstat").textContent = (i>=0?("step "+(i+1)+" / "+order.length):(nodes.length+" steps"));
+  }
+
+  // ---- replay ----
+  let timer=null;
+  function step(delta){
+    let i = selected?order.indexOf(selected):-1;
+    i = Math.max(0, Math.min(order.length-1, i+delta));
+    selectNode(order[i]);
+  }
+  function play(){
+    if(timer){ stop(); return; }
+    if(!selected) selectNode(order[0]);
+    document.getElementById("rplay").textContent="⏸ Pause";
+    timer = setInterval(()=>{
+      const i = selected?order.indexOf(selected):-1;
+      if(i>=order.length-1){ stop(); return; }
+      step(1);
+    }, 1300);
+  }
+  function stop(){ if(timer){clearInterval(timer);timer=null;} document.getElementById("rplay").textContent="▶ Replay"; }
+
+  // ======================= v1.1 enrichment layers (all inert unless present) =======================
+  const CTX = DATA.context, GLO = DATA.glossary, DEP = DATA.dependencies, REC = DATA.recipes;
+  const LAYERS = { context:CTX, glossary:GLO, dependencies:DEP, recipes:REC };
+
+  // ---- indexes (built once) ----
+  const claimToNodes = new Map();
+  nodes.forEach(n => (n.why||[]).forEach(c => { if(c&&c.id){ if(!claimToNodes.has(c.id)) claimToNodes.set(c.id,[]); claimToNodes.get(c.id).push(n.id); } }));
+  const firstNodeForClaim = id => (claimToNodes.get(id)||[])[0] || null;
+  const rwById   = new Map(((DEP&&DEP.entries)||[]).map(e => [e.rw_id, e]));
+  const termById = new Map(((GLO&&GLO.terms)||[]).map(t => [t.term_id, t]));
+  // concept "used by" (inferred) from each node's name-matched concepts[]
+  if(GLO){
+    const nameToTerm = new Map();
+    (GLO.terms||[]).forEach(t => { if(t.name) nameToTerm.set(String(t.name).toLowerCase(), t); (t.aliases||[]).forEach(a=>nameToTerm.set(String(a).toLowerCase(), t)); });
+    nodes.forEach(n => (n.concepts||[]).forEach(cn => { const t=nameToTerm.get(String(cn).toLowerCase()); if(t){ (t._used=t._used||[]).push(n.id); } }));
+  }
+
+  // ---- tiny inline-math fallback (no CDN; operates on already-escaped text, adds only safe tags) ----
+  const GK={alpha:"α",beta:"β",gamma:"γ",delta:"δ",epsilon:"ε",eta:"η",theta:"θ",kappa:"κ",lambda:"λ",mu:"μ",nu:"ν",pi:"π",rho:"ρ",sigma:"σ",tau:"τ",phi:"φ",chi:"χ",psi:"ψ",omega:"ω",Delta:"Δ",Sigma:"Σ",Omega:"Ω",Phi:"Φ",Theta:"Θ",Lambda:"Λ",Gamma:"Γ",nabla:"∇",partial:"∂",times:"×",cdot:"·",infty:"∞",approx:"≈",leq:"≤",geq:"≥",neq:"≠",to:"→",in:"∈",sum:"Σ",prod:"Π",sqrt:"√",mathbb:"",mathcal:"",mathbf:"",mathrm:"",left:"",right:""};
+  function texInner(s){
+    s=s.replace(/\\(?:mathbb|mathcal|mathbf|mathrm)\{([^{}]*)\}/g,"$1");
+    s=s.replace(/\\frac\{([^{}]*)\}\{([^{}]*)\}/g,"($1)/($2)");
+    s=s.replace(/\\([A-Za-z]+)/g,(m,w)=>GK[w]!==undefined?GK[w]:m);
+    s=s.replace(/\^\{([^{}]*)\}/g,"<sup>$1</sup>").replace(/\^([\w()+\-])/g,"<sup>$1</sup>");
+    s=s.replace(/_\{([^{}]*)\}/g,"<sub>$1</sub>").replace(/_([\w()+\-])/g,"<sub>$1</sub>");
+    return s;
+  }
+  function mathPass(escaped){
+    if(escaped.indexOf("$")<0) return escaped;
+    return escaped.replace(/\$\$([^$]+)\$\$/g,(m,x)=>'<span class="math">'+texInner(x)+'</span>')
+                  .replace(/\$([^$]+)\$/g,(m,x)=>'<span class="math">'+texInner(x)+'</span>');
+  }
+  function mtext(v){ const e=esc(v); try{ return mathPass(e); }catch(_){ return e; } }
+
+  // ---- typed-ref rendering (off-ARA pointers stay inert; in-ARA targets become jump chips) ----
+  function refUrl(rf){
+    const raw=rf.raw||"";
+    if(rf.kind==="url"){ const m=raw.match(/https?:\/\/\S+/); return m?m[0]:""; }
+    if(rf.kind==="arxiv"){ const m=raw.match(/(\d{4}\.\d{4,5})/); return m?("https://arxiv.org/abs/"+m[1]):""; }
+    if(rf.kind==="doi"){ const m=raw.match(/(10\.\d{4,}\/\S+)/); return m?("https://doi.org/"+m[1]):""; }
+    return "";
+  }
+  function refChip(rf){
+    const raw=esc(rf.raw||""), url=refUrl(rf);
+    if(url) return '<a class="chip ext" href="'+esc(url)+'" target="_blank" rel="noopener">'+raw+'</a>';
+    if(rf.target){
+      if(rf.kind==="claim")        return '<span class="chip jump" data-jump-claim="'+esc(rf.target)+'">'+raw+'</span>';
+      if(rf.kind==="node")         return '<span class="chip jump" data-jump-node="'+esc(rf.target)+'">'+raw+'</span>';
+      if(rf.kind==="concept")      return '<span class="chip jump" data-open-term="'+esc(rf.target)+'">'+raw+'</span>';
+      if(rf.kind==="related_work") return '<span class="chip jump" data-open-panel="dependencies" data-anchor="ov-'+esc(rf.target)+'">'+raw+'</span>';
+      return '<span class="chip jump" data-scroll="ov-'+esc(rf.target)+'">'+raw+'</span>';
+    }
+    const dangle=(rf.kind==="claim"||rf.kind==="related_work"||rf.kind==="concept");
+    return '<span class="chip '+(dangle?'dangle" title="referenced but not found in this ARA':'ext')+'">'+raw+'</span>';
+  }
+  function refRow(refs){ return refs&&refs.length ? '<div class="chips">'+refs.map(refChip).join("")+'</div>' : ""; }
+
+  // ---- per-node provenance chips (consumed by renderDetail) ----
+  function chipRow(label, arr, klass){
+    const cs=arr.map(x=>{
+      const txt=[x.rw_id,x.name].filter(Boolean).join(" · ")||"?";
+      const tip=x.relation_raw?(' title="'+esc(x.relation_raw)+'"'):'';
+      const op =x.rw_id?(' data-open-panel="dependencies" data-anchor="ov-'+esc(x.rw_id)+'"'):'';
+      return '<span class="chip '+klass+(x.rw_id?' jump':'')+'"'+tip+op+'>'+esc(txt)+'</span>';
+    }).join("");
+    return '<div class="chiplabel">'+esc(label)+'</div><div class="chips">'+cs+'</div>';
+  }
+  function recipeChips(arr){
+    const cs=arr.map(x=>{
+      const anchor="ov-sec-"+(x.file||"")+"-"+(x.sec_id||"");
+      return '<span class="chip chip-recipe jump" data-open-panel="recipes" data-anchor="'+esc(anchor)+'" title="'+esc((x.file||"")+(x.role?(" · "+x.role):""))+'">▦ '+esc(x.heading||x.file||"recipe")+'</span>';
+    }).join("");
+    return '<div class="chiplabel">recipe</div><div class="chips">'+cs+'</div>';
+  }
+
+  // ---- the four overlay renderers (reuse block/chips/renderMd) ----
+  function renderContext(){
+    let h=""; if(CTX.summary) h+='<div class="ribbon">'+esc(CTX.summary)+'</div>';
+    (CTX.sections||[]).forEach(sec=>{
+      let inner="";
+      if(sec.present===false){ inner='<div class="muted grey">(not specified in this ARA)</div>'; }
+      else (sec.entries||[]).forEach(en=>{
+        let c='<div class="card" id="ov-'+esc(en.ent_id||"")+'"><h4>'+(en.ent_id?'<span class="did">'+esc(en.ent_id)+'</span> ':'')+esc(en.ent_title||"")+(en.inferred_id?' <span class="sub">(pos.)</span>':'')+'</h4>';
+        if(!en.unstructured && en.fields && en.fields.length) en.fields.forEach(f=>c+='<div class="kv"><b>'+esc(f.label)+'</b> '+mtext(f.value)+'</div>');
+        else if(en.text) c+='<div class="kv">'+mtext(en.text)+'</div>';
+        if(en.unstructured) c+='<div class="sub">unstructured</div>';
+        c+=refRow(en.refs)+'</div>'; inner+=c;
+      });
+      h+=block(sec.heading||sec.role||"section", sec.role||"", inner, sec.role==="insight");
+    });
+    return h || '<div class="muted">No problem context.</div>';
+  }
+  function renderGlossary(filter){
+    const f=(filter||"").trim().toLowerCase();
+    const match=t=>!f||((t.name||"")+" "+(t.aliases||[]).join(" ")+" "+(t.definition||"")).toLowerCase().includes(f);
+    function card(t){
+      let c='<div class="card" id="ov-'+esc(t.term_id)+'"><h4>'+esc(t.name)+(t.group?' <span class="sub">'+esc(t.group)+'</span>':'')+'</h4>';
+      if(t.aliases&&t.aliases.length) c+='<div class="chips">'+t.aliases.map(a=>'<span class="chip">'+esc(a)+'</span>').join("")+'</div>';
+      if(t.definition) c+='<div class="kv">'+mtext(t.definition)+'</div>';
+      (t.fields||[]).forEach(fl=>c+='<div class="kv"><b>'+esc(fl.label)+'</b> '+mtext(fl.value)+'</div>');
+      if(t.related&&t.related.length) c+='<div class="kv"><b>related</b> '+t.related.map(r=>{const rt=termById.get(r);return '<span class="chip jump" data-open-term="'+esc(r)+'">'+esc(rt?rt.name:r)+'</span>';}).join(" ")+'</div>';
+      if(t._used&&t._used.length) c+='<div class="kv"><b>mentions</b> '+[...new Set(t._used)].map(nid=>'<span class="chip jump" data-jump-node="'+esc(nid)+'">'+esc(nid)+'</span>').join(" ")+' <span class="sub">(inferred)</span></div>';
+      return c+refRow(t.refs)+'</div>';
+    }
+    const groups=GLO.groups&&GLO.groups.length?GLO.groups:null; let h="";
+    if(groups){
+      const grouped=new Set();
+      groups.forEach(g=>{ (g.term_ids||[]).forEach(id=>grouped.add(id)); const ts=(g.term_ids||[]).map(id=>termById.get(id)).filter(Boolean).filter(match); if(ts.length) h+=block(g.name||"group", String(ts.length), ts.map(card).join(""), true); });
+      const rest=(GLO.terms||[]).filter(t=>!grouped.has(t.term_id)).filter(match);
+      if(rest.length) h+=block("other", String(rest.length), rest.map(card).join(""), true);
+    } else { const ts=(GLO.terms||[]).filter(match); h=ts.map(card).join(""); }
+    return h || '<div class="muted">No matching terms.</div>';
+  }
+  function renderDeps(filter){
+    const f=(filter||"").trim().toLowerCase(); let h="";
+    if(DEP.preamble) h+='<div class="muted">'+esc(DEP.preamble)+'</div>';
+    if(DEP.attribution) h+='<div class="ribbon">'+esc(DEP.attribution)+'</div>';
+    const ents=(DEP.entries||[]).filter(e=>!e.is_footprint).filter(e=>!f||(((e.rw_id||"")+" "+(e.name||"")+" "+(e.relation_raw||"")+" "+(e.delta||"")).toLowerCase().includes(f)));
+    ents.forEach(e=>{
+      const rn=e.relation_norm, relc=["baseline","imports","extends","bounds","refutes"].includes(rn)?rn:"neutral";
+      let c='<div class="card" id="ov-'+esc(e.rw_id||"")+'"><h4>'+(e.rw_id?'<span class="did">'+esc(e.rw_id)+'</span> ':'')+esc(e.name||"")+'</h4>';
+      c+='<div class="chips"><span class="rel '+relc+'">'+esc(e.relation_raw||rn||"related")+'</span>'+(e.cross_agent?'<span class="chip" title="other-agent provenance">↔ other-agent</span>':'')+'</div>';
+      if(e.delta) c+='<div class="kv">'+mtext(e.delta)+'</div>';
+      if(e.adopted) c+='<div class="kv"><b>adopted</b> '+esc(e.adopted)+'</div>';
+      let prov=(e.grounding||[]).map(refChip).join("");
+      (e.claims||[]).filter(id=>claimToNodes.has(id)).forEach(id=>prov+='<span class="chip jump" data-jump-claim="'+esc(id)+'">'+esc(id)+'</span>');
+      c+= prov?('<div class="kv"><b>grounding</b> '+prov+'</div>'):'<div class="muted">ungrounded</div>';
+      h+=c+'</div>';
+    });
+    if(!ents.length) h+='<div class="muted">No matching dependencies.</div>';
+    const fp=DEP.footprint||[];
+    if(fp.length) h+=block("Citation footprint", String(fp.length), fp.map(x=>'<div class="ptr"><span class="muted">'+esc(x.ref_id||"")+'</span> '+esc(x.citation||"")+'</div>').join(""), false);
+    return h;
+  }
+  function renderRecipes(){
+    let h="";
+    (REC.files||[]).forEach(file=>{
+      let inner="";
+      (file.sections||[]).forEach(sec=>{
+        let c='<div class="card" id="ov-sec-'+esc((file.file||"")+"-"+(sec.sec_id||""))+'"><h4>'+(sec.sec_id?'<span class="did">'+esc(sec.sec_id)+'</span> ':'')+esc(sec.heading||"")+'</h4>';
+        if(sec.kind==="table"&&sec.markdown) c+=renderMd(sec.markdown);
+        else if(sec.kind==="steps"&&sec.steps&&sec.steps.length) c+='<ol>'+sec.steps.map(s=>'<li>'+mtext(String(s).replace(/^\s*\d+\.\s*/,""))+'</li>').join("")+'</ol>';
+        else if(sec.kind==="kv"&&sec.fields&&sec.fields.length) sec.fields.forEach(fl=>c+='<div class="kv"><b>'+esc(fl.label)+'</b> '+mtext(fl.value)+'</div>');
+        else if(sec.kind==="code"&&sec.code) c+='<pre class="snip">'+esc(sec.code)+'</pre>';
+        else if(sec.kind==="math"&&sec.code) c+='<div class="kv math">'+mtext(sec.code)+'</div>';
+        else if(sec.text) c+='<div class="kv">'+mtext(sec.text)+'</div>';
+        if(sec.warn) c+='<div class="warn">'+esc(sec.warn)+'</div>';
+        inner+=c+refRow(sec.refs)+'</div>';
+      });
+      h+=block((file.file_title||file.file||"recipe")+(file.role?("  ·  "+file.role):""), String((file.sections||[]).length), inner, true);
+    });
+    return h || '<div class="muted">No recipe content.</div>';
+  }
+
+  // ---- overlay open/close + layerbar wiring ----
+  const ov=document.getElementById("overlay");
+  let lastTrigger=null;
+  const PANEL_RENDER={ context:renderContext, glossary:()=>renderGlossary(""), dependencies:()=>renderDeps(""), recipes:renderRecipes };
+  function hasContent(name){ const L=LAYERS[name]; if(!L) return false;
+    if(name==="context") return (L.sections||[]).length>0;
+    if(name==="glossary") return (L.terms||[]).length>0;
+    if(name==="dependencies") return (L.entries||[]).length>0||(L.footprint||[]).length>0;
+    if(name==="recipes") return (L.files||[]).length>0; return false; }
+  function panelTitle(name){ const L=LAYERS[name]||{}; return L.title || ({context:"Context",glossary:"Concepts",dependencies:"Dependencies",recipes:"Solution"}[name]); }
+  function panelCount(name){ const L=LAYERS[name]||{};
+    if(name==="glossary") return (L.terms||[]).length;
+    if(name==="dependencies") return (L.entries||[]).length;
+    if(name==="recipes") return (L.files||[]).reduce((a,f)=>a+(f.sections||[]).length,0); return 0; }
+  function openPanel(name, anchor){
+    if(!hasContent(name)) return;
+    stop(); lastTrigger=document.activeElement;
+    document.getElementById("ov-title").textContent=panelTitle(name);
+    const body=document.getElementById("ov-body"); body.innerHTML=PANEL_RENDER[name]();
+    if(LEX) linkifyConcepts(body);
+    const q=document.getElementById("ov-q");
+    if(name==="glossary"||name==="dependencies"){ q.hidden=false; q.value=""; q.dataset.panel=name; } else { q.hidden=true; }
+    ov.hidden=false;
+    if(anchor){ const el=document.getElementById(anchor); if(el) el.scrollIntoView({block:"center"}); } else body.scrollTop=0;
+    (q.hidden?document.getElementById("ov-close"):q).focus();
+  }
+  function closePanel(){ ov.hidden=true; if(lastTrigger&&lastTrigger.focus) lastTrigger.focus(); }
+  document.querySelectorAll(".lbtn").forEach(b=>{ const name=b.dataset.panel;
+    if(hasContent(name)){ b.hidden=false; const c=b.querySelector(".cnt"); if(c){ const n=panelCount(name); if(n) c.textContent=n; } b.addEventListener("click",()=>openPanel(name)); } });
+  document.getElementById("ov-q").addEventListener("input", e=>{ const p=e.target.dataset.panel, body=document.getElementById("ov-body");
+    body.innerHTML = p==="glossary"?renderGlossary(e.target.value):renderDeps(e.target.value); if(LEX) linkifyConcepts(body); });
+
+  // ---- glossary lexicon + popover ----
+  const LEX=(GLO&&GLO.lexicon&&Object.keys(GLO.lexicon).length)?(function(){
+    const surf=Object.keys(GLO.lexicon).filter(s=>s.length>=3).sort((a,b)=>b.length-a.length);
+    if(!surf.length) return null;
+    const re=s=>s.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+    return { re:new RegExp("\\b("+surf.map(re).join("|")+")\\b","i"), map:GLO.lexicon };
+  })():null;
+  const SKIP_TAGS={A:1,CODE:1,PRE:1,BUTTON:1,SCRIPT:1,STYLE:1,H4:1,H5:1,SUMMARY:1};
+  function linkifyConcepts(root){
+    if(!LEX) return;
+    const walker=document.createTreeWalker(root, NodeFilter.SHOW_TEXT, { acceptNode(t){
+      if(!t.nodeValue||!t.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+      let p=t.parentNode; while(p&&p!==root){ if(p.classList&&p.classList.contains("gterm")) return NodeFilter.FILTER_REJECT; if(SKIP_TAGS[p.tagName]) return NodeFilter.FILTER_REJECT; p=p.parentNode; }
+      return NodeFilter.FILTER_ACCEPT; } });
+    const seen=new Set(), hits=[]; let t;
+    while((t=walker.nextNode())){ const m=LEX.re.exec(t.nodeValue); if(!m) continue; const tid=LEX.map[m[1].toLowerCase()]; if(!tid||seen.has(tid)) continue; seen.add(tid); hits.push({node:t,index:m.index,len:m[1].length,tid}); }
+    hits.forEach(hp=>{ const tn=hp.node, txt=tn.nodeValue, par=tn.parentNode; if(!par) return;
+      const span=document.createElement("span"); span.className="gterm"; span.dataset.term=hp.tid; span.tabIndex=0; span.textContent=txt.slice(hp.index,hp.index+hp.len);
+      const after=document.createTextNode(txt.slice(hp.index+hp.len));
+      par.replaceChild(after,tn); par.insertBefore(span,after); par.insertBefore(document.createTextNode(txt.slice(0,hp.index)),span); });
+  }
+  const gpop=document.getElementById("gpop");
+  function gpopShow(span){ const t=termById.get(span.dataset.term); if(!t) return;
+    const def=t.definition||""; gpop.innerHTML='<h5>'+esc(t.name)+'</h5><div>'+mtext(def.slice(0,240))+(def.length>240?'…':'')+'</div><span class="gp-open" data-open-term="'+esc(t.term_id)+'">open in glossary →</span>';
+    gpop.style.display="block"; const r=span.getBoundingClientRect();
+    gpop.style.left=Math.max(6,Math.min(r.left, window.innerWidth-372))+"px"; gpop.style.top=(r.bottom+6)+"px"; }
+  function gpopHide(){ gpop.style.display="none"; }
+
+  // ---- delegated interactions for the new layers ----
+  document.addEventListener("click", e=>{
+    const el=e.target.closest&&e.target.closest("[data-close],[data-jump-node],[data-jump-claim],[data-open-panel],[data-open-term],[data-scroll]");
+    if(!el) return;
+    if(el.hasAttribute("data-close")){ closePanel(); return; }
+    if(el.dataset.jumpNode){ closePanel(); selectNode(el.dataset.jumpNode); return; }
+    if(el.dataset.jumpClaim){ const nid=firstNodeForClaim(el.dataset.jumpClaim); if(nid){ closePanel(); selectNode(nid); } return; }
+    if(el.dataset.openTerm){ openPanel("glossary","ov-"+el.dataset.openTerm); return; }
+    if(el.hasAttribute("data-open-panel")){ openPanel(el.dataset.openPanel, el.dataset.anchor||null); return; }
+    if(el.dataset.scroll){ const t=document.getElementById(el.dataset.scroll); if(t) t.scrollIntoView({block:"center"}); return; }
+  });
+  document.addEventListener("mouseover", e=>{ const g=e.target.closest&&e.target.closest(".gterm"); if(g) gpopShow(g); });
+  document.addEventListener("mouseout",  e=>{ const g=e.target.closest&&e.target.closest(".gterm"); if(g) gpopHide(); });
+  document.addEventListener("focusin",   e=>{ const g=e.target.closest&&e.target.closest(".gterm"); if(g) gpopShow(g); });
+  document.addEventListener("focusout",  e=>{ const g=e.target.closest&&e.target.closest(".gterm"); if(g) gpopHide(); });
+  window.addEventListener("scroll", gpopHide, true);
+
+  document.getElementById("q").addEventListener("input", applyFilters);
+  document.getElementById("ftype").addEventListener("change", applyFilters);
+  document.getElementById("fdead").addEventListener("change", applyFilters);
+  document.getElementById("rplay").addEventListener("click", play);
+  document.getElementById("rprev").addEventListener("click", ()=>{stop();step(-1);});
+  document.getElementById("rnext").addEventListener("click", ()=>{stop();step(1);});
+  document.addEventListener("keydown", e=>{
+    if(e.key==="Escape"){ if(!ov.hidden){ closePanel(); return; } gpopHide(); }
+    if(e.target.tagName==="INPUT"||e.target.tagName==="SELECT") return;
+    if(e.key==="ArrowLeft"){stop();step(-1);} else if(e.key==="ArrowRight"){stop();step(1);}
+    else if(e.key==="c"||e.key==="g"||e.key==="d"||e.key==="r"){ const p={c:"context",g:"glossary",d:"dependencies",r:"recipes"}[e.key]; if(hasContent(p)) openPanel(p); }
+  });
+
+  renderMap();
+  rstat();
+})();
+</script>
+</body>
+</html>

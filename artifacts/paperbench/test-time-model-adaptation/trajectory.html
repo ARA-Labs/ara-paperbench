@@ -1,0 +1,2949 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ARA Trajectory</title>
+<!--
+  ARA Trajectory Viewer — canonical self-contained scaffold for the `research-visualizer` skill.
+
+  HOW THE SKILL USES THIS FILE
+  ----------------------------
+  The rendering logic below is FIXED. The agent does NOT rewrite it. The agent only:
+    1. Parses the ARA into one ARA_DATA object (schema in references/binding.md).
+    2. base64-inlines every referenced figure .png into node.result.figures[].img.
+    3. Replaces ONLY the JSON between the BEGIN/END markers in the <script id="ara-data"> block.
+    4. Writes the result to <ara>/trajectory.html (or --output).
+  Everything is inline (no CDN, no fetch, no server) so the output is one portable file.
+
+  INJECTION CONTRACT
+  ------------------
+  - Replace exactly the lines between  __ARA_DATA_BEGIN__  and  __ARA_DATA_END__.
+  - The payload MUST be valid JSON (it is read with JSON.parse).
+  - JSON must not contain the literal substring "</script>"; escape any "<" in inlined
+    markdown/text as "<" to be safe.
+  - The demo payload shipped here renders a 3-node sample so the bare template opens and
+    shows every node state (experiment, dead_end, isolated). The skill overwrites it.
+-->
+<style>
+  /* Research Visualizer — "field notebook of a machine scientist".
+     Cool archival vellum + ink; monospace is the machine-readout voice for
+     structure / IDs / data, a humanist serif carries the reasoning prose. The
+     signature is a traced trajectory spine that forks at branches and is struck
+     through at dead ends. Type is read from glyph + label; colour is reserved
+     for true epistemic status (teal = chrome, green = supported, amber =
+     tentative, clay-red = dead end) — never decoration. */
+  :root{
+    /* paper & ink — deliberately cool vellum, NOT warm cream */
+    --bg:#e9ece4; --panel:#f4f6f0; --panel2:#e3e7dd; --line:#ccd3c7; --ink:#1b2420;
+    --muted:#67726a; --faint:#8a948b; --accent:#0e6b62; --accent-ink:#0a4f48; --chip:#e6eae0;
+    --ok:#3a6a39; --warn:#a6402c; --tentative:#8a6310; --glyph-bg:#e0e5da; --glyph-ink:#4a544c;
+    --sel-bg:#e3ede7; --code-bg:#eaeee6; --reason-bg:#f4f6f0;
+    --iso-line:#b7c0ae; --iso-bg:#e5eadf; --iso-ink:#5f6b58;
+    --scrim:rgba(20,28,24,.42); --shadow:rgba(20,28,24,.16);
+    --add-bg:#e0ebdb; --add-ink:#2f5a2e; --del-bg:#f1e0da; --del-ink:#8c3623; --hunk:#67726a;
+    --spine:#c3ccbd; --grid:rgba(27,36,32,.05);
+    /* legacy type vars retained so any leftover hooks resolve */
+    --q:var(--glyph-bg); --exp:var(--glyph-bg); --dec:var(--glyph-bg); --piv:var(--glyph-bg); --ins:var(--glyph-bg); --def:var(--glyph-bg); --dead:var(--warn);
+    /* type roles: a serif reads the prose, monospace reads the machine */
+    --serif:ui-serif,"New York","Iowan Old Style",Palatino,Georgia,serif;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--bg);color:var(--ink);font:14px/1.65 var(--sans);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  code,pre,.mono{font-family:var(--mono)}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+
+  /* ---- masthead ---- */
+  header{padding:20px 24px 14px;border-bottom:1px solid var(--line);background:var(--panel)}
+  header .title{font-family:var(--serif);font-size:23px;font-weight:600;margin:0;letter-spacing:-.012em}
+  header .sub{font-family:var(--mono);color:var(--muted);font-size:11.5px;margin-top:5px;letter-spacing:.01em}
+  header details{margin-top:10px;color:var(--ink)}
+  header summary{cursor:pointer;color:var(--accent-ink);font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em}
+  .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:16px}
+  .toolbar input[type=search],.toolbar select{background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:6px 10px;font-size:13px;font-family:var(--sans)}
+  .toolbar input[type=search]{min-width:230px}
+  .toolbar input[type=search]:focus,.toolbar select:focus{border-color:var(--accent);outline:none}
+  .toolbar label{color:var(--muted);font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.06em;display:flex;gap:6px;align-items:center}
+  .btn{background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:6px 11px;font-size:12.5px;font-family:var(--mono);cursor:pointer;transition:border-color .12s,color .12s,background .12s}
+  .btn:hover{border-color:var(--accent);color:var(--accent-ink)}
+  .btn.primary{border-color:var(--accent);color:#fff;background:var(--accent)}
+  .btn.primary:hover{background:var(--accent-ink)}
+  .spacer{flex:1}
+  .count{color:var(--muted);font-family:var(--mono);font-size:11px;letter-spacing:.04em;padding-left:10px;border-left:1px solid var(--line)}
+
+  main{display:grid;grid-template-columns:minmax(300px,36%) 1fr;height:calc(100% - 0px);min-height:0}
+  #map{overflow:auto;border-right:1px solid var(--line);padding:18px 12px 56px;background:var(--bg);
+    background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+    background-size:24px 24px;background-position:-1px -1px}
+  #detail{overflow:auto;padding:26px 32px 80px;background:var(--bg)}
+
+  /* ---- process map: the trajectory spine is the signature ---- */
+  .node{position:relative;display:flex;gap:10px;align-items:flex-start;padding:7px 9px;border-radius:6px;cursor:pointer;border:1px solid transparent}
+  .node:hover{background:var(--panel2)}
+  .node.sel{background:var(--sel-bg);border-color:var(--accent)}
+  .node.deptarget{background:var(--sel-bg);outline:1px dashed var(--accent);outline-offset:-1px}
+  .node.dim{opacity:.32}
+  .node .glyph{flex:none;width:20px;height:20px;border-radius:5px;display:grid;place-items:center;font-family:var(--mono);font-size:11px;font-weight:700;color:var(--glyph-ink);background:var(--glyph-bg);border:1px solid var(--line);margin-top:1px}
+  .node.sel .glyph{border-color:var(--accent);color:var(--accent-ink)}
+  .node .nid{color:var(--muted);font-size:10.5px;font-family:var(--mono);letter-spacing:.02em}
+  .node .ntitle{font-size:13px;line-height:1.45}
+  .node.dead .ntitle{color:var(--warn);text-decoration:line-through;text-decoration-color:rgba(166,64,44,.45)}
+  .node .meta{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  /* the spine + branch connectors: nested steps trace back to their parent */
+  .kid{margin-left:19px;border-left:2px solid var(--spine);padding-left:14px}
+  .kid>.node::before{content:"";position:absolute;left:-14px;top:14px;width:10px;height:2px;background:var(--spine)}
+  .kid>.node.sel::before{background:var(--accent)}
+  .isobox{border:1px dashed var(--iso-line);border-radius:8px;margin:12px 2px;padding:6px 4px;background:var(--iso-bg)}
+  .isobox .isohdr{color:var(--iso-ink);font-family:var(--mono);font-size:10px;padding:3px 8px 7px;text-transform:uppercase;letter-spacing:.1em}
+  .dep{color:var(--muted);font-size:10px;font-family:var(--mono);border:1px solid var(--line);border-radius:4px;padding:0 5px}
+
+  .glyph.dead_end{background:var(--warn);color:#fff;border-color:var(--warn)}
+
+  /* ---- detail pane ---- */
+  .dhead{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-bottom:2px}
+  .badge{font-family:var(--mono);font-size:10px;font-weight:700;border-radius:4px;padding:3px 9px;color:var(--glyph-ink);background:var(--glyph-bg);border:1px solid var(--line);text-transform:uppercase;letter-spacing:.08em}
+  .badge.dead_end{background:var(--warn);color:#fff;border-color:var(--warn)}
+  .pill{font-family:var(--mono);font-size:10px;border:1px solid var(--line);border-radius:20px;padding:2px 9px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+  .pill.explicit{border-color:var(--ok);color:var(--ok)} .pill.inferred{border-color:var(--tentative);color:var(--tentative)}
+  .pill.iso{border-color:var(--iso-line);color:var(--iso-ink)}
+  .dtitle{font-family:var(--serif);font-size:25px;font-weight:600;margin:12px 0 6px;letter-spacing:-.012em;line-height:1.28}
+  .did{color:var(--muted);font-family:var(--mono);font-size:11.5px}
+
+  .block{border:1px solid var(--line);border-radius:7px;margin:15px 0;background:var(--panel)}
+  .block>summary{cursor:pointer;padding:11px 15px;font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);list-style:none;display:flex;align-items:center;gap:8px}
+  .block>summary::-webkit-details-marker{display:none}
+  .block>summary:hover{color:var(--accent-ink)}
+  .block>summary .tag{margin-left:auto;color:var(--faint);font-size:10.5px;font-weight:400;font-family:var(--mono);text-transform:none;letter-spacing:0}
+  .block .body{padding:4px 16px 16px}
+  /* the primary reasoning block: the agent's thinking, set as typeset prose */
+  .block.reason{border-left:3px solid var(--accent);background:var(--reason-bg)}
+  .block.reason>summary{color:var(--accent-ink)}
+  .block.reason .lead{font-family:var(--serif);font-size:17px;line-height:1.7;color:var(--ink)}
+  .didwhat{color:var(--muted);font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.09em;margin:16px 0 4px}
+  .lead{font-family:var(--serif);color:#2a322c;font-size:16px;line-height:1.7}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:11px}
+  .chip{background:var(--chip);border:1px solid var(--line);border-radius:4px;padding:2px 8px;font-size:11px;color:#46504a;font-family:var(--mono)}
+  .chip.ext{color:var(--muted)}
+
+  .claim{border:1px solid var(--line);border-left:2px solid var(--accent);border-radius:0 6px 6px 0;padding:11px 13px;margin:11px 0;background:var(--panel2)}
+  .claim h4{margin:0 0 6px;font-family:var(--mono);font-size:12px}
+  .claim .kv{font-size:13px;line-height:1.6;margin:4px 0;color:#3a423c}
+  .claim .kv b{color:var(--muted);font-weight:600;font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em}
+  .status{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.05em;border-radius:4px;padding:1px 7px;border:1px solid var(--line)}
+  .status.supported{color:var(--ok);border-color:var(--ok)}
+  .status.refuted{color:var(--warn);border-color:var(--warn)}
+  .status.hypothesis{color:var(--tentative);border-color:var(--tentative)}
+  .prov{font-size:11px;color:var(--iso-ink);font-family:var(--mono)}
+
+  .quote{border-left:3px solid var(--accent);background:var(--panel);border-radius:0 6px 6px 0;padding:9px 13px;margin:9px 0;font-size:13.5px;line-height:1.6;color:#2a322c}
+  .quote .ref{color:var(--muted);font-size:10.5px;font-family:var(--mono);margin-top:5px}
+  figure{margin:14px 0}
+  figure img{max-width:100%;border:1px solid var(--line);border-radius:5px;background:#fff;padding:6px}
+  figcaption{color:var(--muted);font-family:var(--mono);font-size:11px;margin-top:7px}
+
+  table.md{border-collapse:collapse;width:100%;font-family:var(--mono);font-size:12px;margin:10px 0}
+  table.md th,table.md td{border:1px solid var(--line);padding:5px 9px;text-align:left}
+  table.md th{background:var(--panel2);color:var(--ink);font-weight:700;text-transform:uppercase;font-size:10.5px;letter-spacing:.04em}
+  pre.snip{background:var(--code-bg);border:1px solid var(--line);border-radius:6px;padding:10px 12px;overflow:auto;font-size:12px;color:var(--ink);white-space:pre-wrap}
+
+  .ptr{font-size:13px;margin:7px 0}
+  .ptr .path{font-family:var(--mono);color:#46504a}
+  .truncated{color:var(--muted);font-size:11.5px;font-style:italic}
+  .empty{color:var(--muted);font-size:13px}
+  .none{color:var(--muted);padding:40px 24px;text-align:center;font-family:var(--mono);font-size:12px;letter-spacing:.02em}
+  kbd{background:var(--panel2);border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 5px;font-family:var(--mono);font-size:11px}
+
+  /* ---- enrichment layers (all inert unless the data is present) ---- */
+  .layerbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+  .lbtn .cnt{color:var(--muted);font-size:10.5px}
+  .chiplabel{color:var(--muted);font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.08em;margin:12px 0 3px}
+  .chip.jump{cursor:pointer}
+  .chip.jump:hover{border-color:var(--accent);color:var(--accent-ink)}
+  .chip.dangle{color:#9aa49b;text-decoration:line-through;cursor:not-allowed}
+  .chip.infer{border-style:dashed}
+  .chip-built{border-color:var(--ok);color:var(--ok)}
+  .chip-rej{border-color:var(--warn);color:var(--warn)}
+  .chip-recipe{border-color:var(--accent);color:var(--accent-ink)}
+  .nmark{color:var(--muted);font-size:10px;margin-left:5px;font-family:var(--mono)}
+  .rel{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.05em;border-radius:4px;padding:2px 8px;color:var(--glyph-ink);background:var(--glyph-bg);font-weight:700}
+  .rel.bounds,.rel.refutes{background:var(--warn);color:#fff}
+  .rel.neutral{background:var(--chip);color:var(--ink);border:1px solid var(--line);font-weight:400}
+  .ribbon{border-left:3px solid var(--accent);background:var(--panel2);border-radius:0 6px 6px 0;padding:9px 13px;margin:9px 0;color:#3a423c;font-size:13px;line-height:1.6}
+  .warn{border-left:3px solid var(--warn);background:var(--del-bg);border-radius:0 6px 6px 0;padding:9px 13px;margin:9px 0;font-size:13px;line-height:1.6}
+  .muted{color:var(--muted);font-size:11.5px}
+  .math{font-family:var(--serif);font-style:italic}
+  .gterm{border-bottom:1px dashed var(--accent);cursor:help}
+  #gpop{position:fixed;max-width:360px;background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:11px 13px;z-index:60;box-shadow:0 8px 28px var(--shadow);font-size:13px;line-height:1.55;display:none}
+  #gpop h5{margin:0 0 5px;font-family:var(--mono);font-size:12px;text-transform:uppercase;letter-spacing:.05em}
+  #gpop .gp-open{color:var(--accent);cursor:pointer;font-family:var(--mono);font-size:11px;margin-top:7px;display:inline-block}
+  .ov{position:fixed;inset:0;z-index:50}
+  .ov[hidden]{display:none}
+  .ov-scrim{position:absolute;inset:0;background:var(--scrim)}
+  .ov-sheet{position:relative;margin:5vh auto;max-width:920px;max-height:86vh;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 16px 48px var(--shadow)}
+  .ov-head{position:sticky;top:0;display:flex;gap:10px;align-items:center;padding:13px 17px;border-bottom:1px solid var(--line);background:var(--panel);z-index:1}
+  .ov-head #ov-title{font-family:var(--mono);font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.09em;color:var(--accent-ink)}
+  .ov-head input[type=search]{flex:1;max-width:260px;background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:5px 10px;font-size:13px}
+  .ov-body{padding:10px 17px 26px}
+  .ov-body .spacer{flex:1}
+  .card{border:1px solid var(--line);border-radius:6px;padding:11px 13px;margin:11px 0;background:var(--panel2)}
+  .card h4{margin:0 0 6px;font-family:var(--mono);font-size:12px}
+  .card .sub{color:var(--muted);font-family:var(--mono);font-size:10.5px}
+  .grey{opacity:.5}
+
+  /* responsive: stack the two panes on a narrow screen */
+  @media (max-width:720px){
+    main{grid-template-columns:1fr;grid-template-rows:42vh 1fr}
+    #map{border-right:none;border-bottom:1px solid var(--line)}
+    #detail{padding:20px 18px 64px}
+    .dtitle{font-size:21px}
+  }
+  /* honour reduced-motion */
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<header>
+  <h1 class="title" id="h-title">ARA Trajectory</h1>
+  <div class="sub" id="h-sub"></div>
+  <details id="h-abstract-wrap"><summary>Abstract</summary><div class="lead" id="h-abstract"></div></details>
+  <div class="toolbar">
+    <input type="search" id="q" placeholder="search steps…" autocomplete="off" />
+    <label>type
+      <select id="ftype"><option value="">all</option></select>
+    </label>
+    <label><input type="checkbox" id="fdead" /> dead ends only</label>
+    <span class="spacer"></span>
+    <button class="btn" id="rprev" title="previous (←)">‹</button>
+    <button class="btn primary" id="rplay">▶ Replay</button>
+    <button class="btn" id="rnext" title="next (→)">›</button>
+    <span class="count" id="rstat"></span>
+  </div>
+  <div class="layerbar" id="layerbar">
+    <button class="btn lbtn" data-panel="context" hidden>◧ Context</button>
+    <button class="btn lbtn" data-panel="glossary" hidden>▤ Glossary <span class="cnt"></span></button>
+    <button class="btn lbtn" data-panel="dependencies" hidden>⇄ Dependencies <span class="cnt"></span></button>
+    <button class="btn lbtn" data-panel="recipes" hidden>▦ Recipes <span class="cnt"></span></button>
+  </div>
+</header>
+
+<main>
+  <aside id="map"></aside>
+  <section id="detail"><div class="none">Select a step on the left, or press <kbd>▶ Replay</kbd>.</div></section>
+</main>
+
+<!-- v1.1: one shared modal overlay for the Context/Glossary/Dependencies/Recipes panels, + a glossary popover. Both inert unless their data is present. -->
+<div id="overlay" class="ov" hidden role="dialog" aria-modal="true">
+  <div class="ov-scrim" data-close></div>
+  <div class="ov-sheet">
+    <div class="ov-head"><span id="ov-title"></span>
+      <input type="search" id="ov-q" placeholder="filter…" hidden autocomplete="off" />
+      <span class="spacer"></span>
+      <button class="btn" id="ov-close" data-close>✕ <kbd>Esc</kbd></button>
+    </div>
+    <div class="ov-body" id="ov-body"></div>
+  </div>
+</div>
+<div id="gpop"></div>
+
+<!-- The skill replaces ONLY the JSON between the two markers below. -->
+<script id="ara-data" type="application/json">
+/* __ARA_DATA_BEGIN__ */
+{
+  "meta": {
+    "title": "Test-Time Model Adaptation with Only Forward Passes",
+    "authors": [
+      "Shuaicheng Niu",
+      "Chunyan Miao",
+      "Guohao Chen",
+      "Pengcheng Wu",
+      "Peilin Zhao"
+    ],
+    "year": "2024",
+    "venue": "International Conference on Machine Learning (ICML)",
+    "ara_dir": "test-time-model-adaptation",
+    "abstract": "Test-time adaptation has proven effective in adapting a given trained model to unseen test samples with potential distribution shifts. However, in real-world scenarios, models are usually deployed on resource-limited devices, e.g., FPGAs, and are often quantized and hard-coded with non-modifiable parameters for acceleration. In light of this, existing methods are often infeasible since they heavily depend on computation-intensive backpropagation for model updating that may be not supported. To address this, we propose a test-time Forward-Optimization Adaptation (FOA) method. In FOA, we seek to solely learn a newly added prompt (as model's input) via a derivative-free covariance matrix adaptation evolution strategy. To make this strategy work stably under our online unsupervised setting, we devise a novel fitness function by measuring test-training statistic discrepancy and model prediction entropy. Moreover, we design an activation shifting scheme that directly tunes the model activations for shifted test samples, making them align with the source training domain, thereby further enhancing adaptation performance. Without using any backpropagation and altering model weights, FOA runs on quantized 8-bit ViT outperforms gradient-based TENT on full-precision 32-bit ViT, while achieving an up to 24-fold memory reduction on ImageNet-C."
+  },
+  "order": [
+    "N01",
+    "N02",
+    "N03",
+    "N04",
+    "N05",
+    "N06",
+    "N07",
+    "N08",
+    "N09",
+    "N10",
+    "N11",
+    "N12"
+  ],
+  "nodes": [
+    {
+      "id": "N01",
+      "type": "question",
+      "parent": null,
+      "title": "Can test-time adaptation work without backpropagation?",
+      "body": "Deep models are often deployed on quantized or hard-coded edge devices (FPGAs, smartphones) where backpropagation is infeasible. Can we achieve competitive TTA using only forward passes and no weight modification?",
+      "thinking": "This step frames the paper's founding question. Test-time adaptation (TTA) lets a trained model adjust itself on the fly to handle test data that looks different from what it was trained on, but the leading TTA methods rely on backpropagation, computing gradients and updating weights, which many real deployment targets simply cannot do: FPGAs and other quantized or hard-coded chips are wired for fast inference, not gradient updates. The question this opens the research with is whether adaptation can work using only forward passes, without ever touching the model's weights, which would make TTA viable exactly where it is needed most: resource-limited edge devices.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [],
+      "built_on": [],
+      "rejected_here": [],
+      "concepts": [],
+      "recipe_refs": []
+    },
+    {
+      "id": "N02",
+      "type": "experiment",
+      "parent": "N01",
+      "title": "Apply CMA-ES directly to model weights (norm layers)",
+      "body": "Catastrophic failure — accuracy collapses to 0.1% (exp4, exp5 in Table 9)",
+      "thinking": "The first concrete attempt at forward-only adaptation swaps the usual gradient-based optimizer (SGD) for CMA-ES (Covariance Matrix Adaptation Evolution Strategy), a derivative-free, black-box optimizer that only needs a fitness score computed from forward passes, no gradients required. The natural first target is the same one gradient-based TENT tunes: the parameters of the model's normalization layers. This attempt collapses completely, accuracy falls to about 0.1% (essentially random guessing), regardless of whether the fitness signal is prediction entropy or the paper's later Eq. 5 fitness function. The takeaway is that simply swapping optimizers is not enough; what gets optimized matters just as much as how.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [
+        "§3.1"
+      ],
+      "why": [
+        {
+          "id": "C04",
+          "title": "CMA-ES with entropy-only fitness is infeasible for TTA",
+          "statement": "Replacing SGD with CMA-ES for entropy-based TTA (using either norm layers or prompts as learnable parameters) collapses to near-random accuracy (0.1% for norm layers, 44.9% for prompts), confirming that entropy alone cannot provide stable CMA learning signals.",
+          "status": "supported",
+          "conditions": "",
+          "falsification": "If CMA + prompts + entropy achieves accuracy within 5% of NoAdapt (55.5%) or better, the claim is partially falsified.",
+          "dependencies": [],
+          "provenance": null
+        }
+      ],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [
+          {
+            "id": "table5_ablation_components",
+            "caption": "Ablations of components in our FOA. Entropy and Activation (Act.) Discrepancy are the left/right item in Fitness Function (Eqn. 5) used for CMA-based prompt adaptation. Act. Shifting is the method proposed in Section 3.2. We report the average results over 15 corruptions on ImageNet-C (level 5) with ViT-Base.",
+            "markdown": "| Entropy | Act. Discrepancy | Act. Shifting | Acc. (%, ↑) | ECE (%, ↓) |\n|---------|-----------------|---------------|-------------|------------|\n| — | — | — | 55.5 | 10.5 |\n| ✓ | — | — | 44.9 | 36.8 |\n| — | ✓ | — | 63.4 | 9.4 |\n| — | — | ✓ | 59.1 | 12.7 |\n| ✓ | ✓ | — | 63.8 | 9.9 |\n| — | ✓ | ✓ | 65.4 | 3.3 |\n| ✓ | ✓ | ✓ | **66.3** | **3.2** |"
+          },
+          {
+            "id": "table9_design_choices",
+            "caption": "Empirical studies of design choices w.r.t. learnable parameters, optimizer and loss function. We report the average results over 15 corruptions on ImageNet-C (level 5) with ViT-Base.",
+            "markdown": "| Row | Learnable Params | Optimizer | Loss | Acc. (%, ↑) | ECE (%, ↓) |\n|-----|-----------------|-----------|------|-------------|------------|\n| NoAdapt | — | — | — | 55.5 | 10.5 |\n| TENT | norm layers | SGD | entropy | 59.6 | 18.5 |\n| exp1 | prompts | SGD | entropy | 50.7 | 18.4 |\n| exp2 | norm layers | SGD | Eqn. (5) | 70.5 | 7.9 |\n| exp3 | prompts | SGD | Eqn. (5) | 64.6 | 3.7 |\n| exp4 | norm layers | CMA | Eqn. (5) | 0.1 | 5.8 |\n| exp5 | norm layers | CMA | entropy | 0.1 | 99.0 |\n| exp6 | prompts | CMA | entropy | 44.9 | 36.8 |\n| FOA (ours) | prompts | CMA | Eqn. (5) | 65.4 | 3.3 |"
+          }
+        ],
+        "data": []
+      },
+      "verified_by": [
+        {
+          "id": "E05",
+          "title": "Ablation of FOA components (entropy, activation discrepancy, activation shifting)",
+          "run": "",
+          "setup": "Model: ViT-Base (32-bit full precision)\nHardware: GPU\nDataset: ImageNet-C, severity level 5, all 15 corruption types\nSystem: Default FOA hyperparameters; ablate three components independently and in combination",
+          "metrics": "Average classification accuracy (%, ↑) and average ECE (%, ↓) over 15 corruption types"
+        }
+      ],
+      "artifact": [
+        {
+          "name": "test-time-model-adaptation implementation",
+          "pointer": "src/execution/ (4 files): activation_shift.py, fitness.py, foa.py, prompt_vit.py",
+          "what": "transcribed source code pointer index (not an external run-store pointer)"
+        }
+      ],
+      "built_on": [
+        {
+          "rw_id": "RW01",
+          "name": "Wang et al., 2021 (TENT)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW02",
+          "name": "Hansen, 2016 (CMA-ES)",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW11",
+          "name": "Malladi et al., 2023 (MeZO)",
+          "relation_raw": "imports"
+        }
+      ],
+      "rejected_here": [
+        {
+          "rw_id": "RW06",
+          "name": "Hendrycks & Dietterich, 2019 (ImageNet-C)",
+          "relation_raw": "bounds"
+        }
+      ],
+      "concepts": [
+        "CMA Evolution Strategy (CMA-ES)"
+      ],
+      "recipe_refs": []
+    },
+    {
+      "id": "N03",
+      "type": "dead_end",
+      "parent": "N02",
+      "title": "CMA-ES on norm layer parameters (high-dimensional)",
+      "body": "Hypothesis: CMA-ES can optimize affine parameters of normalization layers for TTA\n\nFailure mode: CMA-ES cannot handle ultra-high-dimensional optimization (millions of parameters); accuracy collapses to 0.1% with both entropy and Eq.5 fitness\n\nLesson: CMA requires low-dimensional optimization target; must reduce search space drastically",
+      "thinking": "This dead end names the exact failure behind the previous attempt: the hypothesis was that CMA-ES could substitute for gradient descent when tuning the model's normalization-layer parameters, the same target TENT-style methods adjust. But those parameters number in the millions, and CMA-ES works by maintaining and updating a full covariance matrix over its search space, a cost that becomes intractable at that scale, so the search collapses to a degenerate solution regardless of the fitness signal used. The lesson carried forward is that CMA-ES-based adaptation only becomes viable if the optimization target is shrunk to a low-dimensional space first.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [],
+      "built_on": [],
+      "rejected_here": [],
+      "concepts": [
+        "CMA Evolution Strategy (CMA-ES)"
+      ],
+      "recipe_refs": []
+    },
+    {
+      "id": "N04",
+      "type": "decision",
+      "parent": "N02",
+      "title": "Use low-dimensional prompt embeddings as optimization target",
+      "body": "Insert Np=3 learnable prompt embeddings (2304-dim for ViT-Base) before the first transformer layer; optimize only prompts with CMA-ES\n\nAlternatives considered: Optimize full model parameters (infeasible for CMA, O(86M) dim); Optimize only CLS token (too low expressiveness); Use zeroth-order gradient estimation (slow convergence for large models)",
+      "thinking": "Learning from that failure, the researchers switch what gets optimized entirely: instead of tuning the model's internal normalization weights, they insert a small set of learnable prompt tokens (Np=3 vectors) prepended to the input before the first transformer layer, and let CMA-ES optimize only those. This shrinks the search space from roughly 86 million dimensions (optimizing the full model) down to about 2,304, well within CMA-ES's practical range. They explicitly ruled out other options: optimizing the full model (the same intractability as before), using only the CLS classification token (too limited to express useful adaptation), and zeroth-order gradient estimation (too slow to converge for large models). This reframes the whole method around learning what is fed into the model, rather than the model itself.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [
+          {
+            "id": "table9_design_choices",
+            "caption": "Empirical studies of design choices w.r.t. learnable parameters, optimizer and loss function. We report the average results over 15 corruptions on ImageNet-C (level 5) with ViT-Base.",
+            "markdown": "| Row | Learnable Params | Optimizer | Loss | Acc. (%, ↑) | ECE (%, ↓) |\n|-----|-----------------|-----------|------|-------------|------------|\n| NoAdapt | — | — | — | 55.5 | 10.5 |\n| TENT | norm layers | SGD | entropy | 59.6 | 18.5 |\n| exp1 | prompts | SGD | entropy | 50.7 | 18.4 |\n| exp2 | norm layers | SGD | Eqn. (5) | 70.5 | 7.9 |\n| exp3 | prompts | SGD | Eqn. (5) | 64.6 | 3.7 |\n| exp4 | norm layers | CMA | Eqn. (5) | 0.1 | 5.8 |\n| exp5 | norm layers | CMA | entropy | 0.1 | 99.0 |\n| exp6 | prompts | CMA | entropy | 44.9 | 36.8 |\n| FOA (ours) | prompts | CMA | Eqn. (5) | 65.4 | 3.3 |"
+          }
+        ],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [],
+      "built_on": [],
+      "rejected_here": [],
+      "concepts": [
+        "CMA Evolution Strategy (CMA-ES)"
+      ],
+      "recipe_refs": []
+    },
+    {
+      "id": "N05",
+      "type": "experiment",
+      "parent": "N04",
+      "title": "CMA-ES + prompt embeddings + entropy fitness",
+      "body": "Still fails — 44.9% accuracy (exp6, Table 9); worse than NoAdapt (55.5%)",
+      "thinking": "With the dimensionality problem solved, the next test is whether CMA-ES optimizing just the prompts, still scored with the standard entropy-minimization objective used by earlier gradient-based methods, works. It does not: accuracy comes in at 44.9%, actually worse than doing no adaptation at all (55.5%). This shows the earlier collapse was not only about the search space being too large; the entropy fitness signal itself is unreliable for guiding CMA-ES in this unsupervised, online setting.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [
+        "§3.1"
+      ],
+      "why": [
+        {
+          "id": "C04",
+          "title": "CMA-ES with entropy-only fitness is infeasible for TTA",
+          "statement": "Replacing SGD with CMA-ES for entropy-based TTA (using either norm layers or prompts as learnable parameters) collapses to near-random accuracy (0.1% for norm layers, 44.9% for prompts), confirming that entropy alone cannot provide stable CMA learning signals.",
+          "status": "supported",
+          "conditions": "",
+          "falsification": "If CMA + prompts + entropy achieves accuracy within 5% of NoAdapt (55.5%) or better, the claim is partially falsified.",
+          "dependencies": [],
+          "provenance": null
+        }
+      ],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [
+          {
+            "id": "table5_ablation_components",
+            "caption": "Ablations of components in our FOA. Entropy and Activation (Act.) Discrepancy are the left/right item in Fitness Function (Eqn. 5) used for CMA-based prompt adaptation. Act. Shifting is the method proposed in Section 3.2. We report the average results over 15 corruptions on ImageNet-C (level 5) with ViT-Base.",
+            "markdown": "| Entropy | Act. Discrepancy | Act. Shifting | Acc. (%, ↑) | ECE (%, ↓) |\n|---------|-----------------|---------------|-------------|------------|\n| — | — | — | 55.5 | 10.5 |\n| ✓ | — | — | 44.9 | 36.8 |\n| — | ✓ | — | 63.4 | 9.4 |\n| — | — | ✓ | 59.1 | 12.7 |\n| ✓ | ✓ | — | 63.8 | 9.9 |\n| — | ✓ | ✓ | 65.4 | 3.3 |\n| ✓ | ✓ | ✓ | **66.3** | **3.2** |"
+          },
+          {
+            "id": "table9_design_choices",
+            "caption": "Empirical studies of design choices w.r.t. learnable parameters, optimizer and loss function. We report the average results over 15 corruptions on ImageNet-C (level 5) with ViT-Base.",
+            "markdown": "| Row | Learnable Params | Optimizer | Loss | Acc. (%, ↑) | ECE (%, ↓) |\n|-----|-----------------|-----------|------|-------------|------------|\n| NoAdapt | — | — | — | 55.5 | 10.5 |\n| TENT | norm layers | SGD | entropy | 59.6 | 18.5 |\n| exp1 | prompts | SGD | entropy | 50.7 | 18.4 |\n| exp2 | norm layers | SGD | Eqn. (5) | 70.5 | 7.9 |\n| exp3 | prompts | SGD | Eqn. (5) | 64.6 | 3.7 |\n| exp4 | norm layers | CMA | Eqn. (5) | 0.1 | 5.8 |\n| exp5 | norm layers | CMA | entropy | 0.1 | 99.0 |\n| exp6 | prompts | CMA | entropy | 44.9 | 36.8 |\n| FOA (ours) | prompts | CMA | Eqn. (5) | 65.4 | 3.3 |"
+          }
+        ],
+        "data": []
+      },
+      "verified_by": [
+        {
+          "id": "E05",
+          "title": "Ablation of FOA components (entropy, activation discrepancy, activation shifting)",
+          "run": "",
+          "setup": "Model: ViT-Base (32-bit full precision)\nHardware: GPU\nDataset: ImageNet-C, severity level 5, all 15 corruption types\nSystem: Default FOA hyperparameters; ablate three components independently and in combination",
+          "metrics": "Average classification accuracy (%, ↑) and average ECE (%, ↓) over 15 corruption types"
+        }
+      ],
+      "artifact": [
+        {
+          "name": "test-time-model-adaptation implementation",
+          "pointer": "src/execution/ (4 files): activation_shift.py, fitness.py, foa.py, prompt_vit.py",
+          "what": "transcribed source code pointer index (not an external run-store pointer)"
+        }
+      ],
+      "built_on": [
+        {
+          "rw_id": "RW01",
+          "name": "Wang et al., 2021 (TENT)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW02",
+          "name": "Hansen, 2016 (CMA-ES)",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW11",
+          "name": "Malladi et al., 2023 (MeZO)",
+          "relation_raw": "imports"
+        }
+      ],
+      "rejected_here": [
+        {
+          "rw_id": "RW06",
+          "name": "Hendrycks & Dietterich, 2019 (ImageNet-C)",
+          "relation_raw": "bounds"
+        }
+      ],
+      "concepts": [
+        "CMA Evolution Strategy (CMA-ES)"
+      ],
+      "recipe_refs": []
+    },
+    {
+      "id": "N06",
+      "type": "dead_end",
+      "parent": "N05",
+      "title": "Entropy-only fitness for CMA prompt optimization",
+      "body": "Hypothesis: Standard entropy minimization provides reliable fitness signal for CMA in online unsupervised TTA\n\nFailure mode: Severely corrupted OOD samples produce highly uncertain predictions; entropy is noisy and inconsistent; CMA converges to trivial/degenerate solutions (44.9% accuracy)\n\nLesson: Need a stable fitness function that does not rely solely on noisy per-sample entropy; distribution-level fitness provides better stability",
+      "thinking": "This dead end diagnoses why the entropy-only prompt experiment failed. The idea was that minimizing prediction entropy, how uncertain the model's outputs are, would give CMA-ES a steady signal to steer its search, the same way it works for gradient-based methods. But under severe distribution shift the model's predictions on corrupted test data are themselves noisy and inconsistent, so entropy fluctuates without a clear direction to improve, and CMA-ES settles into a degenerate, low-accuracy solution. The lesson: a fitness signal built purely from per-sample prediction confidence is not stable enough; a more distribution-level signal is needed instead.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [],
+      "built_on": [],
+      "rejected_here": [],
+      "concepts": [
+        "Fitness Function"
+      ],
+      "recipe_refs": []
+    },
+    {
+      "id": "N07",
+      "type": "decision",
+      "parent": "N05",
+      "title": "Design activation discrepancy fitness function",
+      "body": "Combine prediction entropy with CLS activation distribution discrepancy (L2 distance in mean/std space) across all N layers — Eq. 5\n\nAlternatives considered: Entropy-only (shown to fail — dead end N06); Supervised fitness (requires labels — unavailable in TTA); Contrastive loss (requires paired data)",
+      "thinking": "In response to that diagnosis, the researchers design a new fitness function with a second, more stable term alongside entropy: the discrepancy between the statistics (mean and standard deviation) of the model's internal CLS (classification) token activations on the current test batch and the statistics recorded from the original source data, measured across every transformer layer. The intuition is that this rewards prompts that pull the corrupted test data's internal representations back toward looking like the source domain's representations, a signal grounded in the model's whole activation pattern rather than its final, noisy prediction confidence alone. They ruled out supervised fitness (no labels exist at test time) and contrastive losses (would require paired examples that are unavailable), leaving this activation-discrepancy design as the only workable unsupervised option.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [
+          {
+            "id": "table9_design_choices",
+            "caption": "Empirical studies of design choices w.r.t. learnable parameters, optimizer and loss function. We report the average results over 15 corruptions on ImageNet-C (level 5) with ViT-Base.",
+            "markdown": "| Row | Learnable Params | Optimizer | Loss | Acc. (%, ↑) | ECE (%, ↓) |\n|-----|-----------------|-----------|------|-------------|------------|\n| NoAdapt | — | — | — | 55.5 | 10.5 |\n| TENT | norm layers | SGD | entropy | 59.6 | 18.5 |\n| exp1 | prompts | SGD | entropy | 50.7 | 18.4 |\n| exp2 | norm layers | SGD | Eqn. (5) | 70.5 | 7.9 |\n| exp3 | prompts | SGD | Eqn. (5) | 64.6 | 3.7 |\n| exp4 | norm layers | CMA | Eqn. (5) | 0.1 | 5.8 |\n| exp5 | norm layers | CMA | entropy | 0.1 | 99.0 |\n| exp6 | prompts | CMA | entropy | 44.9 | 36.8 |\n| FOA (ours) | prompts | CMA | Eqn. (5) | 65.4 | 3.3 |"
+          }
+        ],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [],
+      "built_on": [],
+      "rejected_here": [],
+      "concepts": [
+        "Fitness Function"
+      ],
+      "recipe_refs": []
+    },
+    {
+      "id": "N08",
+      "type": "experiment",
+      "parent": "N07",
+      "title": "CMA + prompts + activation discrepancy fitness (no entropy)",
+      "body": "Activation discrepancy alone: 63.4% accuracy, 9.4% ECE — substantially better than NoAdapt (55.5%)",
+      "thinking": "Testing the new activation-discrepancy term on its own, with entropy dropped entirely, already produces a large jump: 63.4% accuracy versus 55.5% for doing nothing, well ahead of every earlier CMA attempt. This confirms the hypothesis behind the redesign: it is the activation discrepancy term, not entropy, that supplies the stable signal CMA-ES needs to learn useful prompts in this unsupervised, online setting. Calibration also improves over the no-adaptation baseline, though not yet to its best achievable value, leaving open the question of whether adding entropy back in on top of this foundation helps further.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [
+        "§4.3"
+      ],
+      "why": [
+        {
+          "id": "C05",
+          "title": "Activation discrepancy fitness enables stable CMA learning in online unsupervised TTA",
+          "statement": "The proposed fitness function combining prediction entropy with activation distribution discrepancy (Eq. 5) provides consistent learning signals for CMA, improving accuracy from 55.5% (NoAdapt) to 63.4% using only the activation discrepancy term, and to 66.3% using the full fitness function with activation shifting.",
+          "status": "supported",
+          "conditions": "",
+          "falsification": "If activation discrepancy fitness improves over NoAdapt by &lt; 5% on ImageNet-C average accuracy, or combined fitness + shifting does not achieve best accuracy among all FOA variants.",
+          "dependencies": [
+            "C04"
+          ],
+          "provenance": null
+        }
+      ],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [
+          {
+            "id": "fig2b_num_prompts",
+            "caption": "Effects of #Prompts — Parameter sensitivity analyses of our FOA. Experiments are conducted on ImageNet-C (Gaussian Noise, level 5) with ViT-Base.",
+            "markdown": "| Np | FOA Acc. (%) | NoAdapt Acc. (%) | FOA ECE (%) | NoAdapt ECE (%) |\n|----|-------------|-----------------|-------------|-----------------|\n| 1 | ≈61.0 | ≈56.8 | ≈3.5 | ≈7.5 |\n| 2 | ≈61.2 | ≈56.8 | ≈3.2 | ≈7.5 |\n| 3 | ≈61.5 | ≈56.8 | ≈2.5 | ≈7.5 |\n| 4 | ≈61.2 | ≈56.8 | ≈2.8 | ≈7.5 |\n| 5 | ≈61.8 | ≈56.8 | ≈2.6 | ≈7.5 |\n| 6 | ≈61.5 | ≈56.8 | ≈2.7 | ≈7.5 |\n| 7 | ≈61.8 | ≈56.8 | ≈2.5 | ≈7.5 |\n| 8 | ≈61.3 | ≈56.8 | ≈2.9 | ≈7.5 |\n| 9 | ≈61.2 | ≈56.8 | ≈3.0 | ≈7.5 |\n| 10 | ≈61.0 | ≈56.8 | ≈3.2 | ≈7.5 |"
+          },
+          {
+            "id": "fig2c_num_id_samples",
+            "caption": "Effects of #ID Samples — Parameter sensitivity analyses of our FOA. Experiments are conducted on ImageNet-C (Gaussian Noise, level 5) with ViT-Base.",
+            "markdown": "| Q | FOA Acc. (%) | NoAdapt Acc. (%) | FOA ECE (%) | NoAdapt ECE (%) |\n|---|-------------|-----------------|-------------|-----------------|\n| 16 | ≈59.5 | ≈56.8 | ≈5.5 | ≈7.5 |\n| 32 | ≈61.5 | ≈56.8 | ≈2.6 | ≈7.5 |\n| 64 | ≈61.5 | ≈56.8 | ≈2.5 | ≈7.5 |\n| 100 | ≈61.6 | ≈56.8 | ≈2.5 | ≈7.5 |\n| 200 | ≈61.5 | ≈56.8 | ≈2.5 | ≈7.5 |\n| 400 | ≈61.5 | ≈56.8 | ≈2.5 | ≈7.5 |\n| 800 | ≈61.5 | ≈56.8 | ≈2.5 | ≈7.5 |\n| 1600 | ≈61.5 | ≈56.8 | ≈2.5 | ≈7.5 |"
+          },
+          {
+            "id": "table2_imagenetc_accuracy",
+            "caption": "Comparisons with SOTA methods on ImageNet-C (severity level 5) with ViT regarding Accuracy (%). BP is short for backward propagation and the bold number indicates the best result.",
+            "markdown": "| Method | BP | Gauss. | Shot | Impul. | Defoc. | Glass | Motion | Zoom | Snow | Frost | Fog | Brit. | Contr. | Elas. | Pix. | JPEG | Avg Acc. | Avg ECE |\n|--------|-----|--------|------|--------|--------|-------|--------|------|------|-------|-----|-------|--------|-------|------|------|----------|---------|\n| NoAdapt | ✗ | 56.8 | 56.8 | 57.5 | 46.9 | 35.6 | 53.1 | 44.8 | 62.2 | 62.5 | 65.7 | 77.7 | 32.6 | 46.0 | 67.0 | 67.6 | 55.5 | 10.5 |\n| LAME | ✗ | 56.5 | 56.5 | 57.2 | 46.4 | 34.7 | 52.7 | 44.2 | 58.4 | 61.5 | 63.1 | 77.4 | 24.7 | 44.6 | 66.6 | 67.2 | 54.1 | 11.0 |\n| T3A | ✗ | 56.4 | 56.9 | 57.3 | 47.9 | 37.8 | 54.3 | 46.9 | 63.6 | 60.8 | 68.5 | 78.1 | 38.3 | 50.0 | 67.6 | 69.1 | 56.9 | 26.8 |\n| TENT | ✓ | 60.3 | 61.6 | 61.8 | 59.2 | 56.5 | 63.5 | 59.2 | 54.3 | 64.5 | 2.3 | 79.1 | 67.4 | 61.5 | 72.5 | 70.6 | 59.6 | 18.5 |\n| CoTTA | ✓ | 63.6 | 63.8 | 64.1 | 55.5 | 51.1 | 63.6 | 55.5 | 70.0 | 69.4 | 71.5 | 78.5 | 9.7 | 64.5 | 73.4 | 71.2 | 61.7 | 6.5 |\n| SAR | ✓ | 59.2 | 60.5 | 60.7 | 57.5 | 55.6 | 61.8 | 57.6 | 65.9 | 63.5 | 69.1 | 78.7 | 45.7 | 62.4 | 71.9 | 70.3 | 62.7 | 7.0 |\n| FOA (ours) | ✗ | 61.5 | 63.2 | 63.3 | 59.3 | 56.7 | 61.4 | 57.7 | 69.4 | 69.6 | 73.4 | 81.1 | 67.7 | 62.7 | 73.9 | 73.0 | 66.3 | 3.2 |"
+          },
+          {
+            "id": "table5_ablation_components",
+            "caption": "Ablations of components in our FOA. Entropy and Activation (Act.) Discrepancy are the left/right item in Fitness Function (Eqn. 5) used for CMA-based prompt adaptation. Act. Shifting is the method proposed in Section 3.2. We report the average results over 15 corruptions on ImageNet-C (level 5) with ViT-Base.",
+            "markdown": "| Entropy | Act. Discrepancy | Act. Shifting | Acc. (%, ↑) | ECE (%, ↓) |\n|---------|-----------------|---------------|-------------|------------|\n| — | — | — | 55.5 | 10.5 |\n| ✓ | — | — | 44.9 | 36.8 |\n| — | ✓ | — | 63.4 | 9.4 |\n| — | — | ✓ | 59.1 | 12.7 |\n| ✓ | ✓ | — | 63.8 | 9.9 |\n| — | ✓ | ✓ | 65.4 | 3.3 |\n| ✓ | ✓ | ✓ | **66.3** | **3.2** |"
+          },
+          {
+            "id": "table9_design_choices",
+            "caption": "Empirical studies of design choices w.r.t. learnable parameters, optimizer and loss function. We report the average results over 15 corruptions on ImageNet-C (level 5) with ViT-Base.",
+            "markdown": "| Row | Learnable Params | Optimizer | Loss | Acc. (%, ↑) | ECE (%, ↓) |\n|-----|-----------------|-----------|------|-------------|------------|\n| NoAdapt | — | — | — | 55.5 | 10.5 |\n| TENT | norm layers | SGD | entropy | 59.6 | 18.5 |\n| exp1 | prompts | SGD | entropy | 50.7 | 18.4 |\n| exp2 | norm layers | SGD | Eqn. (5) | 70.5 | 7.9 |\n| exp3 | prompts | SGD | Eqn. (5) | 64.6 | 3.7 |\n| exp4 | norm layers | CMA | Eqn. (5) | 0.1 | 5.8 |\n| exp5 | norm layers | CMA | entropy | 0.1 | 99.0 |\n| exp6 | prompts | CMA | entropy | 44.9 | 36.8 |\n| FOA (ours) | prompts | CMA | Eqn. (5) | 65.4 | 3.3 |"
+          },
+          {
+            "id": "table13_lambda_sensitivity",
+            "caption": "Sensitivity analyses regarding the trade-off parameter λ (see Eqn. (5)) in our FOA. We report results on ImageNet-C (Gaussian noise, severity level 5) using ViT-Base with batch size 64.",
+            "markdown": "| λ | 0.1 | 0.2 | 0.3 | 0.4 | 0.5 | 0.6 | 0.7 | 0.8 | 0.9 | 1.0 |\n|---|-----|-----|-----|-----|-----|-----|-----|-----|-----|-----|\n| Acc. (%, ↑) | 61.1 | 61.8 | 61.7 | 61.5 | 61.3 | 61.4 | 61.5 | 61.3 | 61.2 | 61.2 |\n| ECE (%, ↓) | 5.9 | 3.2 | 2.6 | 2.5 | 2.6 | 2.9 | 3.3 | 3.8 | 4.0 | 4.4 |"
+          }
+        ],
+        "data": []
+      },
+      "verified_by": [
+        {
+          "id": "E05",
+          "title": "Ablation of FOA components (entropy, activation discrepancy, activation shifting)",
+          "run": "",
+          "setup": "Model: ViT-Base (32-bit full precision)\nHardware: GPU\nDataset: ImageNet-C, severity level 5, all 15 corruption types\nSystem: Default FOA hyperparameters; ablate three components independently and in combination",
+          "metrics": "Average classification accuracy (%, ↑) and average ECE (%, ↓) over 15 corruption types"
+        },
+        {
+          "id": "E06",
+          "title": "Design choice ablation — learnable params × optimizer × loss function",
+          "run": "",
+          "setup": "Model: ViT-Base (32-bit full precision)\nHardware: GPU\nDataset: ImageNet-C, severity level 5, all 15 corruption types\nSystem: All combinations of {norm layers, prompts} × {SGD, CMA} × {entropy, Eq. 5 fitness}",
+          "metrics": "Average classification accuracy (%, ↑) and average ECE (%, ↓) over 15 corruption types"
+        }
+      ],
+      "artifact": [
+        {
+          "name": "test-time-model-adaptation implementation",
+          "pointer": "src/execution/ (4 files): activation_shift.py, fitness.py, foa.py, prompt_vit.py",
+          "what": "transcribed source code pointer index (not an external run-store pointer)"
+        }
+      ],
+      "built_on": [
+        {
+          "rw_id": "RW02",
+          "name": "Hansen, 2016 (CMA-ES)",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW05",
+          "name": "Jia et al., 2022 (Visual Prompt Tuning)",
+          "relation_raw": "imports"
+        }
+      ],
+      "rejected_here": [
+        {
+          "rw_id": "RW06",
+          "name": "Hendrycks & Dietterich, 2019 (ImageNet-C)",
+          "relation_raw": "bounds"
+        }
+      ],
+      "concepts": [
+        "Fitness Function",
+        "Expected Calibration Error (ECE)"
+      ],
+      "recipe_refs": []
+    },
+    {
+      "id": "N09",
+      "type": "experiment",
+      "parent": "N08",
+      "title": "Full fitness (entropy + discrepancy) + CMA prompts (no shifting)",
+      "body": "Combined fitness: 63.8% accuracy, 9.9% ECE — marginal improvement over discrepancy alone",
+      "thinking": "Having established that activation discrepancy alone works well, this step checks whether adding entropy back into the fitness function, now as a secondary term rather than the sole signal, helps further. The combination reaches 63.8% accuracy, only a marginal gain over discrepancy alone's 63.4%, with calibration staying about the same. Entropy is not harmful once discrepancy anchors the optimization, but accuracy has essentially plateaued from tuning the fitness function alone, meaning the next gain has to come from somewhere else in the method.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [
+        "§4.3"
+      ],
+      "why": [
+        {
+          "id": "C05",
+          "title": "Activation discrepancy fitness enables stable CMA learning in online unsupervised TTA",
+          "statement": "The proposed fitness function combining prediction entropy with activation distribution discrepancy (Eq. 5) provides consistent learning signals for CMA, improving accuracy from 55.5% (NoAdapt) to 63.4% using only the activation discrepancy term, and to 66.3% using the full fitness function with activation shifting.",
+          "status": "supported",
+          "conditions": "",
+          "falsification": "If activation discrepancy fitness improves over NoAdapt by &lt; 5% on ImageNet-C average accuracy, or combined fitness + shifting does not achieve best accuracy among all FOA variants.",
+          "dependencies": [
+            "C04"
+          ],
+          "provenance": null
+        }
+      ],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [
+          {
+            "id": "fig2b_num_prompts",
+            "caption": "Effects of #Prompts — Parameter sensitivity analyses of our FOA. Experiments are conducted on ImageNet-C (Gaussian Noise, level 5) with ViT-Base.",
+            "markdown": "| Np | FOA Acc. (%) | NoAdapt Acc. (%) | FOA ECE (%) | NoAdapt ECE (%) |\n|----|-------------|-----------------|-------------|-----------------|\n| 1 | ≈61.0 | ≈56.8 | ≈3.5 | ≈7.5 |\n| 2 | ≈61.2 | ≈56.8 | ≈3.2 | ≈7.5 |\n| 3 | ≈61.5 | ≈56.8 | ≈2.5 | ≈7.5 |\n| 4 | ≈61.2 | ≈56.8 | ≈2.8 | ≈7.5 |\n| 5 | ≈61.8 | ≈56.8 | ≈2.6 | ≈7.5 |\n| 6 | ≈61.5 | ≈56.8 | ≈2.7 | ≈7.5 |\n| 7 | ≈61.8 | ≈56.8 | ≈2.5 | ≈7.5 |\n| 8 | ≈61.3 | ≈56.8 | ≈2.9 | ≈7.5 |\n| 9 | ≈61.2 | ≈56.8 | ≈3.0 | ≈7.5 |\n| 10 | ≈61.0 | ≈56.8 | ≈3.2 | ≈7.5 |"
+          },
+          {
+            "id": "fig2c_num_id_samples",
+            "caption": "Effects of #ID Samples — Parameter sensitivity analyses of our FOA. Experiments are conducted on ImageNet-C (Gaussian Noise, level 5) with ViT-Base.",
+            "markdown": "| Q | FOA Acc. (%) | NoAdapt Acc. (%) | FOA ECE (%) | NoAdapt ECE (%) |\n|---|-------------|-----------------|-------------|-----------------|\n| 16 | ≈59.5 | ≈56.8 | ≈5.5 | ≈7.5 |\n| 32 | ≈61.5 | ≈56.8 | ≈2.6 | ≈7.5 |\n| 64 | ≈61.5 | ≈56.8 | ≈2.5 | ≈7.5 |\n| 100 | ≈61.6 | ≈56.8 | ≈2.5 | ≈7.5 |\n| 200 | ≈61.5 | ≈56.8 | ≈2.5 | ≈7.5 |\n| 400 | ≈61.5 | ≈56.8 | ≈2.5 | ≈7.5 |\n| 800 | ≈61.5 | ≈56.8 | ≈2.5 | ≈7.5 |\n| 1600 | ≈61.5 | ≈56.8 | ≈2.5 | ≈7.5 |"
+          },
+          {
+            "id": "table2_imagenetc_accuracy",
+            "caption": "Comparisons with SOTA methods on ImageNet-C (severity level 5) with ViT regarding Accuracy (%). BP is short for backward propagation and the bold number indicates the best result.",
+            "markdown": "| Method | BP | Gauss. | Shot | Impul. | Defoc. | Glass | Motion | Zoom | Snow | Frost | Fog | Brit. | Contr. | Elas. | Pix. | JPEG | Avg Acc. | Avg ECE |\n|--------|-----|--------|------|--------|--------|-------|--------|------|------|-------|-----|-------|--------|-------|------|------|----------|---------|\n| NoAdapt | ✗ | 56.8 | 56.8 | 57.5 | 46.9 | 35.6 | 53.1 | 44.8 | 62.2 | 62.5 | 65.7 | 77.7 | 32.6 | 46.0 | 67.0 | 67.6 | 55.5 | 10.5 |\n| LAME | ✗ | 56.5 | 56.5 | 57.2 | 46.4 | 34.7 | 52.7 | 44.2 | 58.4 | 61.5 | 63.1 | 77.4 | 24.7 | 44.6 | 66.6 | 67.2 | 54.1 | 11.0 |\n| T3A | ✗ | 56.4 | 56.9 | 57.3 | 47.9 | 37.8 | 54.3 | 46.9 | 63.6 | 60.8 | 68.5 | 78.1 | 38.3 | 50.0 | 67.6 | 69.1 | 56.9 | 26.8 |\n| TENT | ✓ | 60.3 | 61.6 | 61.8 | 59.2 | 56.5 | 63.5 | 59.2 | 54.3 | 64.5 | 2.3 | 79.1 | 67.4 | 61.5 | 72.5 | 70.6 | 59.6 | 18.5 |\n| CoTTA | ✓ | 63.6 | 63.8 | 64.1 | 55.5 | 51.1 | 63.6 | 55.5 | 70.0 | 69.4 | 71.5 | 78.5 | 9.7 | 64.5 | 73.4 | 71.2 | 61.7 | 6.5 |\n| SAR | ✓ | 59.2 | 60.5 | 60.7 | 57.5 | 55.6 | 61.8 | 57.6 | 65.9 | 63.5 | 69.1 | 78.7 | 45.7 | 62.4 | 71.9 | 70.3 | 62.7 | 7.0 |\n| FOA (ours) | ✗ | 61.5 | 63.2 | 63.3 | 59.3 | 56.7 | 61.4 | 57.7 | 69.4 | 69.6 | 73.4 | 81.1 | 67.7 | 62.7 | 73.9 | 73.0 | 66.3 | 3.2 |"
+          },
+          {
+            "id": "table5_ablation_components",
+            "caption": "Ablations of components in our FOA. Entropy and Activation (Act.) Discrepancy are the left/right item in Fitness Function (Eqn. 5) used for CMA-based prompt adaptation. Act. Shifting is the method proposed in Section 3.2. We report the average results over 15 corruptions on ImageNet-C (level 5) with ViT-Base.",
+            "markdown": "| Entropy | Act. Discrepancy | Act. Shifting | Acc. (%, ↑) | ECE (%, ↓) |\n|---------|-----------------|---------------|-------------|------------|\n| — | — | — | 55.5 | 10.5 |\n| ✓ | — | — | 44.9 | 36.8 |\n| — | ✓ | — | 63.4 | 9.4 |\n| — | — | ✓ | 59.1 | 12.7 |\n| ✓ | ✓ | — | 63.8 | 9.9 |\n| — | ✓ | ✓ | 65.4 | 3.3 |\n| ✓ | ✓ | ✓ | **66.3** | **3.2** |"
+          },
+          {
+            "id": "table9_design_choices",
+            "caption": "Empirical studies of design choices w.r.t. learnable parameters, optimizer and loss function. We report the average results over 15 corruptions on ImageNet-C (level 5) with ViT-Base.",
+            "markdown": "| Row | Learnable Params | Optimizer | Loss | Acc. (%, ↑) | ECE (%, ↓) |\n|-----|-----------------|-----------|------|-------------|------------|\n| NoAdapt | — | — | — | 55.5 | 10.5 |\n| TENT | norm layers | SGD | entropy | 59.6 | 18.5 |\n| exp1 | prompts | SGD | entropy | 50.7 | 18.4 |\n| exp2 | norm layers | SGD | Eqn. (5) | 70.5 | 7.9 |\n| exp3 | prompts | SGD | Eqn. (5) | 64.6 | 3.7 |\n| exp4 | norm layers | CMA | Eqn. (5) | 0.1 | 5.8 |\n| exp5 | norm layers | CMA | entropy | 0.1 | 99.0 |\n| exp6 | prompts | CMA | entropy | 44.9 | 36.8 |\n| FOA (ours) | prompts | CMA | Eqn. (5) | 65.4 | 3.3 |"
+          },
+          {
+            "id": "table13_lambda_sensitivity",
+            "caption": "Sensitivity analyses regarding the trade-off parameter λ (see Eqn. (5)) in our FOA. We report results on ImageNet-C (Gaussian noise, severity level 5) using ViT-Base with batch size 64.",
+            "markdown": "| λ | 0.1 | 0.2 | 0.3 | 0.4 | 0.5 | 0.6 | 0.7 | 0.8 | 0.9 | 1.0 |\n|---|-----|-----|-----|-----|-----|-----|-----|-----|-----|-----|\n| Acc. (%, ↑) | 61.1 | 61.8 | 61.7 | 61.5 | 61.3 | 61.4 | 61.5 | 61.3 | 61.2 | 61.2 |\n| ECE (%, ↓) | 5.9 | 3.2 | 2.6 | 2.5 | 2.6 | 2.9 | 3.3 | 3.8 | 4.0 | 4.4 |"
+          }
+        ],
+        "data": []
+      },
+      "verified_by": [
+        {
+          "id": "E05",
+          "title": "Ablation of FOA components (entropy, activation discrepancy, activation shifting)",
+          "run": "",
+          "setup": "Model: ViT-Base (32-bit full precision)\nHardware: GPU\nDataset: ImageNet-C, severity level 5, all 15 corruption types\nSystem: Default FOA hyperparameters; ablate three components independently and in combination",
+          "metrics": "Average classification accuracy (%, ↑) and average ECE (%, ↓) over 15 corruption types"
+        },
+        {
+          "id": "E06",
+          "title": "Design choice ablation — learnable params × optimizer × loss function",
+          "run": "",
+          "setup": "Model: ViT-Base (32-bit full precision)\nHardware: GPU\nDataset: ImageNet-C, severity level 5, all 15 corruption types\nSystem: All combinations of {norm layers, prompts} × {SGD, CMA} × {entropy, Eq. 5 fitness}",
+          "metrics": "Average classification accuracy (%, ↑) and average ECE (%, ↓) over 15 corruption types"
+        }
+      ],
+      "artifact": [
+        {
+          "name": "test-time-model-adaptation implementation",
+          "pointer": "src/execution/ (4 files): activation_shift.py, fitness.py, foa.py, prompt_vit.py",
+          "what": "transcribed source code pointer index (not an external run-store pointer)"
+        }
+      ],
+      "built_on": [
+        {
+          "rw_id": "RW02",
+          "name": "Hansen, 2016 (CMA-ES)",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW05",
+          "name": "Jia et al., 2022 (Visual Prompt Tuning)",
+          "relation_raw": "imports"
+        }
+      ],
+      "rejected_here": [
+        {
+          "rw_id": "RW06",
+          "name": "Hendrycks & Dietterich, 2019 (ImageNet-C)",
+          "relation_raw": "bounds"
+        }
+      ],
+      "concepts": [
+        "Fitness Function",
+        "Expected Calibration Error (ECE)"
+      ],
+      "recipe_refs": []
+    },
+    {
+      "id": "N10",
+      "type": "decision",
+      "parent": "N09",
+      "title": "Add back-to-source activation shifting for further boost",
+      "body": "Directly shift final-layer CLS features toward source domain center using online EMA direction — Eqs. 7-9\n\nAlternatives considered: No activation shifting (63.8% accuracy); Shift all layer features (computationally expensive); BN statistics calibration (not applicable to ViT without BN)",
+      "thinking": "Since improving the fitness function alone had plateaued, the researchers add a second, independent correction mechanism on top of prompt learning: directly nudging the model's final-layer CLS activations at inference time toward the source domain's typical activation center, tracked with an online exponential moving average (a running estimate updated gradually as new test batches arrive) so it remains stable even for small batches. They considered shifting activations at every layer (too computationally expensive) and calibrating batch-normalization statistics (not applicable, since the ViT architecture used here has no batch normalization), settling on this lightweight, gradient-free correction applied only at the final layer, right before the classification head.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [
+        "Activation shifting alone: 59.1% accuracy (Table 5); combined with full fitness: 66.3% (best); gradient-free and computationally trivial"
+      ],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [],
+      "built_on": [],
+      "rejected_here": [],
+      "concepts": [
+        "Back-to-Source Activation Shifting"
+      ],
+      "recipe_refs": []
+    },
+    {
+      "id": "N11",
+      "type": "experiment",
+      "parent": "N10",
+      "title": "Full FOA: CMA prompts + combined fitness + activation shifting",
+      "body": "66.3% accuracy, 3.2% ECE on ImageNet-C — outperforms gradient-based TENT (59.6%) and SAR (62.7%)",
+      "thinking": "Combining everything, CMA-ES-optimized prompts, the entropy-plus-discrepancy fitness function, and back-to-source activation shifting, produces the paper's full method, Forward-Optimization Adaptation (FOA). On ImageNet-C (a benchmark of corrupted ImageNet images used to test robustness under distribution shift), FOA reaches 66.3% accuracy and 3.2% calibration error, beating not only the earlier forward-only variants but also gradient-based methods that do use backpropagation: TENT (59.6%) and SAR (62.7%). This is the paper's central result: forward-only adaptation can not just match but exceed backprop-based TTA, achieved by combining a low-dimensional learned prompt with a lightweight activation correction.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [
+        "§4.1"
+      ],
+      "why": [
+        {
+          "id": "C01",
+          "title": "FOA outperforms gradient-based TENT on full-precision ViT without backpropagation",
+          "statement": "FOA achieves higher average accuracy and lower ECE than TENT on ImageNet-C (severity 5) using full-precision 32-bit ViT-Base, without performing any backpropagation or modifying model weights.",
+          "status": "supported",
+          "conditions": "",
+          "falsification": "If FOA average accuracy on ImageNet-C (severity 5) with 32-bit ViT-Base is ≤ TENT's 59.6%, or FOA average ECE is ≥ TENT's 18.5%, the claim is falsified.",
+          "dependencies": [],
+          "provenance": null
+        },
+        {
+          "id": "C05",
+          "title": "Activation discrepancy fitness enables stable CMA learning in online unsupervised TTA",
+          "statement": "The proposed fitness function combining prediction entropy with activation distribution discrepancy (Eq. 5) provides consistent learning signals for CMA, improving accuracy from 55.5% (NoAdapt) to 63.4% using only the activation discrepancy term, and to 66.3% using the full fitness function with activation shifting.",
+          "status": "supported",
+          "conditions": "",
+          "falsification": "If activation discrepancy fitness improves over NoAdapt by &lt; 5% on ImageNet-C average accuracy, or combined fitness + shifting does not achieve best accuracy among all FOA variants.",
+          "dependencies": [
+            "C04"
+          ],
+          "provenance": null
+        }
+      ],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [
+          {
+            "id": "fig2a_population_size",
+            "caption": "Effects of Population Size — Parameter sensitivity analyses of our FOA. Experiments are conducted on ImageNet-C (Gaussian Noise, level 5) with ViT-Base.",
+            "markdown": "| K | FOA Acc. (%) | NoAdapt Acc. (%) | FOA ECE (%) | NoAdapt ECE (%) |\n|---|-------------|-----------------|-------------|-----------------|\n| 2 | ≈57.9 | ≈56.8 | ≈ (lower than TENT) | ≈7.5 |\n| 6 | ≈60.8 | ≈56.8 | — | ≈7.5 |\n| 9 | ≈61.5 | ≈56.8 | — | ≈7.5 |\n| 12 | ≈62.0 | ≈56.8 | — | ≈7.5 |\n| 15 | ≈62.3 | ≈56.8 | — | ≈7.5 |\n| 18 | ≈62.2 | ≈56.8 | — | ≈7.5 |\n| 21 | ≈62.2 | ≈56.8 | — | ≈7.5 |\n| 24 | ≈62.2 | ≈56.8 | — | ≈7.5 |\n| 27 | ≈62.3 | ≈56.8 | — | ≈7.5 |\n| 28 | 61.5 | 56.8 | — | 7.5 |"
+          },
+          {
+            "id": "table2_imagenetc_accuracy",
+            "caption": "Comparisons with SOTA methods on ImageNet-C (severity level 5) with ViT regarding Accuracy (%). BP is short for backward propagation and the bold number indicates the best result.",
+            "markdown": "| Method | BP | Gauss. | Shot | Impul. | Defoc. | Glass | Motion | Zoom | Snow | Frost | Fog | Brit. | Contr. | Elas. | Pix. | JPEG | Avg Acc. | Avg ECE |\n|--------|-----|--------|------|--------|--------|-------|--------|------|------|-------|-----|-------|--------|-------|------|------|----------|---------|\n| NoAdapt | ✗ | 56.8 | 56.8 | 57.5 | 46.9 | 35.6 | 53.1 | 44.8 | 62.2 | 62.5 | 65.7 | 77.7 | 32.6 | 46.0 | 67.0 | 67.6 | 55.5 | 10.5 |\n| LAME | ✗ | 56.5 | 56.5 | 57.2 | 46.4 | 34.7 | 52.7 | 44.2 | 58.4 | 61.5 | 63.1 | 77.4 | 24.7 | 44.6 | 66.6 | 67.2 | 54.1 | 11.0 |\n| T3A | ✗ | 56.4 | 56.9 | 57.3 | 47.9 | 37.8 | 54.3 | 46.9 | 63.6 | 60.8 | 68.5 | 78.1 | 38.3 | 50.0 | 67.6 | 69.1 | 56.9 | 26.8 |\n| TENT | ✓ | 60.3 | 61.6 | 61.8 | 59.2 | 56.5 | 63.5 | 59.2 | 54.3 | 64.5 | 2.3 | 79.1 | 67.4 | 61.5 | 72.5 | 70.6 | 59.6 | 18.5 |\n| CoTTA | ✓ | 63.6 | 63.8 | 64.1 | 55.5 | 51.1 | 63.6 | 55.5 | 70.0 | 69.4 | 71.5 | 78.5 | 9.7 | 64.5 | 73.4 | 71.2 | 61.7 | 6.5 |\n| SAR | ✓ | 59.2 | 60.5 | 60.7 | 57.5 | 55.6 | 61.8 | 57.6 | 65.9 | 63.5 | 69.1 | 78.7 | 45.7 | 62.4 | 71.9 | 70.3 | 62.7 | 7.0 |\n| FOA (ours) | ✗ | 61.5 | 63.2 | 63.3 | 59.3 | 56.7 | 61.4 | 57.7 | 69.4 | 69.6 | 73.4 | 81.1 | 67.7 | 62.7 | 73.9 | 73.0 | 66.3 | 3.2 |"
+          },
+          {
+            "id": "table3_imagenet_rvs_accuracy",
+            "caption": "Comparisons with state-of-the-art methods on ImageNet-R/V2/Sketch with ViT-Base. BP is short for backward propagation and the bold number indicates the best result.",
+            "markdown": "| Method | BP | R Acc. | V2 Acc. | Sketch Acc. | Avg Acc. | R ECE | V2 ECE | Sketch ECE | Avg ECE |\n|--------|-----|--------|---------|-------------|----------|-------|---------|------------|---------|\n| NoAdapt | ✗ | 59.5 | 75.4 | 44.9 | 59.9 | 2.5 | 5.6 | 7.9 | 5.3 |\n| LAME | ✗ | 59.0 | 75.2 | 44.4 | 59.6 | 2.5 | 5.0 | 9.7 | 5.7 |\n| T3A | ✗ | 58.0 | 75.5 | 48.5 | 60.7 | 25.9 | 23.4 | 37.4 | 28.9 |\n| TENT | ✓ | 63.9 | 75.2 | 49.1 | 62.7 | 7.2 | 4.5 | 22.8 | 11.5 |\n| CoTTA | ✓ | 63.5 | 75.4 | 50.0 | 62.9 | 2.8 | 3.4 | 17.9 | 8.0 |\n| SAR | ✓ | 63.3 | 75.1 | 48.7 | 62.4 | 3.0 | 2.7 | 16.5 | 7.4 |\n| FOA (ours) | ✗ | 63.8 | 75.4 | 49.9 | 63.0 | 2.7 | 3.2 | 7.8 | 4.6 |"
+          },
+          {
+            "id": "table6_foai_intervals",
+            "caption": "Effectiveness of FOA with interval update strategy (different intervals I), termed FOA-I, for single sample adaptation. We report results on ImageNet-C (Gaussian, level 5) with ViT-Base.",
+            "markdown": "| Method | Acc. (%) | ECE (%) |\n|--------|----------|---------|\n| NoAdapt (BS=64) | 56.8 | 7.5 |\n| TENT (BS=64) | 60.3 | 13.7 |\n| FOA-I (I=4) | 62.1 | 3.3 |\n| FOA-I (I=8) | 62.2 | 2.6 |\n| FOA-I (I=16) | 62.1 | 2.8 |\n| FOA-I (I=32) | 61.9 | 2.7 |\n| FOA-I (I=64) | 61.5 | 2.5 |"
+          },
+          {
+            "id": "table8_computation",
+            "caption": "Comparisons w.r.t. computation complexity. FP/BP is short forward/backward propagation. #FP and #BP are numbers counted for processing a single sample. Accuracy (%) and ECE (%) are average results on ImageNet-C (level 5) with ViT-Base. The Wall-Clock Time (seconds) and Memory Usage (MB) are measured for processing 50,000 images of ImageNet-C on a single RTX 3090 GPU. K is the population size in CMA and it works well with all K ∈ [2, 28] and K ∈ N+, as shown in Figure 2(a).",
+            "markdown": "| Method | #FP | #BP | Avg Acc. (%) | Avg ECE (%) | Wall-Clock Time (s) | Memory (MB) |\n|--------|-----|-----|-------------|------------|---------------------|-------------|\n| NoAdapt | 1 | 0 | 55.5 | 10.5 | — | — |\n| T3A | 1 | 0 | 56.9 | 26.8 | — | — |\n| MEMO | 64 | 64 | 57.2 | 9.9 | 40,428 | 11,058 |\n| TENT | 1 | 1 | 59.6 | 18.5 | — | 5,165 |\n| SAR | [1,2] | [0,2] | 62.7 | 7.0 | — | 5,166 |\n| CoTTA | 3 or 35 | ≥1 | 61.7 | 6.5 | — | 16,836 |\n| Act. Shifting | 1 | 0 | 59.1 | 12.7 | — | — |\n| FOA (K=2) | 2 | 0 | 59.6 | 9.7 | — | — |\n| FOA (K=4) | 4 | 0 | 60.9 | 5.8 | — | — |\n| FOA (K=6) | 6 | 0 | 62.7 | 4.6 | — | — |\n| FOA (K=28) | 28 | 0 | 66.3 | 3.2 | — | 3,386 |"
+          },
+          {
+            "id": "table10_resnet_mamba",
+            "caption": "Effectiveness of FOA on ResNet and VisionMamba (Zhu et al., 2024). Results obtained on ImageNet-C (Gaussian noise, level 5). FOA† is modified from FOA by replacing CMA optimizer with SGD and updating the affine parameters of norm layers.",
+            "markdown": "| Method | Need BP? | ResNet-50 Acc. (%) | ResNet-50 ECE (%) | VisionMamba Acc. (%) | VisionMamba ECE (%) |\n|--------|----------|-------------------|-------------------|----------------------|---------------------|\n| NoAdapt | ✗ | 3.0 | 19.7 | 40.9 | 3.8 |\n| BN Adapt | ✗ | 16.0 | 1.3 | n/a | n/a |\n| TENT | ✓ | 29.4 | 11.4 | 49.2 | 12.1 |\n| SAR | ✓ | 30.7 | 3.4 | 49.0 | 11.4 |\n| FOA (ours) | ✗ | 22.6 | 1.7 | 49.6 | 4.3 |\n| FOA† | ✗* | 33.6 | 12.8 | 56.5 | 13.6 |"
+          },
+          {
+            "id": "table16_ece_fullprecision",
+            "caption": "Comparisons with state-of-the-art methods on ImageNet-C (severity level 5) with ViT-Base regarding ECE (%, ↓). BP is short for backward propagation and the bold number indicates the best result.",
+            "markdown": "| Method | BP | Gauss. | Shot | Impul. | Defoc. | Glass | Motion | Zoom | Snow | Frost | Fog | Brit. | Contr. | Elas. | Pix. | JPEG | Avg. ECE |\n|--------|-----|--------|------|--------|--------|-------|--------|------|------|-------|-----|-------|--------|-------|------|------|----------|\n| NoAdapt | ✗ | 7.5 | 4.6 | 6.6 | 6.5 | 6.2 | 2.6 | 5.0 | 4.7 | 19.7 | 49.2 | 8.6 | 19.3 | 6.0 | 5.0 | 6.2 | 10.5 |\n| LAME | ✗ | 6.5 | 3.6 | 5.6 | 5.1 | 9.4 | 2.2 | 6.2 | 5.6 | 18.1 | 46.3 | 7.7 | 29.0 | 10.6 | 3.9 | 5.0 | 11.0 |\n| T3A | ✗ | 29.6 | 30.0 | 29.6 | 31.1 | 42.0 | 32.1 | 37.1 | 25.7 | 26.2 | 14.7 | 16.6 | 6.1 | 35.0 | 24.4 | 22.5 | 26.8 |\n| TENT | ✓ | 13.7 | 13.0 | 12.9 | 14.7 | 15.9 | 12.7 | 15.3 | 24.9 | 12.1 | 93.5 | 6.0 | 10.7 | 14.4 | 8.7 | 9.3 | 18.5 |\n| CoTTA | ✓ | 4.2 | 2.9 | 4.4 | 7.2 | 12.8 | 7.1 | 11.6 | 4.1 | 0.9 | 5.1 | 3.2 | 15.9 | 8.1 | 5.1 | 5.4 | 6.5 |\n| SAR | ✓ | 7.9 | 7.4 | 7.3 | 9.0 | 9.5 | 7.7 | 9.7 | 6.1 | 6.0 | 9.2 | 2.3 | 7.5 | 7.0 | 4.3 | 4.4 | 7.0 |\n| FOA (ours) | ✗ | 2.5 | 2.4 | 2.5 | 3.4 | 3.3 | 3.0 | 4.0 | 3.2 | 3.3 | 4.8 | 3.0 | 3.4 | 3.2 | 3.0 | 2.8 | **3.2** |"
+          },
+          {
+            "id": "fig2b_num_prompts",
+            "caption": "Effects of #Prompts — Parameter sensitivity analyses of our FOA. Experiments are conducted on ImageNet-C (Gaussian Noise, level 5) with ViT-Base.",
+            "markdown": "| Np | FOA Acc. (%) | NoAdapt Acc. (%) | FOA ECE (%) | NoAdapt ECE (%) |\n|----|-------------|-----------------|-------------|-----------------|\n| 1 | ≈61.0 | ≈56.8 | ≈3.5 | ≈7.5 |\n| 2 | ≈61.2 | ≈56.8 | ≈3.2 | ≈7.5 |\n| 3 | ≈61.5 | ≈56.8 | ≈2.5 | ≈7.5 |\n| 4 | ≈61.2 | ≈56.8 | ≈2.8 | ≈7.5 |\n| 5 | ≈61.8 | ≈56.8 | ≈2.6 | ≈7.5 |\n| 6 | ≈61.5 | ≈56.8 | ≈2.7 | ≈7.5 |\n| 7 | ≈61.8 | ≈56.8 | ≈2.5 | ≈7.5 |\n| 8 | ≈61.3 | ≈56.8 | ≈2.9 | ≈7.5 |\n| 9 | ≈61.2 | ≈56.8 | ≈3.0 | ≈7.5 |\n| 10 | ≈61.0 | ≈56.8 | ≈3.2 | ≈7.5 |"
+          },
+          {
+            "id": "fig2c_num_id_samples",
+            "caption": "Effects of #ID Samples — Parameter sensitivity analyses of our FOA. Experiments are conducted on ImageNet-C (Gaussian Noise, level 5) with ViT-Base.",
+            "markdown": "| Q | FOA Acc. (%) | NoAdapt Acc. (%) | FOA ECE (%) | NoAdapt ECE (%) |\n|---|-------------|-----------------|-------------|-----------------|\n| 16 | ≈59.5 | ≈56.8 | ≈5.5 | ≈7.5 |\n| 32 | ≈61.5 | ≈56.8 | ≈2.6 | ≈7.5 |\n| 64 | ≈61.5 | ≈56.8 | ≈2.5 | ≈7.5 |\n| 100 | ≈61.6 | ≈56.8 | ≈2.5 | ≈7.5 |\n| 200 | ≈61.5 | ≈56.8 | ≈2.5 | ≈7.5 |\n| 400 | ≈61.5 | ≈56.8 | ≈2.5 | ≈7.5 |\n| 800 | ≈61.5 | ≈56.8 | ≈2.5 | ≈7.5 |\n| 1600 | ≈61.5 | ≈56.8 | ≈2.5 | ≈7.5 |"
+          },
+          {
+            "id": "table5_ablation_components",
+            "caption": "Ablations of components in our FOA. Entropy and Activation (Act.) Discrepancy are the left/right item in Fitness Function (Eqn. 5) used for CMA-based prompt adaptation. Act. Shifting is the method proposed in Section 3.2. We report the average results over 15 corruptions on ImageNet-C (level 5) with ViT-Base.",
+            "markdown": "| Entropy | Act. Discrepancy | Act. Shifting | Acc. (%, ↑) | ECE (%, ↓) |\n|---------|-----------------|---------------|-------------|------------|\n| — | — | — | 55.5 | 10.5 |\n| ✓ | — | — | 44.9 | 36.8 |\n| — | ✓ | — | 63.4 | 9.4 |\n| — | — | ✓ | 59.1 | 12.7 |\n| ✓ | ✓ | — | 63.8 | 9.9 |\n| — | ✓ | ✓ | 65.4 | 3.3 |\n| ✓ | ✓ | ✓ | **66.3** | **3.2** |"
+          },
+          {
+            "id": "table9_design_choices",
+            "caption": "Empirical studies of design choices w.r.t. learnable parameters, optimizer and loss function. We report the average results over 15 corruptions on ImageNet-C (level 5) with ViT-Base.",
+            "markdown": "| Row | Learnable Params | Optimizer | Loss | Acc. (%, ↑) | ECE (%, ↓) |\n|-----|-----------------|-----------|------|-------------|------------|\n| NoAdapt | — | — | — | 55.5 | 10.5 |\n| TENT | norm layers | SGD | entropy | 59.6 | 18.5 |\n| exp1 | prompts | SGD | entropy | 50.7 | 18.4 |\n| exp2 | norm layers | SGD | Eqn. (5) | 70.5 | 7.9 |\n| exp3 | prompts | SGD | Eqn. (5) | 64.6 | 3.7 |\n| exp4 | norm layers | CMA | Eqn. (5) | 0.1 | 5.8 |\n| exp5 | norm layers | CMA | entropy | 0.1 | 99.0 |\n| exp6 | prompts | CMA | entropy | 44.9 | 36.8 |\n| FOA (ours) | prompts | CMA | Eqn. (5) | 65.4 | 3.3 |"
+          },
+          {
+            "id": "table13_lambda_sensitivity",
+            "caption": "Sensitivity analyses regarding the trade-off parameter λ (see Eqn. (5)) in our FOA. We report results on ImageNet-C (Gaussian noise, severity level 5) using ViT-Base with batch size 64.",
+            "markdown": "| λ | 0.1 | 0.2 | 0.3 | 0.4 | 0.5 | 0.6 | 0.7 | 0.8 | 0.9 | 1.0 |\n|---|-----|-----|-----|-----|-----|-----|-----|-----|-----|-----|\n| Acc. (%, ↑) | 61.1 | 61.8 | 61.7 | 61.5 | 61.3 | 61.4 | 61.5 | 61.3 | 61.2 | 61.2 |\n| ECE (%, ↓) | 5.9 | 3.2 | 2.6 | 2.5 | 2.6 | 2.9 | 3.3 | 3.8 | 4.0 | 4.4 |"
+          }
+        ],
+        "data": []
+      },
+      "verified_by": [
+        {
+          "id": "E01",
+          "title": "Main comparison — full-precision ViT-Base on ImageNet-C",
+          "run": "",
+          "setup": "Model: ViT-Base (32-bit full precision), pretrained on ImageNet-1K via timm repository\nHardware: GPU (RTX 3090 or equivalent)\nDataset: ImageNet-C, severity level 5, all 15 corruption types (50,000 images per corruption type)\nSystem: Batch size 64; source ID statistics from ImageNet-1K validation set (Q=full validation set); Np=3 prompts; K=28; λ=0.4×BS/64; γ=1.0; α=0.1",
+          "metrics": "Classification accuracy (%, ↑) and ECE (%, ↓) per corruption type and average"
+        },
+        {
+          "id": "E02",
+          "title": "Extended benchmarks — ImageNet-R, ImageNet-V2, ImageNet-Sketch",
+          "run": "",
+          "setup": "Model: ViT-Base (32-bit full precision), same pretrained weights as E01\nHardware: GPU\nDataset: ImageNet-R (30,000 images, 200 classes), ImageNet-V2 Matched Frequency (10,000 images, 1000 classes), ImageNet-Sketch (50,899 images, 1000 classes)\nSystem: Same hyperparameters as E01; λ=0.2×BS/64 for ImageNet-R; λ=0.4×BS/64 for ImageNet-V2/Sketch",
+          "metrics": "Classification accuracy (%, ↑) and ECE (%, ↓) per benchmark"
+        },
+        {
+          "id": "E05",
+          "title": "Ablation of FOA components (entropy, activation discrepancy, activation shifting)",
+          "run": "",
+          "setup": "Model: ViT-Base (32-bit full precision)\nHardware: GPU\nDataset: ImageNet-C, severity level 5, all 15 corruption types\nSystem: Default FOA hyperparameters; ablate three components independently and in combination",
+          "metrics": "Average classification accuracy (%, ↑) and average ECE (%, ↓) over 15 corruption types"
+        },
+        {
+          "id": "E06",
+          "title": "Design choice ablation — learnable params × optimizer × loss function",
+          "run": "",
+          "setup": "Model: ViT-Base (32-bit full precision)\nHardware: GPU\nDataset: ImageNet-C, severity level 5, all 15 corruption types\nSystem: All combinations of {norm layers, prompts} × {SGD, CMA} × {entropy, Eq. 5 fitness}",
+          "metrics": "Average classification accuracy (%, ↑) and average ECE (%, ↓) over 15 corruption types"
+        }
+      ],
+      "artifact": [
+        {
+          "name": "test-time-model-adaptation implementation",
+          "pointer": "src/execution/ (4 files): activation_shift.py, fitness.py, foa.py, prompt_vit.py",
+          "what": "transcribed source code pointer index (not an external run-store pointer)"
+        }
+      ],
+      "built_on": [
+        {
+          "rw_id": "RW01",
+          "name": "Wang et al., 2021 (TENT)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW02",
+          "name": "Hansen, 2016 (CMA-ES)",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW03",
+          "name": "Niu et al., 2023 (SAR)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW04",
+          "name": "Dosovitskiy et al., 2021 (ViT)",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW05",
+          "name": "Jia et al., 2022 (Visual Prompt Tuning)",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW08",
+          "name": "Iwasawa & Matsuo, 2021 (T3A)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW09",
+          "name": "Boudiaf et al., 2022 (LAME)",
+          "relation_raw": "baseline"
+        }
+      ],
+      "rejected_here": [
+        {
+          "rw_id": "RW06",
+          "name": "Hendrycks & Dietterich, 2019 (ImageNet-C)",
+          "relation_raw": "bounds"
+        }
+      ],
+      "concepts": [
+        "Forward-Optimization Adaptation (FOA)",
+        "Fitness Function",
+        "Expected Calibration Error (ECE)"
+      ],
+      "recipe_refs": []
+    },
+    {
+      "id": "N12",
+      "type": "experiment",
+      "parent": "N11",
+      "title": "FOA on 8-bit quantized ViT",
+      "body": "63.5% accuracy, 3.8% ECE — surpasses TENT (32-bit, 59.6%) with 208 MB vs 5165 MB memory",
+      "thinking": "The final step returns to the paper's original motivation, edge deployment on quantized hardware, and tests FOA on an 8-bit quantized ViT, exactly the setting where backprop-based methods cannot run because quantized layers are non-differentiable. FOA still reaches 63.5% accuracy, actually higher than TENT running on the full-precision 32-bit model (59.6%), while using only 208 MB of memory versus TENT's 5,165 MB, since there is no gradient computation or backward graph to store. This closes the loop on the paper's argument: forward-only adaptation not only matches or beats gradient-based methods on full-precision models, it is the only one of the compared approaches that works at all on quantized, resource-constrained models, exactly where TTA is needed most.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [
+        "N11"
+      ],
+      "source_refs": [
+        "§4.2"
+      ],
+      "why": [
+        {
+          "id": "C02",
+          "title": "FOA on 8-bit quantized ViT outperforms TENT on full-precision 32-bit ViT",
+          "statement": "FOA applied to an 8-bit PTQ4ViT-quantized ViT-Base achieves higher accuracy (63.5%) on ImageNet-C than gradient-based TENT applied to full-precision 32-bit ViT-Base (59.6%), while using 208 MB vs. 5,165 MB memory.",
+          "status": "supported",
+          "conditions": "",
+          "falsification": "If FOA (8-bit) accuracy on ImageNet-C ≤ 59.6%, or memory usage is not substantially reduced relative to TENT (32-bit).",
+          "dependencies": [
+            "C01"
+          ],
+          "provenance": null
+        },
+        {
+          "id": "C03",
+          "title": "FOA achieves up to 24× run-time memory reduction vs. TENT",
+          "statement": "FOA with 8-bit ViT uses 208 MB at batch size 64 on ImageNet-C, compared to 5,165 MB for TENT with 32-bit ViT — a 24.8× reduction — because FOA requires no gradient buffers or backward computation graph.",
+          "status": "supported",
+          "conditions": "",
+          "falsification": "If FOA (8-bit, BS=64) memory usage is not substantially lower than TENT (32-bit, BS=64) at ≥ 10× ratio.",
+          "dependencies": [
+            "C02"
+          ],
+          "provenance": null
+        }
+      ],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [
+          {
+            "id": "table4_quantized_accuracy",
+            "caption": "Effectiveness of our FOA on Quantized ViT models. We report the corruption Accuracy (%) and average ECE (%, ↓) on ImageNet-C (severity level 5). The bold number indicates the best result.",
+            "markdown": "| Method | Gauss. | Shot | Impul. | Defoc. | Glass | Motion | Zoom | Snow | Frost | Fog | Brit. | Contr. | Elas. | Pix. | JPEG | Avg Acc. | Avg ECE |\n|--------|--------|------|--------|--------|-------|--------|------|------|-------|-----|-------|--------|-------|------|------|----------|---------|\n| NoAdapt | 55.8 | 55.8 | 56.5 | 46.7 | 34.7 | 52.1 | 42.5 | 60.8 | 61.4 | 66.7 | 76.9 | 24.6 | 44.7 | 65.8 | 66.7 | 54.1 | 10.8 |\n| T3A | 55.6 | 55.7 | 55.7 | 45.8 | 34.4 | 51.1 | 41.2 | 59.5 | 61.9 | 66.8 | 76.4 | 45.5 | 43.4 | 65.6 | 67.5 | 55.1 | 25.9 |\n| FOA (ours) | 60.7 | 61.4 | 61.3 | 57.2 | 51.5 | 59.4 | 51.3 | 68.0 | 67.3 | 72.4 | 80.3 | 63.2 | 57.0 | 72.0 | 69.8 | **63.5** | **3.8** |"
+          },
+          {
+            "id": "table17_ece_quantized",
+            "caption": "Effectiveness of our FOA on Quantized ViT-Base models. We report the corruption ECE (%, ↓) on ImageNet-C (severity level 5). The bold number indicates the best result.",
+            "markdown": "| Method | Gauss. | Shot | Impul. | Defoc. | Glass | Motion | Zoom | Snow | Frost | Fog | Brit. | Contr. | Elas. | Pix. | JPEG | Avg. |\n|--------|--------|------|--------|--------|-------|--------|------|------|-------|-----|-------|--------|-------|------|------|------|\n| NoAdapt | 8.3 | 5.7 | 7.5 | 7.9 | 4.9 | 3.0 | 4.4 | 5.5 | 20.7 | 50.0 | 10.4 | 14.1 | 5.2 | 6.2 | 8.3 | 10.8 |\n| T3A | 30.0 | 26.0 | 25.7 | 28.7 | 41.9 | 31.2 | 40.1 | 27.2 | 21.6 | 9.6 | 15.8 | 5.7 | 40.7 | 23.1 | 21.0 | 25.9 |\n| FOA (ours) | 2.8 | 3.4 | 2.9 | 3.5 | 3.5 | 3.1 | 4.3 | 3.6 | 3.9 | 5.6 | 3.9 | 5.0 | 3.6 | 3.9 | 3.1 | **3.8** |"
+          },
+          {
+            "id": "fig2a_population_size",
+            "caption": "Effects of Population Size — Parameter sensitivity analyses of our FOA. Experiments are conducted on ImageNet-C (Gaussian Noise, level 5) with ViT-Base.",
+            "markdown": "| K | FOA Acc. (%) | NoAdapt Acc. (%) | FOA ECE (%) | NoAdapt ECE (%) |\n|---|-------------|-----------------|-------------|-----------------|\n| 2 | ≈57.9 | ≈56.8 | ≈ (lower than TENT) | ≈7.5 |\n| 6 | ≈60.8 | ≈56.8 | — | ≈7.5 |\n| 9 | ≈61.5 | ≈56.8 | — | ≈7.5 |\n| 12 | ≈62.0 | ≈56.8 | — | ≈7.5 |\n| 15 | ≈62.3 | ≈56.8 | — | ≈7.5 |\n| 18 | ≈62.2 | ≈56.8 | — | ≈7.5 |\n| 21 | ≈62.2 | ≈56.8 | — | ≈7.5 |\n| 24 | ≈62.2 | ≈56.8 | — | ≈7.5 |\n| 27 | ≈62.3 | ≈56.8 | — | ≈7.5 |\n| 28 | 61.5 | 56.8 | — | 7.5 |"
+          },
+          {
+            "id": "table7_memory_usage",
+            "caption": "Comparison w.r.t. run-time memory (MB) usage. Results obtained via ViT-Base (32/8-bit) on ImageNet-C (Gaussian, level 5). FOA-I V1/V2 denote storing features/images for interval update under batch size (BS) 1. The memory for 8-bit ViT is an ideal estimation by 0.25× memory of 32-bit ViT per Liu et al. (2021b).",
+            "markdown": "| Method | BP | BS=1 | BS=4 | BS=8 | BS=16 | BS=32 | BS=64 |\n|--------|-----|------|------|------|-------|-------|-------|\n| NoAdapt | ✗ | — | — | — | — | — | — |\n| TENT | ✓ | 1,550 | 2,756 | — | — | — | 5,165 |\n| CoTTA | ✓ | 1,792 | 2,312 | 3,282 | 5,226 | 9,105 | 16,836 |\n| FOA (32-bit) | ✗ | — | — | — | — | — | 832 |\n| FOA (8-bit) | ✗ | — | — | — | — | — | 208 |"
+          },
+          {
+            "id": "table8_computation",
+            "caption": "Comparisons w.r.t. computation complexity. FP/BP is short forward/backward propagation. #FP and #BP are numbers counted for processing a single sample. Accuracy (%) and ECE (%) are average results on ImageNet-C (level 5) with ViT-Base. The Wall-Clock Time (seconds) and Memory Usage (MB) are measured for processing 50,000 images of ImageNet-C on a single RTX 3090 GPU. K is the population size in CMA and it works well with all K ∈ [2, 28] and K ∈ N+, as shown in Figure 2(a).",
+            "markdown": "| Method | #FP | #BP | Avg Acc. (%) | Avg ECE (%) | Wall-Clock Time (s) | Memory (MB) |\n|--------|-----|-----|-------------|------------|---------------------|-------------|\n| NoAdapt | 1 | 0 | 55.5 | 10.5 | — | — |\n| T3A | 1 | 0 | 56.9 | 26.8 | — | — |\n| MEMO | 64 | 64 | 57.2 | 9.9 | 40,428 | 11,058 |\n| TENT | 1 | 1 | 59.6 | 18.5 | — | 5,165 |\n| SAR | [1,2] | [0,2] | 62.7 | 7.0 | — | 5,166 |\n| CoTTA | 3 or 35 | ≥1 | 61.7 | 6.5 | — | 16,836 |\n| Act. Shifting | 1 | 0 | 59.1 | 12.7 | — | — |\n| FOA (K=2) | 2 | 0 | 59.6 | 9.7 | — | — |\n| FOA (K=4) | 4 | 0 | 60.9 | 5.8 | — | — |\n| FOA (K=6) | 6 | 0 | 62.7 | 4.6 | — | — |\n| FOA (K=28) | 28 | 0 | 66.3 | 3.2 | — | 3,386 |"
+          }
+        ],
+        "data": []
+      },
+      "verified_by": [
+        {
+          "id": "E03",
+          "title": "Quantized model evaluation on ImageNet-C",
+          "run": "",
+          "setup": "Model: ViT-Base quantized to 8-bit and 6-bit using PTQ4ViT with 32 randomly selected ImageNet-1K training samples\nHardware: GPU\nDataset: ImageNet-C, severity level 5, all 15 corruption types\nSystem: Same FOA hyperparameters as E01; T3A as the only applicable gradient-free baseline",
+          "metrics": "Classification accuracy (%, ↑) and ECE (%, ↓) per corruption type and average"
+        },
+        {
+          "id": "E04",
+          "title": "Run-time memory usage analysis",
+          "run": "",
+          "setup": "Model: ViT-Base (32-bit and 8-bit)\nHardware: Single RTX 3090 GPU\nDataset: ImageNet-C Gaussian noise, severity level 5 (50,000 images)\nSystem: Various batch sizes (BS=1, 4, 8, 16, 32, 64)",
+          "metrics": "Run-time memory usage in MB"
+        }
+      ],
+      "artifact": [
+        {
+          "name": "test-time-model-adaptation implementation",
+          "pointer": "src/execution/ (4 files): activation_shift.py, fitness.py, foa.py, prompt_vit.py",
+          "what": "transcribed source code pointer index (not an external run-store pointer)"
+        }
+      ],
+      "built_on": [
+        {
+          "rw_id": "RW02",
+          "name": "Hansen, 2016 (CMA-ES)",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW04",
+          "name": "Dosovitskiy et al., 2021 (ViT)",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW08",
+          "name": "Iwasawa & Matsuo, 2021 (T3A)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW10",
+          "name": "Yuan et al., 2022 (PTQ4ViT)",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW12",
+          "name": "Liu et al., 2021b (PTQ for ViT)",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW07",
+          "name": "Wang et al., 2022 (CoTTA)",
+          "relation_raw": "baseline"
+        }
+      ],
+      "rejected_here": [
+        {
+          "rw_id": "RW06",
+          "name": "Hendrycks & Dietterich, 2019 (ImageNet-C)",
+          "relation_raw": "bounds"
+        }
+      ],
+      "concepts": [
+        "Forward-Optimization Adaptation (FOA)",
+        "Expected Calibration Error (ECE)"
+      ],
+      "recipe_refs": []
+    }
+  ],
+  "context": {
+    "title": "Problem",
+    "summary": "- **Insight**: Inserting a small low-dimensional input prompt (Np=3 embeddings) reduces the CMA optimization dimension to tractable levels, while a fitness function combining prediction entropy with CLS activation…",
+    "sections": [
+      {
+        "role": "setting",
+        "heading": "Setting",
+        "present": false,
+        "entries": []
+      },
+      {
+        "role": "observations",
+        "heading": "Observations",
+        "present": true,
+        "entries": [
+          {
+            "ent_id": "O1",
+            "inferred_id": false,
+            "ent_title": "Gradient-based TTA requires backpropagation per test sample",
+            "text": "- **Statement**: State-of-the-art TTA methods (TENT, SAR, CoTTA, MEMO) perform one or more backward passes per test sample, consuming up to 16,836 MB of GPU memory at batch size 64.\n- **Evidence**: Table 1 (TENT: 5,165 MB; CoTTA: 16,836 MB at BS=64); Table 8 (#BP ≥ 1 per sample for all gradient-based methods)\n- **Implication**: Gradient-based TTA is incompatible with memory-limited edge devices and quantized models.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "State-of-the-art TTA methods (TENT, SAR, CoTTA, MEMO) perform one or more backward passes per test sample, consuming up to 16,836 MB of GPU memory at batch size 64."
+              },
+              {
+                "label": "Evidence",
+                "value": "Table 1 (TENT: 5,165 MB; CoTTA: 16,836 MB at BS=64); Table 8 (#BP ≥ 1 per sample for all gradient-based methods)"
+              },
+              {
+                "label": "Implication",
+                "value": "Gradient-based TTA is incompatible with memory-limited edge devices and quantized models."
+              }
+            ],
+            "refs": []
+          },
+          {
+            "ent_id": "O2",
+            "inferred_id": false,
+            "ent_title": "Quantized models cannot propagate gradients",
+            "text": "- **Statement**: Quantization (e.g., 32-bit → 8-bit or 6-bit) introduces discrete quantizers that are non-differentiable, causing vanishing gradients when backpropagated through multiple layers.\n- **Evidence**: Paper §1 (citing Louizos et al., 2019); Table 4 shows only T3A and FOA can be applied to 8-bit/6-bit ViT.\n- **Implication**: Any TTA method requiring backpropagation cannot be applied to quantized models deployed in practice.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "Quantization (e.g., 32-bit → 8-bit or 6-bit) introduces discrete quantizers that are non-differentiable, causing vanishing gradients when backpropagated through multiple layers."
+              },
+              {
+                "label": "Evidence",
+                "value": "Paper §1 (citing Louizos et al., 2019); Table 4 shows only T3A and FOA can be applied to 8-bit/6-bit ViT."
+              },
+              {
+                "label": "Implication",
+                "value": "Any TTA method requiring backpropagation cannot be applied to quantized models deployed in practice."
+              }
+            ],
+            "refs": []
+          },
+          {
+            "ent_id": "O3",
+            "inferred_id": false,
+            "ent_title": "Hard-coded hardware accelerators have non-modifiable model parameters",
+            "text": "- **Statement**: Specialized computational chips (FPGAs, custom ASICs) often hard-code model parameters, making parameter updates physically impossible.\n- **Evidence**: Paper §1 (citing Dass et al., 2023; You et al., 2023)\n- **Implication**: Weight-modifying TTA methods are structurally inapplicable on these platforms.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "Specialized computational chips (FPGAs, custom ASICs) often hard-code model parameters, making parameter updates physically impossible."
+              },
+              {
+                "label": "Evidence",
+                "value": "Paper §1 (citing Dass et al., 2023; You et al., 2023)"
+              },
+              {
+                "label": "Implication",
+                "value": "Weight-modifying TTA methods are structurally inapplicable on these platforms."
+              }
+            ],
+            "refs": []
+          },
+          {
+            "ent_id": "O4",
+            "inferred_id": false,
+            "ent_title": "Existing gradient-free TTA has limited learning capacity",
+            "text": "- **Statement**: Prior gradient-free methods (LAME: 54.1%, T3A: 56.9%) underperform gradient-based methods (SAR: 62.7%) on ImageNet-C (severity 5) because they do not exploit model feedback for optimization.\n- **Evidence**: Table 2; LAME performs worse than NoAdapt (55.5%) on average accuracy.\n- **Implication**: Simply avoiding backpropagation at the cost of performance is not an acceptable solution.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "Prior gradient-free methods (LAME: 54.1%, T3A: 56.9%) underperform gradient-based methods (SAR: 62.7%) on ImageNet-C (severity 5) because they do not exploit model feedback for optimization."
+              },
+              {
+                "label": "Evidence",
+                "value": "Table 2; LAME performs worse than NoAdapt (55.5%) on average accuracy."
+              },
+              {
+                "label": "Implication",
+                "value": "Simply avoiding backpropagation at the cost of performance is not an acceptable solution."
+              }
+            ],
+            "refs": []
+          },
+          {
+            "ent_id": "O5",
+            "inferred_id": false,
+            "ent_title": "CMA-ES cannot directly optimize high-dimensional deep model parameters",
+            "text": "- **Statement**: Directly applying CMA-ES to optimize normalization layer parameters (ultra-high-dimensional) causes catastrophic failure (0.1% accuracy), as shown in Table 9 (exp4, exp5).\n- **Evidence**: Table 9 (norm layers + CMA + Eqn.5 → 0.1%; norm layers + CMA + entropy → 0.1%)\n- **Implication**: CMA-ES requires a low-dimensional optimization target to be tractable for TTA.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "Directly applying CMA-ES to optimize normalization layer parameters (ultra-high-dimensional) causes catastrophic failure (0.1% accuracy), as shown in Table 9 (exp4, exp5)."
+              },
+              {
+                "label": "Evidence",
+                "value": "Table 9 (norm layers + CMA + Eqn.5 → 0.1%; norm layers + CMA + entropy → 0.1%)"
+              },
+              {
+                "label": "Implication",
+                "value": "CMA-ES requires a low-dimensional optimization target to be tractable for TTA."
+              }
+            ],
+            "refs": []
+          }
+        ]
+      },
+      {
+        "role": "gaps",
+        "heading": "Gaps",
+        "present": true,
+        "entries": [
+          {
+            "ent_id": "G1",
+            "inferred_id": false,
+            "ent_title": "No TTA method works on quantized or hard-coded edge models",
+            "text": "- **Statement**: All prior high-performing TTA methods require gradient computation and weight modification, making them fundamentally inapplicable to quantized models and hardware-locked deployments.\n- **Caused by**: O2, O3\n- **Existing attempts**: BN adaptation (Schneider et al., 2020), T3A (Iwasawa & Matsuo, 2021), LAME (Boudiaf et al., 2022)\n- **Why they fail**: BN adaptation only works on architectures with batch normalization (not ViT); T3A and LAME have limited learning capacity (G2) without model feedback.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "All prior high-performing TTA methods require gradient computation and weight modification, making them fundamentally inapplicable to quantized models and hardware-locked deployments."
+              },
+              {
+                "label": "Caused By",
+                "value": "O2, O3"
+              },
+              {
+                "label": "Existing Attempts",
+                "value": "BN adaptation (Schneider et al., 2020), T3A (Iwasawa & Matsuo, 2021), LAME (Boudiaf et al., 2022)"
+              },
+              {
+                "label": "Why They Fail",
+                "value": "BN adaptation only works on architectures with batch normalization (not ViT); T3A and LAME have limited learning capacity (G2) without model feedback."
+              }
+            ],
+            "refs": [
+              {
+                "raw": "O2",
+                "kind": "observation",
+                "target": null
+              },
+              {
+                "raw": "O3",
+                "kind": "observation",
+                "target": null
+              },
+              {
+                "raw": "G2",
+                "kind": "gap",
+                "target": null
+              }
+            ]
+          },
+          {
+            "ent_id": "G2",
+            "inferred_id": false,
+            "ent_title": "Gradient-free TTA lacks explicit model feedback for optimization",
+            "text": "- **Statement**: Prior gradient-free methods do not update learnable parameters using the model's response to test inputs, capping their OOD generalization performance.\n- **Caused by**: O4\n- **Existing attempts**: T3A adjusts class prototypes; LAME corrects output logits; BN adaptation updates batch normalization statistics.\n- **Why they fail**: None of these explicitly optimize learnable parameters in response to per-batch model predictions.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "Prior gradient-free methods do not update learnable parameters using the model's response to test inputs, capping their OOD generalization performance."
+              },
+              {
+                "label": "Caused By",
+                "value": "O4"
+              },
+              {
+                "label": "Existing Attempts",
+                "value": "T3A adjusts class prototypes; LAME corrects output logits; BN adaptation updates batch normalization statistics."
+              },
+              {
+                "label": "Why They Fail",
+                "value": "None of these explicitly optimize learnable parameters in response to per-batch model predictions."
+              }
+            ],
+            "refs": [
+              {
+                "raw": "O4",
+                "kind": "observation",
+                "target": null
+              }
+            ]
+          },
+          {
+            "ent_id": "G3",
+            "inferred_id": false,
+            "ent_title": "No suitable unsupervised fitness function exists for CMA in online TTA",
+            "text": "- **Statement**: Standard fitness signals for CMA (supervised labels) are unavailable in TTA, and entropy alone leads to degenerate solutions (Table 9, exp6: 44.9% accuracy).\n- **Caused by**: O5\n- **Existing attempts**: Prediction entropy minimization (Wang et al., 2021)\n- **Why they fail**: Entropy is noisy under severe distribution shift; optimizing entropy alone collapses CMA to trivial solutions.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "Standard fitness signals for CMA (supervised labels) are unavailable in TTA, and entropy alone leads to degenerate solutions (Table 9, exp6: 44.9% accuracy)."
+              },
+              {
+                "label": "Caused By",
+                "value": "O5"
+              },
+              {
+                "label": "Existing Attempts",
+                "value": "Prediction entropy minimization (Wang et al., 2021)"
+              },
+              {
+                "label": "Why They Fail",
+                "value": "Entropy is noisy under severe distribution shift; optimizing entropy alone collapses CMA to trivial solutions."
+              }
+            ],
+            "refs": [
+              {
+                "raw": "O5",
+                "kind": "observation",
+                "target": null
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "role": "insight",
+        "heading": "Key Insight",
+        "present": true,
+        "entries": [
+          {
+            "ent_id": null,
+            "inferred_id": true,
+            "ent_title": "Insight",
+            "text": "- **Insight**: Inserting a small low-dimensional input prompt (Np=3 embeddings) reduces the CMA optimization dimension to tractable levels, while a fitness function combining prediction entropy with CLS activation distribution discrepancy provides stable, reliable learning signals without labels.\n- **Derived from**: O1, O2, O4, O5\n- **Enables**: A fully forward-only, weight-frozen TTA method that (a) works on any model including quantized/hard-coded models, (b) achieves better accuracy than gradient-based TENT, and (c) uses ~6× less memory than TENT.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Insight",
+                "value": "Inserting a small low-dimensional input prompt (Np=3 embeddings) reduces the CMA optimization dimension to tractable levels, while a fitness function combining prediction entropy with CLS activation distribution discrepancy provides stable, reliable learning signals without labels."
+              },
+              {
+                "label": "Derived From",
+                "value": "O1, O2, O4, O5"
+              },
+              {
+                "label": "Enables",
+                "value": "A fully forward-only, weight-frozen TTA method that (a) works on any model including quantized/hard-coded models, (b) achieves better accuracy than gradient-based TENT, and (c) uses ~6× less memory than TENT."
+              }
+            ],
+            "refs": [
+              {
+                "raw": "O1",
+                "kind": "observation",
+                "target": null
+              },
+              {
+                "raw": "O2",
+                "kind": "observation",
+                "target": null
+              },
+              {
+                "raw": "O4",
+                "kind": "observation",
+                "target": null
+              },
+              {
+                "raw": "O5",
+                "kind": "observation",
+                "target": null
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "role": "assumptions",
+        "heading": "Assumptions",
+        "present": true,
+        "entries": [
+          {
+            "ent_id": "A1",
+            "inferred_id": false,
+            "ent_title": "",
+            "text": "A small set of unlabeled source in-distribution samples (≥32 for ImageNet) is available for computing source statistics {μ^S_i, σ^S_i}.",
+            "unstructured": true,
+            "fields": [],
+            "refs": [
+              {
+                "raw": "A1",
+                "kind": "assumption",
+                "target": null
+              }
+            ]
+          },
+          {
+            "ent_id": "A2",
+            "inferred_id": false,
+            "ent_title": "",
+            "text": "Test data arrives in mini-batches (batch size ≥ 1; for single-sample, the FOA-I interval strategy is used).",
+            "unstructured": true,
+            "fields": [],
+            "refs": [
+              {
+                "raw": "A2",
+                "kind": "assumption",
+                "target": null
+              }
+            ]
+          },
+          {
+            "ent_id": "A3",
+            "inferred_id": false,
+            "ent_title": "",
+            "text": "The source model architecture supports input prompt concatenation (naturally satisfied for transformer-based models; requires adaptation for CNNs).",
+            "unstructured": true,
+            "fields": [],
+            "refs": [
+              {
+                "raw": "A3",
+                "kind": "assumption",
+                "target": null
+              }
+            ]
+          },
+          {
+            "ent_id": "A4",
+            "inferred_id": false,
+            "ent_title": "",
+            "text": "The CLS token activations at the final layer are representative of the overall distribution shift.",
+            "unstructured": true,
+            "fields": [],
+            "refs": [
+              {
+                "raw": "A4",
+                "kind": "assumption",
+                "target": null
+              }
+            ]
+          },
+          {
+            "ent_id": "A5",
+            "inferred_id": false,
+            "ent_title": "",
+            "text": "8-bit quantized models consume 0.25× the memory of 32-bit models (following Liu et al., 2021b).",
+            "unstructured": true,
+            "fields": [],
+            "refs": [
+              {
+                "raw": "A5",
+                "kind": "assumption",
+                "target": null
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "glossary": {
+    "title": "Concepts",
+    "groups": [],
+    "terms": [
+      {
+        "term_id": "G01",
+        "name": "Forward-Optimization Adaptation (FOA)",
+        "aliases": [
+          "FOA"
+        ],
+        "group": "",
+        "definition": "A test-time adaptation paradigm that adapts a model to OOD test data using only forward passes, combining CMA-ES-based prompt learning with back-to-source activation shifting. No backpropagation, no weight modification.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "FOA"
+          },
+          {
+            "label": "Boundary Conditions",
+            "value": "Applicable to any model architecture that supports input prompt insertion; full benefit requires batch size ≥ 2 (for statistics); single-sample variant FOA-I uses interval buffering."
+          }
+        ],
+        "refs": [],
+        "related": [
+          "G02",
+          "G03",
+          "G05",
+          "G04"
+        ]
+      },
+      {
+        "term_id": "G02",
+        "name": "CMA Evolution Strategy (CMA-ES)",
+        "aliases": [
+          "CMA-ES"
+        ],
+        "group": "",
+        "definition": "A derivative-free black-box optimizer that maintains a multivariate normal distribution over the solution space. At each iteration t, it samples K candidate solutions (population), evaluates a fitness function for each, then updates the mean m(t), step size τ(t), and covariance matrix Σ(t) by maximizing the likelihood of successful candidates.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "CMA-ES; sampling distribution: p(t)_k ~ m(t) + τ(t) N(0, Σ(t))"
+          },
+          {
+            "label": "Boundary Conditions",
+            "value": "Becomes intractable for very high-dimensional problems (e.g., full model weights); effective for low-dimensional prompt optimization (Np×d ~ 3×768 = 2,304 dimensions for ViT-Base)."
+          }
+        ],
+        "refs": [],
+        "related": [
+          "G01",
+          "G03",
+          "G04",
+          "G08"
+        ]
+      },
+      {
+        "term_id": "G03",
+        "name": "Prompt Embedding",
+        "aliases": [],
+        "group": "",
+        "definition": "Np learnable continuous vectors of dimension d (same as patch embedding dimension) prepended to the test batch's patch embeddings as additional model input tokens. Only the prompt is optimized; all model parameters remain frozen.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "p ∈ R^{d × Np}; inserted before the first transformer layer as [p; X_embeddings]"
+          },
+          {
+            "label": "Boundary Conditions",
+            "value": "Np=3 by default (low sensitivity to Np ∈ {1,...,10}); initialized with uniform distribution; effective for transformer architectures (ViT, VisionMamba); less effective for CNNs due to locality of convolutions."
+          }
+        ],
+        "refs": [],
+        "related": [
+          "G01",
+          "G02",
+          "G07"
+        ]
+      },
+      {
+        "term_id": "G04",
+        "name": "Fitness Function",
+        "aliases": [],
+        "group": "",
+        "definition": "The unsupervised objective used to score CMA candidate prompts. Combines prediction entropy (first term) with activation distribution discrepancy (second term) across all N transformer layers' CLS tokens. Lower fitness is better. λ balances the two terms.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "L(f_Θ(p; X_t)) = Σ_{x∈X_t} Σ_{c∈C} −ŷ_c log ŷ_c + λ Σ_{i=1}^{N} [||μ_i(X_t) − μ^S_i||_2 + ||σ_i(X_t) − σ^S_i||_2]"
+          },
+          {
+            "label": "Boundary Conditions",
+            "value": "λ=0.4×BS/64 on ImageNet-C/V2/Sketch; λ=0.2×BS/64 on ImageNet-R; entropy alone leads to degenerate solutions; discrepancy alone already effective (63.4% accuracy); full combination is best (66.3%)."
+          }
+        ],
+        "refs": [],
+        "related": [
+          "G02",
+          "G06"
+        ]
+      },
+      {
+        "term_id": "G05",
+        "name": "Back-to-Source Activation Shifting",
+        "aliases": [],
+        "group": "",
+        "definition": "A forward-only mechanism that directly modifies the N-th (final) transformer layer's CLS token feature e^0_N by adding a direction vector d_t scaled by step size γ. The direction points from the estimated OOD test center toward the source domain center, updated online via exponential moving average.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "ê^0_N ← e^0_N + γ·d_t; d_t = μ^S_N − μ_N(t); μ_N(t) = α·μ_N(X_t) + (1−α)·μ_N(t−1)"
+          },
+          {
+            "label": "Boundary Conditions",
+            "value": "γ=1.0 (exact center alignment); α=0.1 (EMA factor); requires source statistics μ^S_N precomputed; initialization μ_N(0) = μ_N(X_1); works even at BS=1 with EMA, unlike batch-statistics-only variant."
+          }
+        ],
+        "refs": [],
+        "related": [
+          "G06",
+          "G07"
+        ]
+      },
+      {
+        "term_id": "G06",
+        "name": "Source In-Distribution Statistics",
+        "aliases": [],
+        "group": "",
+        "definition": "Mean and standard deviation of CLS token features {e^0_i}_{i=1}^{N} computed once before TTA over Q unlabeled source in-distribution samples. Used in both the fitness function (all layers) and activation shifting (final layer only).",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "{μ^S_i, σ^S_i}_{i=0}^{N}; computed over D_S = {x_q}_{q=1}^{Q}"
+          },
+          {
+            "label": "Boundary Conditions",
+            "value": "Q ≥ 32 samples sufficient for stable statistics on ImageNet; computed from ImageNet-1K validation set in experiments; computed without prompt insertion; one-time computation, not updated during TTA."
+          }
+        ],
+        "refs": [],
+        "related": [
+          "G04",
+          "G05"
+        ]
+      },
+      {
+        "term_id": "G07",
+        "name": "ViT CLS Token",
+        "aliases": [],
+        "group": "",
+        "definition": "A learnable [CLS] classification token prepended to patch embeddings. At each transformer layer i, e^0_i is updated alongside patch embeddings E_i = L_i(E_{i-1}). The final CLS token e^0_N is passed to the MLP head for classification.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "e^0_i ∈ R^d; classification token at layer i; output: ŷ = Head(e^0_N)"
+          },
+          {
+            "label": "Boundary Conditions",
+            "value": "Specific to transformer architectures; acts as global representation aggregated from all patches; FOA uses CLS token statistics at all N layers for fitness and at layer N for shifting."
+          }
+        ],
+        "refs": [],
+        "related": [
+          "G03",
+          "G05",
+          "G06"
+        ]
+      },
+      {
+        "term_id": "G08",
+        "name": "Population Size K",
+        "aliases": [],
+        "group": "",
+        "definition": "The number of candidate prompt solutions sampled per CMA iteration (per test batch). Each of the K prompts is evaluated separately via a forward pass, generating K fitness values used to update the CMA distribution.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "K = 4 + 3 × log(prompt_dim) ≈ 28 for default Np=3 ViT-Base configuration"
+          },
+          {
+            "label": "Boundary Conditions",
+            "value": "Default K=28; performance converges for K > 15; at K=2, FOA already outperforms NoAdapt and T3A; at K=6, FOA surpasses TENT; K is a performance-efficiency trade-off parameter."
+          }
+        ],
+        "refs": [],
+        "related": [
+          "G02",
+          "G01"
+        ]
+      },
+      {
+        "term_id": "G09",
+        "name": "Expected Calibration Error (ECE)",
+        "aliases": [
+          "ECE"
+        ],
+        "group": "",
+        "definition": "Measures the difference between predicted confidence probabilities and empirical accuracy across probability bins. Lower ECE indicates better calibrated probability estimates.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "ECE (%, ↓)"
+          },
+          {
+            "label": "Boundary Conditions",
+            "value": "Evaluated alongside classification accuracy on all benchmarks; FOA achieves notably lower ECE (3.2%) than gradient-based methods (TENT: 18.5%, SAR: 7.0%) due to the activation discrepancy regularization reducing error accumulation."
+          }
+        ],
+        "refs": [],
+        "related": [
+          "G04"
+        ]
+      },
+      {
+        "term_id": "G10",
+        "name": "Quantization (Post-Training Quantization)",
+        "aliases": [
+          "Post-Training Quantization"
+        ],
+        "group": "",
+        "definition": "Reducing the numerical precision of model weights and activations from 32-bit floating point to 8-bit or 6-bit integers. Non-differentiable discrete quantizers cause vanishing gradients, making backpropagation infeasible. Memory scales as 0.25× of 32-bit for 8-bit models.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "8-bit ViT, 6-bit ViT; produced via PTQ4ViT"
+          },
+          {
+            "label": "Boundary Conditions",
+            "value": "FOA is the only optimization-based TTA method compatible with quantized models; gradient-based methods (TENT, CoTTA, SAR) are inapplicable; T3A is applicable but shows substantially weaker performance."
+          }
+        ],
+        "refs": [],
+        "related": [
+          "G01",
+          "G05"
+        ]
+      }
+    ],
+    "lexicon": {
+      "forward-optimization adaptation": "G01",
+      "foa": "G01",
+      "cma evolution strategy": "G02",
+      "cma-es": "G02",
+      "prompt embedding": "G03",
+      "fitness function": "G04",
+      "back-to-source activation shifting": "G05",
+      "source in-distribution statistics": "G06",
+      "vit cls token": "G07",
+      "population size k": "G08",
+      "expected calibration error": "G09",
+      "ece": "G09",
+      "quantization": "G10",
+      "post-training quantization": "G10"
+    }
+  },
+  "dependencies": {
+    "title": "Related Work / Dependencies",
+    "preamble": "---\n# Related Work",
+    "legend": [],
+    "attribution": "",
+    "entries": [
+      {
+        "rw_id": "RW01",
+        "inferred_id": false,
+        "name": "Wang et al., 2021 (TENT)",
+        "relation_raw": "baseline",
+        "relation_norm": "baseline",
+        "delta": "What changed: FOA replaces SGD-based entropy minimization with CMA-ES-based prompt optimization + activation discrepancy fitness\nWhy: TENT requires backpropagation (infeasible on quantized/edge devices) and suffers high ECE (18.5% vs. FOA 3.2%) due to noisy entropy signal under severe corruption",
+        "adopted": "Entropy term in fitness function (Eq. 5, first term)",
+        "grounding": [
+          {
+            "raw": "arXiv:2006.10164",
+            "kind": "arxiv",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C01",
+          "C04"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW02",
+        "inferred_id": false,
+        "name": "Hansen, 2016 (CMA-ES)",
+        "relation_raw": "imports",
+        "relation_norm": "imports",
+        "delta": "What changed: FOA applies CMA-ES to unsupervised online TTA with low-dimensional prompt optimization and a custom fitness function\nWhy: CMA-ES is a robust derivative-free optimizer for non-convex black-box problems; conventional CMA uses supervised fitness on offline datasets",
+        "adopted": "CMA-ES algorithm for distribution parameter updates; population size formula K = 4 + 3 × log(dim); pycma library",
+        "grounding": [
+          {
+            "raw": "arXiv:1604.00772",
+            "kind": "arxiv",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C01",
+          "C02",
+          "C04",
+          "C05"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW03",
+        "inferred_id": false,
+        "name": "Niu et al., 2023 (SAR)",
+        "relation_raw": "baseline",
+        "relation_norm": "baseline",
+        "delta": "What changed: FOA eliminates backpropagation entirely; SAR uses sharpness-aware optimizer with selective sample filtering\nWhy: SAR still requires backward passes and cannot run on quantized models",
+        "adopted": "Comparison benchmark; non-i.i.d. evaluation protocol",
+        "grounding": [],
+        "claims": [
+          "C01",
+          "C07"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW04",
+        "inferred_id": false,
+        "name": "Dosovitskiy et al., 2021 (ViT)",
+        "relation_raw": "imports",
+        "relation_norm": "imports",
+        "delta": "What changed: FOA uses ViT as the backbone model architecture; adds prompt tokens before first transformer layer\nWhy: ViT's global attention mechanism allows location-invariant prompt tokens to influence all patch representations",
+        "adopted": "ViT-Base architecture; CLS token mechanism; patch embedding structure",
+        "grounding": [],
+        "claims": [
+          "C01",
+          "C02"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW05",
+        "inferred_id": false,
+        "name": "Jia et al., 2022 (Visual Prompt Tuning)",
+        "relation_raw": "imports",
+        "relation_norm": "imports",
+        "delta": "What changed: FOA adapts prompt tuning concept from supervised fine-tuning to online unsupervised TTA; uses CMA-ES instead of backpropagation to optimize prompts\nWhy: Visual prompt tuning requires labeled data and backward passes; FOA needs neither",
+        "adopted": "Continuous input prompt embedding concept; prepending prompts to input sequence",
+        "grounding": [],
+        "claims": [
+          "C01",
+          "C05"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW06",
+        "inferred_id": false,
+        "name": "Hendrycks & Dietterich, 2019 (ImageNet-C)",
+        "relation_raw": "bounds",
+        "relation_norm": "bounds",
+        "delta": "What changed: Provides the primary evaluation benchmark for FOA\nWhy: ImageNet-C with 15 corruption types and 5 severity levels is the standard for TTA evaluation",
+        "adopted": "Benchmark dataset; corruption taxonomy; severity level 5 evaluation protocol",
+        "grounding": [],
+        "claims": [
+          "C01",
+          "C02",
+          "C03",
+          "C04",
+          "C05",
+          "C06",
+          "C07"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW07",
+        "inferred_id": false,
+        "name": "Wang et al., 2022 (CoTTA)",
+        "relation_raw": "baseline",
+        "relation_norm": "baseline",
+        "delta": "What changed: FOA replaces teacher-student with augmentation-consistency via CMA prompt optimization; eliminates backpropagation\nWhy: CoTTA requires up to 16,836 MB memory at BS=64; FOA uses only 832 MB",
+        "adopted": "Comparison baseline",
+        "grounding": [
+          {
+            "raw": "PR 2022",
+            "kind": "pr",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C03"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW08",
+        "inferred_id": false,
+        "name": "Iwasawa & Matsuo, 2021 (T3A)",
+        "relation_raw": "baseline",
+        "relation_norm": "baseline",
+        "delta": "What changed: FOA adds explicit model-feedback-based optimization (CMA with fitness); T3A only adjusts prototypes without forward-pass feedback\nWhy: T3A's limited learning capacity (56.9% accuracy) vs. FOA's 66.3% on ImageNet-C",
+        "adopted": "Gradient-free TTA category; quantized model applicability",
+        "grounding": [],
+        "claims": [
+          "C01",
+          "C02"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW09",
+        "inferred_id": false,
+        "name": "Boudiaf et al., 2022 (LAME)",
+        "relation_raw": "baseline",
+        "relation_norm": "baseline",
+        "delta": "What changed: FOA learns prompts via CMA; LAME only adjusts output logits\nWhy: LAME performs worse than NoAdapt on ImageNet-C due to label-shift sensitivity",
+        "adopted": "Gradient-free TTA baseline",
+        "grounding": [
+          {
+            "raw": "PR 2022",
+            "kind": "pr",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C01"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW10",
+        "inferred_id": false,
+        "name": "Yuan et al., 2022 (PTQ4ViT)",
+        "relation_raw": "imports",
+        "relation_norm": "imports",
+        "delta": "What changed: FOA uses PTQ4ViT for post-training quantization to obtain 8-bit and 6-bit ViT models\nWhy: PTQ4ViT is a state-of-the-art post-training quantization method for ViTs; uses twin uniform quantization",
+        "adopted": "Quantization tool; 8-bit and 6-bit ViT models; 32 training samples for calibration",
+        "grounding": [],
+        "claims": [
+          "C02",
+          "C03"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW11",
+        "inferred_id": false,
+        "name": "Malladi et al., 2023 (MeZO)",
+        "relation_raw": "imports",
+        "relation_norm": "imports",
+        "delta": "What changed: FOA uses CMA-ES rather than zeroth-order gradient estimation; FOA targets online unsupervised TTA rather than offline supervised fine-tuning\nWhy: Zeroth-order methods have slow convergence for large models; CMA-ES is more sample-efficient for prompt-sized optimization",
+        "adopted": "Motivation for forward-only optimization of language/vision models",
+        "grounding": [],
+        "claims": [
+          "C04"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW12",
+        "inferred_id": false,
+        "name": "Liu et al., 2021b (PTQ for ViT)",
+        "relation_raw": "imports",
+        "relation_norm": "imports",
+        "delta": "What changed: Provides the memory scaling factor (0.25×) used to estimate 8-bit ViT memory from 32-bit measurements\nWhy: 8-bit quantization reduces each parameter from 32-bit float to 8-bit integer, giving 4× reduction",
+        "adopted": "Memory estimation formula: Memory(8-bit) = 0.25 × Memory(32-bit)",
+        "grounding": [],
+        "claims": [
+          "C02",
+          "C03"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      }
+    ],
+    "footprint": []
+  },
+  "recipes": {
+    "title": "Solution",
+    "files": [
+      {
+        "file": "algorithm.md",
+        "role": "algorithm",
+        "file_title": "algorithm",
+        "sections": [
+          {
+            "sec_id": null,
+            "heading": "Mathematical Formulation",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "E_i = L_i(E_{i-1}),  i = 1, ..., N          (Eq. 1)\nŷ = Head(e^0_N)                               (Eq. 2)\n\np* = arg min_p L(f_Θ(p; x))                  (Eq. 4)\n\nL(f_Θ(p; X_t)) = Σ_{x∈X_t} Σ_{c∈C} −ŷ_c log ŷ_c\n                + λ Σ_{i=1}^{N} [||μ_i(X_t) − μ^S_i||_2 + ||σ_i(X_t) − σ^S_i||_2]\n\np^(t)_k ~ m^(t) + τ^(t) N(0, Σ^(t)),  k = 1,...,K\n\nê^0_N ← e^0_N + γ·d_t                        (Eq. 7)\nd_t = μ^S_N − μ_N(t)                          (Eq. 8)\nμ_N(t) = α·μ_N(X_t) + (1−α)·μ_N(t−1)        (Eq. 9)",
+            "text": "### ViT Forward Pass\nFor a plain ViT f_Θ(·) with N layers:\n```\nE_i = L_i(E_{i-1}),  i = 1, ..., N          (Eq. 1)\nŷ = Head(e^0_N)                               (Eq. 2)\n```\nwhere E_i = {e^j_i, j ∈ N, 0 ≤ j ≤ m} are patch embeddings at layer i, e^0_i is the CLS token, m is the number of image patches.\n\n### Prompt Optimization Objective\nFind optimal prompt p* that minimizes fitness:\n```\np* = arg min_p L(f_Θ(p; x))                  (Eq. 4)\n```\nwhere p ∈ R^{d × Np}, Np = number of prompt embeddings, d = embedding dimension.\n\n### Fitness Function (Eq. 5)\n```\nL(f_Θ(p; X_t)) = Σ_{x∈X_t} Σ_{c∈C} −ŷ_c log ŷ_c\n                + λ Σ_{i=1}^{N} [||μ_i(X_t) − μ^S_i||_2 + ||σ_i(X_t) − σ^S_i||_2]\n```\nwhere:\n- ŷ_c = c-th predicted probability for sample x\n- μ_i(X_t), σ_i(X_t) = mean/std of CLS features at layer i over batch X_t\n- μ^S_i, σ^S_i = precomputed source statistics at layer i\n- λ = 0.4 × BS/64 (ImageNet-C/V2/Sketch); 0.2 × BS/64 (ImageNet-R)\n\n### CMA-ES Sampling (Eq. 6)\n```\np^(t)_k ~ m^(t) + τ^(t) N(0, Σ^(t)),  k = 1,...,K\n```\nwhere:\n- m^(t) ∈ R^{d·Np}: mean vector of search distribution\n- τ^(t) ∈ R+: step size (overall standard deviation)\n- Σ^(t): covariance matrix (shape of distribution ellipsoid)\n- K: population size (default 28)\n\n### Back-to-Source Activation Shifting (Eqs. 7–9)\n```\nê^0_N ← e^0_N + γ·d_t                        (Eq. 7)\nd_t = μ^S_N − μ_N(t)                          (Eq. 8)\nμ_N(t) = α·μ_N(X_t) + (1−α)·μ_N(t−1)        (Eq. 9)\n```\nwhere:\n- γ = 1.0: step size for activation shifting\n- d_t: shifting direction from OOD center to source center\n- μ^S_N: mean of final layer CLS features over source samples D_S\n- μ_N(t): EMA estimate of test distribution center at step t\n- α = 0.1: EMA factor",
+            "warn": "",
+            "refs": [],
+            "kind": "code"
+          },
+          {
+            "sec_id": null,
+            "heading": "Pseudocode (Algorithm 1)",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "Algorithm: Forward-Optimization Adaptation (FOA)\n\nInput:\n  - Batches of test samples {X_t}^T_{t=1}\n  - Model f_Θ(·) = Head(L_i(·))\n  - Source ID statistics {μ^S_i, σ^S_i}^N_{i=0}  [precomputed, frozen]\n  - Population size K\n\nInitialization:\n  m^(0) = 0,  Σ^(0) = I,  τ^(0) = 1\n\nfor t = 1, 2, ..., T do:\n  # Step 1: Sample K candidate prompts from CMA distribution\n  {p^t_k}^K_{k=1} ~ m^(t) + τ^(t) N(0, Σ^(t))  [Eq. 6]\n\n  for k = 1, ..., K do:\n    # Step 2: Forward pass with prompt k\n    Compute all layers' CLS features {e^0_n}^N_{n=1}\n      using Eq. 1 with input [p^t_k; X_t]\n\n    # Step 3: Activation shifting\n    Adjust e^0_N to source domain by Eq. 7\n\n    # Step 4: Predict\n    Ŷ^k_t = Head(e^0_N)\n\n    # Step 5: Compute fitness\n    v_k = L(f_Θ(p^t_k; X_t))  [Eq. 5]\n  end for\n\n  # Step 6: Update CMA distribution\n  Update m^(t), Σ^(t), τ^(t) from {v_k}^K_{k=1}\n    via CMA-ES algorithm (maximize likelihood of successful candidates)\n\n  # Step 7: Select final prediction\n  Ŷ_t = Ŷ^k*_t where k* = argmin_k v_k\nend for\n\nOutput: Predictions {Ŷ_t}^T_{t=1}",
+            "text": "```\nAlgorithm: Forward-Optimization Adaptation (FOA)\n\nInput:\n  - Batches of test samples {X_t}^T_{t=1}\n  - Model f_Θ(·) = Head(L_i(·))\n  - Source ID statistics {μ^S_i, σ^S_i}^N_{i=0}  [precomputed, frozen]\n  - Population size K\n\nInitialization:\n  m^(0) = 0,  Σ^(0) = I,  τ^(0) = 1\n\nfor t = 1, 2, ..., T do:\n  # Step 1: Sample K candidate prompts from CMA distribution\n  {p^t_k}^K_{k=1} ~ m^(t) + τ^(t) N(0, Σ^(t))  [Eq. 6]\n\n  for k = 1, ..., K do:\n    # Step 2: Forward pass with prompt k\n    Compute all layers' CLS features {e^0_n}^N_{n=1}\n      using Eq. 1 with input [p^t_k; X_t]\n\n    # Step 3: Activation shifting\n    Adjust e^0_N to source domain by Eq. 7\n\n    # Step 4: Predict\n    Ŷ^k_t = Head(e^0_N)\n\n    # Step 5: Compute fitness\n    v_k = L(f_Θ(p^t_k; X_t))  [Eq. 5]\n  end for\n\n  # Step 6: Update CMA distribution\n  Update m^(t), Σ^(t), τ^(t) from {v_k}^K_{k=1}\n    via CMA-ES algorithm (maximize likelihood of successful candidates)\n\n  # Step 7: Select final prediction\n  Ŷ_t = Ŷ^k*_t where k* = argmin_k v_k\nend for\n\nOutput: Predictions {Ŷ_t}^T_{t=1}\n```",
+            "warn": "",
+            "refs": [],
+            "kind": "code"
+          },
+          {
+            "sec_id": null,
+            "heading": "Complexity Analysis",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Per-Batch Forward Passes",
+                "value": "K (CMA candidates) + 1 (final selection) ≈ K+1 total\nvs. TENT: 1 forward + 1 backward pass per batch\nvs. CoTTA: up to 35 augmented forward passes + backward pass"
+              },
+              {
+                "label": "Memory",
+                "value": "No backward graph storage; only CMA state (O(d²·Np²)) + feature statistics (O(N·d))\nFOA (32-bit, BS=64): 832 MB vs. TENT 5,165 MB"
+              },
+              {
+                "label": "Cma State Dimension",
+                "value": "m^(t) ∈ R^{d·Np} = R^{768×3} = R^{2304} for ViT-Base\nThis is manageable for CMA (vs. full model parameter space of ~86M for ViT-Base)"
+              },
+              {
+                "label": "Source Statistics Computation",
+                "value": "O(Q·N·d) one-time; negligible overhead"
+              }
+            ],
+            "code": "",
+            "text": "- **Per-batch forward passes**: K (CMA candidates) + 1 (final selection) ≈ K+1 total\n  - vs. TENT: 1 forward + 1 backward pass per batch\n  - vs. CoTTA: up to 35 augmented forward passes + backward pass\n- **Memory**: No backward graph storage; only CMA state (O(d²·Np²)) + feature statistics (O(N·d))\n  - FOA (32-bit, BS=64): 832 MB vs. TENT 5,165 MB\n- **CMA state dimension**: m^(t) ∈ R^{d·Np} = R^{768×3} = R^{2304} for ViT-Base\n  - This is manageable for CMA (vs. full model parameter space of ~86M for ViT-Base)\n- **Source statistics computation**: O(Q·N·d) one-time; negligible overhead",
+            "warn": "",
+            "refs": [],
+            "kind": "kv"
+          }
+        ]
+      },
+      {
+        "file": "architecture.md",
+        "role": "architecture",
+        "file_title": "architecture",
+        "sections": [
+          {
+            "sec_id": null,
+            "heading": "Component Graph",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "[Test Batch X_t] ──→ [Prompt Sampler (CMA-ES)] ──→ [Prompt Embeddings {p^(t)_k}^K_{k=1}]\n                                                              │\n[Source Statistics {μ^S_i, σ^S_i}^N_{i=0}] ─────────→ [Fitness Calculator] ←── [ViT Forward Pass]\n        (precomputed once)                                    │\n                                                    [CMA Distribution Update]\n                                                    (m^(t), Σ^(t), τ^(t))\n                                                              │\n                                                    [Select Best Prompt p*]\n                                                              │\n[Test Batch X_t] + [p*] ──→ [ViT Forward Pass] ──→ [CLS Feature e^0_N]\n                                                              │\n[EMA Statistics μ_N(t)] ←───────────────────────────────────┘\n        │\n[Activation Shifter] ──→ [ê^0_N = e^0_N + γ·d_t] ──→ [MLP Head] ──→ [Prediction Ŷ_t]",
+            "text": "```\n[Test Batch X_t] ──→ [Prompt Sampler (CMA-ES)] ──→ [Prompt Embeddings {p^(t)_k}^K_{k=1}]\n                                                              │\n[Source Statistics {μ^S_i, σ^S_i}^N_{i=0}] ─────────→ [Fitness Calculator] ←── [ViT Forward Pass]\n        (precomputed once)                                    │\n                                                    [CMA Distribution Update]\n                                                    (m^(t), Σ^(t), τ^(t))\n                                                              │\n                                                    [Select Best Prompt p*]\n                                                              │\n[Test Batch X_t] + [p*] ──→ [ViT Forward Pass] ──→ [CLS Feature e^0_N]\n                                                              │\n[EMA Statistics μ_N(t)] ←───────────────────────────────────┘\n        │\n[Activation Shifter] ──→ [ê^0_N = e^0_N + γ·d_t] ──→ [MLP Head] ──→ [Prediction Ŷ_t]\n```",
+            "warn": "",
+            "refs": [],
+            "kind": "code"
+          },
+          {
+            "sec_id": null,
+            "heading": "Components",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Purpose",
+                "value": "Compute and store per-layer CLS token mean and standard deviation from source in-distribution data\nMaintain and update a multivariate normal distribution over prompt space; sample K candidate prompts per batch\nTransform prompt-augmented input embeddings through N transformer layers; produce CLS token features and predictions\nScore each candidate prompt via the unsupervised fitness function combining entropy and activation discrepancy\nDirectly shift final-layer CLS features from OOD domain toward source domain without backpropagation\nMap shifted CLS feature to class probabilities"
+              },
+              {
+                "label": "Inputs",
+                "value": "Source samples D_S = {x_q}^Q_{q=1} (Q ≥ 32 unlabeled ImageNet-1K validation images), frozen ViT-Base\nCurrent CMA state (m^(t), Σ^(t), τ^(t)); fitness values {v_k}^K_{k=1}\n[p^(t)_k; X_t embeddings] — prompt concatenated with patch embeddings\nPrediction probabilities {ŷ_k}, CLS features {e^0_{i,k}} for each candidate k; source statistics {μ^S_i, σ^S_i}^N_{i=0}\nCLS feature e^0_N from final ViT layer; source statistics μ^S_N; running EMA estimate μ_N(t)\nShifted CLS feature ê^0_N"
+              },
+              {
+                "label": "Outputs",
+                "value": "{μ^S_i, σ^S_i}^N_{i=0} stored in memory (one-time computation)\nK candidate prompts {p^(t)_k}^K_{k=1}; updated CMA state\nCLS token features {e^0_i}^N_{i=1} at each layer; prediction probabilities ŷ\nFitness value v_k for each candidate prompt k (lower = better)\nShifted feature ê^0_N = e^0_N + γ·d_t where d_t = μ^S_N − μ_N(t)\nFinal prediction probabilities Ŷ_t"
+              },
+              {
+                "label": "Key Design Choice",
+                "value": "Computed without prompt insertion; only needs Q=32 samples for ImageNet\nCMA-ES (pycma library) preferred over SGD because it is derivative-free; population size K=28 by default; prompts p ∈ R^{d × Np} with Np=3, d=768 for ViT-Base\nAll model weights are FROZEN — no gradient computation required; compatible with quantized (8-bit, 6-bit) or hard-coded models\nEMA update μ_N(t) = α·μ_N(X_t) + (1−α)·μ_N(t−1) with α=0.1 enables stable single-sample operation; γ=1.0 for exact center alignment"
+              },
+              {
+                "label": "Interacts With",
+                "value": "Fitness Calculator, Activation Shifter\n### 2. Prompt Sampler / CMA-ES Optimizer\nViT Model, Fitness Calculator\n### 3. ViT Model (Frozen)\nPrompt Sampler, Fitness Calculator, Activation Shifter\n### 4. Fitness Calculator\nViT Model, Prompt Sampler\n### 5. Back-to-Source Activation Shifter\nViT Model, MLP Head\n### 6. MLP Head (Frozen)\nActivation Shifter"
+              },
+              {
+                "label": "Formula",
+                "value": "v_k = Σ_{x∈X_t} Σ_c −ŷ_c log ŷ_c + λ Σ_{i=1}^{N} [||μ_i(X_t) − μ^S_i||_2 + ||σ_i(X_t) − σ^S_i||_2]"
+              }
+            ],
+            "code": "",
+            "text": "### 1. Source Statistics Computer (One-Time, Pre-TTA)\n- **Purpose**: Compute and store per-layer CLS token mean and standard deviation from source in-distribution data\n- **Inputs**: Source samples D_S = {x_q}^Q_{q=1} (Q ≥ 32 unlabeled ImageNet-1K validation images), frozen ViT-Base\n- **Outputs**: {μ^S_i, σ^S_i}^N_{i=0} stored in memory (one-time computation)\n- **Key design choice**: Computed without prompt insertion; only needs Q=32 samples for ImageNet\n- **Interacts with**: Fitness Calculator, Activation Shifter\n\n### 2. Prompt Sampler / CMA-ES Optimizer\n- **Purpose**: Maintain and update a multivariate normal distribution over prompt space; sample K candidate prompts per batch\n- **Inputs**: Current CMA state (m^(t), Σ^(t), τ^(t)); fitness values {v_k}^K_{k=1}\n- **Outputs**: K candidate prompts {p^(t)_k}^K_{k=1}; updated CMA state\n- **Key design choice**: CMA-ES (pycma library) preferred over SGD because it is derivative-free; population size K=28 by default; prompts p ∈ R^{d × Np} with Np=3, d=768 for ViT-Base\n- **Interacts with**: ViT Model, Fitness Calculator\n\n### 3. ViT Model (Frozen)\n- **Purpose**: Transform prompt-augmented input embeddings through N transformer layers; produce CLS token features and predictions\n- **Inputs**: [p^(t)_k; X_t embeddings] — prompt concatenated with patch embeddings\n- **Outputs**: CLS token features {e^0_i}^N_{i=1} at each layer; prediction probabilities ŷ\n- **Key design choice**: All model weights are FROZEN — no gradient computation required; compatible with quantized (8-bit, 6-bit) or hard-coded models\n- **Interacts with**: Prompt Sampler, Fitness Calculator, Activation Shifter\n\n### 4. Fitness Calculator\n- **Purpose**: Score each candidate prompt via the unsupervised fitness function combining entropy and activation discrepancy\n- **Inputs**: Prediction probabilities {ŷ_k}, CLS features {e^0_{i,k}} for each candidate k; source statistics {μ^S_i, σ^S_i}^N_{i=0}\n- **Outputs**: Fitness value v_k for each candidate prompt k (lower = better)\n- **Formula**: v_k = Σ_{x∈X_t} Σ_c −ŷ_c log ŷ_c + λ Σ_{i=1}^{N} [||μ_i(X_t) − μ^S_i||_2 + ||σ_i(X_t) − σ^S_i||_2]\n- **Interacts with**: ViT Model, Prompt Sampler\n\n### 5. Back-to-Source Activation Shifter\n- **Purpose**: Directly shift final-layer CLS features from OOD domain toward source domain without backpropagation\n- **Inputs**: CLS feature e^0_N from final ViT layer; source statistics μ^S_N; running EMA estimate μ_N(t)\n- **Outputs**: Shifted feature ê^0_N = e^0_N + γ·d_t where d_t = μ^S_N − μ_N(t)\n- **Key design choice**: EMA update μ_N(t) = α·μ_N(X_t) + (1−α)·μ_N(t−1) with α=0.1 enables stable single-sample operation; γ=1.0 for exact center alignment\n- **Interacts with**: ViT Model, MLP Head\n\n### 6. MLP Head (Frozen)\n- **Purpose**: Map shifted CLS feature to class probabilities\n- **Inputs**: Shifted CLS feature ê^0_N\n- **Outputs**: Final prediction probabilities Ŷ_t\n- **Interacts with**: Activation Shifter",
+            "warn": "",
+            "refs": [],
+            "kind": "kv"
+          },
+          {
+            "sec_id": null,
+            "heading": "Data Flow Summary",
+            "markdown": "",
+            "steps": [
+              "Feed Q source samples through frozen ViT → compute {μ^S_i, σ^S_i}^N_{i=0}",
+              "Initialize CMA: m^(0) = 0, Σ^(0) = I, τ^(0) = 1",
+              "Sample K prompts from CMA distribution",
+              "For each of K candidates: forward pass [p_k; X_t] → compute fitness v_k",
+              "Update CMA distribution using {v_k}^K_{k=1}",
+              "Select best prompt (lowest v_k)",
+              "Forward pass with best prompt → e^0_N",
+              "Update EMA: μ_N(t) = α·μ_N(X_t) + (1−α)·μ_N(t−1)",
+              "Compute shifting direction d_t = μ^S_N − μ_N(t)",
+              "Shift: ê^0_N = e^0_N + γ·d_t",
+              "Predict: Ŷ_t = Head(ê^0_N)"
+            ],
+            "fields": [],
+            "code": "",
+            "text": "**Initialization** (one-time before TTA):\n1. Feed Q source samples through frozen ViT → compute {μ^S_i, σ^S_i}^N_{i=0}\n2. Initialize CMA: m^(0) = 0, Σ^(0) = I, τ^(0) = 1\n\n**Per-batch adaptation** (online, for each test batch X_t):\n1. Sample K prompts from CMA distribution\n2. For each of K candidates: forward pass [p_k; X_t] → compute fitness v_k\n3. Update CMA distribution using {v_k}^K_{k=1}\n4. Select best prompt (lowest v_k)\n5. Forward pass with best prompt → e^0_N\n6. Update EMA: μ_N(t) = α·μ_N(X_t) + (1−α)·μ_N(t−1)\n7. Compute shifting direction d_t = μ^S_N − μ_N(t)\n8. Shift: ê^0_N = e^0_N + γ·d_t\n9. Predict: Ŷ_t = Head(ê^0_N)",
+            "warn": "",
+            "refs": [],
+            "kind": "steps"
+          }
+        ]
+      },
+      {
+        "file": "constraints.md",
+        "role": "constraints",
+        "file_title": "constraints",
+        "sections": [
+          {
+            "sec_id": null,
+            "heading": "Boundary Conditions (Where FOA Works)",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "",
+            "text": "### BC1: Transformer-based architectures\n- FOA's prompt mechanism (concatenation to patch embeddings) naturally integrates with Vision Transformers (ViT, VisionMamba) because global attention allows prompt tokens to influence all patch representations.\n- The system relies on a CLS token at the final layer for activation shifting.\n\n### BC2: Batch size ≥ 2 for stable statistics\n- Computing batch statistics μ_i(X_t) and σ_i(X_t) for the fitness function requires at least a few samples.\n- For BS=1, the FOA-I interval update strategy buffers I samples before running CMA optimization.\n- FOA-I V1 stores CLS token features; FOA-I V2 stores original images.\n\n### BC3: Source statistics availability\n- Requires Q ≥ 32 unlabeled source in-distribution samples (no labels needed).\n- These can be obtained via OOD detection or directly from training samples.\n- Source statistics are precomputed once and stored, not updated during TTA.\n\n### BC4: Low-dimensional optimization target\n- CMA-ES is effective up to ~2,304 dimensions (Np=3, d=768 for ViT-Base).\n- Full model parameter optimization with CMA-ES is intractable (O(86M) parameters for ViT-Base).\n\n### BC5: Online unsupervised test data\n- Works with one-pass online test data stream, no data storage or multi-epoch replay.\n- Adapts per mini-batch; no dependency on labels.",
+            "warn": "",
+            "refs": [],
+            "kind": "prose"
+          },
+          {
+            "sec_id": null,
+            "heading": "Known Limitations",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "",
+            "text": "### L1: Suboptimal on CNN architectures\n- On ResNet-50, FOA achieves only 22.6% accuracy (Gaussian noise, level 5), compared to TENT (29.4%) and SAR (30.7%).\n- Convolutions are local operations; location-invariant input prompts cannot effectively influence global representations in CNNs as they can in transformers.\n- FOA† (replacing CMA with SGD, optimizing norm layers) achieves 33.6% on ResNet-50, suggesting the prompt mechanism itself is the bottleneck for CNNs.\n\n### L2: Requires K forward passes per batch\n- K=28 (default) requires 28 forward passes for each test batch, increasing wall-clock time proportionally to K.\n- However, these forward passes are memory-efficient (no gradients) and can be parallelized.\n- At K=2, FOA is already competitive with TENT while being faster.\n\n### L3: Activation shifting ECE not as good as full FOA\n- Activation shifting alone (59.1% accuracy, 12.7% ECE) provides lower ECE benefit than the combined FOA (3.2% ECE).\n- The entropy term in the fitness function is crucial for low ECE.\n\n### L4: CMA convergence speed\n- CMA requires sufficient iterations (batches) to converge; at the very beginning of adaptation (&lt; 200 test samples), performance may be temporarily below MEMO.\n- The activation shifting component helps bridge this early-adaptation gap.\n\n### L5: Source statistics must be computed without prompts\n- The source statistics {μ^S_i, σ^S_i} must be computed from the model without prompt insertion to maintain consistency with the non-prompted source distribution.\n\n### L6: Population size trades off efficiency and accuracy\n- Larger K improves accuracy but increases computation: K=28 gives 66.3% accuracy; K=2 gives 59.6%.\n- K must be chosen based on available compute budget.",
+            "warn": "",
+            "refs": [],
+            "kind": "prose"
+          },
+          {
+            "sec_id": null,
+            "heading": "Assumptions",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "",
+            "text": "- A1: Model quantization memory scales as 0.25× for 8-bit vs. 32-bit (per Liu et al., 2021b).\n- A2: The CLS token at the final layer is the primary representation for classification and distribution characterization.\n- A3: Test data distribution is continuously shifting (online setting); no access to future batches.\n- A4: The shifting direction from OOD to source domain is approximately captured by center-to-center direction (mean-based shifting).",
+            "warn": "",
+            "refs": [
+              {
+                "raw": "A1",
+                "kind": "assumption",
+                "target": null
+              },
+              {
+                "raw": "A2",
+                "kind": "assumption",
+                "target": null
+              },
+              {
+                "raw": "A3",
+                "kind": "assumption",
+                "target": null
+              },
+              {
+                "raw": "A4",
+                "kind": "assumption",
+                "target": null
+              }
+            ],
+            "kind": "prose"
+          }
+        ]
+      },
+      {
+        "file": "heuristics.md",
+        "role": "heuristics",
+        "file_title": "heuristics",
+        "sections": [
+          {
+            "sec_id": "H01",
+            "heading": "H01: Population size K = 4 + 3 × log(prompt_dim)",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "Following the CMA-ES convention (Hansen, 2016), the default population size is derived from the optimization problem dimension (prompt_dim = d × Np). This balances exploration and exploitation: too small K degrades performance; K > 15 gives converging returns."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "low — FOA works for all K ∈ [2, 28] ∩ N+"
+              },
+              {
+                "label": "Bounds",
+                "value": "K ≥ 2 for reasonable adaptation; K = 28 for best accuracy; K = 6 matches TENT accuracy with lower memory"
+              },
+              {
+                "label": "Code Ref",
+                "value": "[src/execution/foa.py]"
+              },
+              {
+                "label": "Source",
+                "value": "Section 4 (Implementation Details); Figure 2(a)"
+              }
+            ],
+            "code": "",
+            "text": "- **Rationale**: Following the CMA-ES convention (Hansen, 2016), the default population size is derived from the optimization problem dimension (prompt_dim = d × Np). This balances exploration and exploitation: too small K degrades performance; K > 15 gives converging returns.\n- **Sensitivity**: low — FOA works for all K ∈ [2, 28] ∩ N+\n- **Bounds**: K ≥ 2 for reasonable adaptation; K = 28 for best accuracy; K = 6 matches TENT accuracy with lower memory\n- **Code ref**: [src/execution/foa.py]\n- **Source**: Section 4 (Implementation Details); Figure 2(a)",
+            "warn": "",
+            "refs": [],
+            "kind": "kv"
+          },
+          {
+            "sec_id": "H02",
+            "heading": "H02: Trade-off parameter λ = 0.4 × BS/64 (0.2 × BS/64 for ImageNet-R)",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "λ balances the magnitude of the entropy term and the activation discrepancy term in Eq. 5. Scaling with BS/64 normalizes for batch size variations. ImageNet-R uses 0.2 because the rendition distribution shift is less severe, requiring less discrepancy correction relative to entropy."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "low — accuracy varies only slightly across λ ∈ [0.1, 1.0] (Table 13: 61.1% to 61.8% accuracy, 2.5% to 5.9% ECE)"
+              },
+              {
+                "label": "Bounds",
+                "value": "Best performance in range λ ∈ {0.3, 0.4, 0.5} for ImageNet-C; below 0.3 or above 0.5 shows slightly higher ECE"
+              },
+              {
+                "label": "Code Ref",
+                "value": "[src/execution/fitness.py]"
+              },
+              {
+                "label": "Source",
+                "value": "Section 4 (Implementation Details); Appendix C (Table 13)"
+              }
+            ],
+            "code": "",
+            "text": "- **Rationale**: λ balances the magnitude of the entropy term and the activation discrepancy term in Eq. 5. Scaling with BS/64 normalizes for batch size variations. ImageNet-R uses 0.2 because the rendition distribution shift is less severe, requiring less discrepancy correction relative to entropy.\n- **Sensitivity**: low — accuracy varies only slightly across λ ∈ [0.1, 1.0] (Table 13: 61.1% to 61.8% accuracy, 2.5% to 5.9% ECE)\n- **Bounds**: Best performance in range λ ∈ {0.3, 0.4, 0.5} for ImageNet-C; below 0.3 or above 0.5 shows slightly higher ECE\n- **Code ref**: [src/execution/fitness.py]\n- **Source**: Section 4 (Implementation Details); Appendix C (Table 13)",
+            "warn": "",
+            "refs": [],
+            "kind": "kv"
+          },
+          {
+            "sec_id": "H03",
+            "heading": "H03: EMA factor α = 0.1 for activation shifting direction",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "The exponential moving average of test activation means μ_N(t) provides a stable estimate of the OOD domain center across the online test stream. α = 0.1 gives low weight to individual batches, smoothing noise while still adapting to distribution drift. Without EMA (α = 1.0), BS=1 results in 0.1% accuracy and 0.0% ECE (collapsed predictions)."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "medium — without EMA, single-sample adaptation collapses; with EMA, performance is stable even at BS=1"
+              },
+              {
+                "label": "Bounds",
+                "value": "α ∈ (0, 1); α = 0.1 gives consistent performance across all batch sizes; initialization: μ_N(0) = μ_N(X_1)"
+              },
+              {
+                "label": "Code Ref",
+                "value": "[src/execution/foa.py]"
+              },
+              {
+                "label": "Source",
+                "value": "Section 3.2; Appendix C (Table 14)"
+              }
+            ],
+            "code": "",
+            "text": "- **Rationale**: The exponential moving average of test activation means μ_N(t) provides a stable estimate of the OOD domain center across the online test stream. α = 0.1 gives low weight to individual batches, smoothing noise while still adapting to distribution drift. Without EMA (α = 1.0), BS=1 results in 0.1% accuracy and 0.0% ECE (collapsed predictions).\n- **Sensitivity**: medium — without EMA, single-sample adaptation collapses; with EMA, performance is stable even at BS=1\n- **Bounds**: α ∈ (0, 1); α = 0.1 gives consistent performance across all batch sizes; initialization: μ_N(0) = μ_N(X_1)\n- **Code ref**: [src/execution/foa.py]\n- **Source**: Section 3.2; Appendix C (Table 14)",
+            "warn": "",
+            "refs": [],
+            "kind": "kv"
+          },
+          {
+            "sec_id": "H04",
+            "heading": "H04: Step size γ = 1.0 for activation shifting",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "γ = 1.0 exactly aligns the overall center of testing features with the source domain center (d_t is the direction from OOD center to source center; γ = 1 applies full correction). This is the \"exact center alignment\" strategy."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "medium — values close to 1.0 are expected to work best; too small under-corrects, too large over-corrects"
+              },
+              {
+                "label": "Bounds",
+                "value": "γ = 1.0 is the default; sensitivity is analyzed in Appendix C"
+              },
+              {
+                "label": "Code Ref",
+                "value": "[src/execution/foa.py]"
+              },
+              {
+                "label": "Source",
+                "value": "Section 4 (Implementation Details); Section 3.2"
+              }
+            ],
+            "code": "",
+            "text": "- **Rationale**: γ = 1.0 exactly aligns the overall center of testing features with the source domain center (d_t is the direction from OOD center to source center; γ = 1 applies full correction). This is the \"exact center alignment\" strategy.\n- **Sensitivity**: medium — values close to 1.0 are expected to work best; too small under-corrects, too large over-corrects\n- **Bounds**: γ = 1.0 is the default; sensitivity is analyzed in Appendix C\n- **Code ref**: [src/execution/foa.py]\n- **Source**: Section 4 (Implementation Details); Section 3.2",
+            "warn": "",
+            "refs": [],
+            "kind": "kv"
+          },
+          {
+            "sec_id": "H05",
+            "heading": "H05: Np = 3 prompt embeddings with uniform initialization",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "Np = 3 reduces optimization dimension to 3 × 768 = 2,304 (ViT-Base), making CMA-ES tractable. Uniform initialization provides a neutral starting point. Sensitivity analysis (Figure 2b) shows low variation across Np ∈ {1, ..., 10}; Np = 5 or 7 is marginally better but Np = 3 is used consistently for simplicity."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "low — performance varies only slightly across Np ∈ {1, ..., 10}"
+              },
+              {
+                "label": "Bounds",
+                "value": "Np = 3 is default; Np ∈ {5, 7} yields marginally better performance"
+              },
+              {
+                "label": "Code Ref",
+                "value": "[src/execution/foa.py]"
+              },
+              {
+                "label": "Source",
+                "value": "Section 4 (Implementation Details); Section 4.3; Figure 2(b)"
+              }
+            ],
+            "code": "",
+            "text": "- **Rationale**: Np = 3 reduces optimization dimension to 3 × 768 = 2,304 (ViT-Base), making CMA-ES tractable. Uniform initialization provides a neutral starting point. Sensitivity analysis (Figure 2b) shows low variation across Np ∈ {1, ..., 10}; Np = 5 or 7 is marginally better but Np = 3 is used consistently for simplicity.\n- **Sensitivity**: low — performance varies only slightly across Np ∈ {1, ..., 10}\n- **Bounds**: Np = 3 is default; Np ∈ {5, 7} yields marginally better performance\n- **Code ref**: [src/execution/foa.py]\n- **Source**: Section 4 (Implementation Details); Section 4.3; Figure 2(b)",
+            "warn": "",
+            "refs": [],
+            "kind": "kv"
+          },
+          {
+            "sec_id": "H06",
+            "heading": "H06: Batch statistics (not EMA) for fitness function discrepancy term",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "Using per-batch statistics μ_i(X_t), σ_i(X_t) (β=1.0 in Appendix C Table 15) rather than EMA-accumulated statistics for the fitness function Eq. 5 yields better performance. EMA in the fitness function introduces a biased objective that encourages compensation for accumulated historical errors rather than direct source alignment. β=1.0 also requires no additional hyperparameter."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "medium — small β (e.g., 0.1) causes notable performance degradation (61.0% accuracy, 9.5% ECE vs. 61.5% accuracy, 2.5% ECE for β=1.0 on ImageNet-C)"
+              },
+              {
+                "label": "Bounds",
+                "value": "β = 1.0 (pure batch statistics) is optimal; best ECE is achieved at β = 1.0 for both ImageNet-C and ImageNet-R"
+              },
+              {
+                "label": "Code Ref",
+                "value": "[src/execution/fitness.py]"
+              },
+              {
+                "label": "Source",
+                "value": "Appendix C (Table 15)"
+              }
+            ],
+            "code": "",
+            "text": "- **Rationale**: Using per-batch statistics μ_i(X_t), σ_i(X_t) (β=1.0 in Appendix C Table 15) rather than EMA-accumulated statistics for the fitness function Eq. 5 yields better performance. EMA in the fitness function introduces a biased objective that encourages compensation for accumulated historical errors rather than direct source alignment. β=1.0 also requires no additional hyperparameter.\n- **Sensitivity**: medium — small β (e.g., 0.1) causes notable performance degradation (61.0% accuracy, 9.5% ECE vs. 61.5% accuracy, 2.5% ECE for β=1.0 on ImageNet-C)\n- **Bounds**: β = 1.0 (pure batch statistics) is optimal; best ECE is achieved at β = 1.0 for both ImageNet-C and ImageNet-R\n- **Code ref**: [src/execution/fitness.py]\n- **Source**: Appendix C (Table 15)",
+            "warn": "",
+            "refs": [],
+            "kind": "kv"
+          }
+        ]
+      }
+    ]
+  }
+}
+/* __ARA_DATA_END__ */
+</script>
+
+<script>
+"use strict";
+(function () {
+  const GLYPH = { question:"Q", experiment:"✦", decision:"→", dead_end:"✗", pivot:"↻", insight:"!", default:"•" };
+  const TYPES = ["question","experiment","decision","dead_end","pivot","insight"];
+
+  let DATA;
+  try {
+    // The payload sits between the BEGIN/END marker comments (kept in-file so the
+    // skill can re-inject). Strip ONLY those two named markers before parsing; the
+    // rest of textContent is pure JSON. (Marker text is not written literally here,
+    // so it stays a single injection site.)
+    var raw = document.getElementById("ara-data").textContent
+                .replace(/\/\*\s*__ARA_DATA_(?:BEGIN|END)__\s*\*\//g, "");
+    DATA = JSON.parse(raw);
+  } catch (e) {
+    document.getElementById("detail").innerHTML =
+      '<div class="none">Could not parse embedded ARA data: ' + String(e) + '</div>';
+    return;
+  }
+
+  const nodes = DATA.nodes || [];
+  const byId = new Map(nodes.map(n => [n.id, n]));
+  const kids = new Map();
+  nodes.forEach(n => kids.set(n.id, []));
+  let roots = [];
+  nodes.forEach(n => {
+    if (n.parent && byId.has(n.parent)) kids.get(n.parent).push(n.id);
+    else roots.push(n.id);
+  });
+  // Traversal order: explicit DATA.order if given, else DFS from roots.
+  let order = Array.isArray(DATA.order) && DATA.order.length ? DATA.order.filter(id => byId.has(id)) : [];
+  if (!order.length) { const seen=new Set(); const dfs=id=>{if(seen.has(id))return;seen.add(id);order.push(id);(kids.get(id)||[]).forEach(dfs)}; roots.forEach(dfs); }
+
+  const esc = s => String(s==null?"":s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  const glyph = t => GLYPH[t] || GLYPH.default;
+  const cls = t => TYPES.includes(t) ? t : "default";
+
+  // ---- header ----
+  const m = DATA.meta || {};
+  document.getElementById("h-title").textContent = m.title || "ARA Trajectory";
+  document.getElementById("h-sub").textContent =
+    [ (m.authors||[]).join(", "), m.venue, m.year ].filter(Boolean).join(" · ");
+  if (m.abstract) document.getElementById("h-abstract").textContent = m.abstract;
+  else document.getElementById("h-abstract-wrap").style.display = "none";
+
+  const ftype = document.getElementById("ftype");
+  const present = [...new Set(nodes.map(n => n.type))];
+  TYPES.concat(present.filter(t=>!TYPES.includes(t))).filter(t=>present.includes(t))
+    .forEach(t => { const o=document.createElement("option"); o.value=t; o.textContent=t; ftype.appendChild(o); });
+
+  // ---- minimal markdown-table renderer ----
+  function renderMd(md){
+    if(!md) return "";
+    const lines = String(md).split("\n");
+    let out=[], i=0;
+    while(i<lines.length){
+      if(/^\s*\|/.test(lines[i]) && i+1<lines.length && /^\s*\|?[\s:|-]+\|?\s*$/.test(lines[i+1])){
+        const row = l => l.replace(/^\s*\|/,"").replace(/\|\s*$/,"").split("|").map(c=>c.trim());
+        const head = row(lines[i]); i+=2; const body=[];
+        while(i<lines.length && /^\s*\|/.test(lines[i])){ body.push(row(lines[i])); i++; }
+        out.push('<table class="md"><thead><tr>'+head.map(h=>"<th>"+esc(h)+"</th>").join("")+
+          '</tr></thead><tbody>'+body.map(r=>"<tr>"+r.map(c=>"<td>"+esc(c)+"</td>").join("")+"</tr>").join("")+"</tbody></table>");
+      } else { if(lines[i].trim()) out.push("<div>"+esc(lines[i])+"</div>"); i++; }
+    }
+    return out.join("");
+  }
+
+  // ---- detail pane ----
+  function block(title, tag, inner, open, cls){
+    return '<details class="block'+(cls?" "+cls:"")+'"'+(open?" open":"")+'><summary>'+esc(title)+
+      (tag?'<span class="tag">'+esc(tag)+'</span>':'')+'</summary><div class="body">'+inner+'</div></details>';
+  }
+  function chips(arr, klass){ return arr&&arr.length ? '<div class="chips">'+arr.map(x=>'<span class="chip '+(klass||"")+'">'+esc(x)+'</span>').join("")+'</div>' : ""; }
+
+  function renderDetail(n){
+    const d = document.getElementById("detail");
+    let h = '<div class="dhead"><span class="badge '+cls(n.type)+'">'+esc(n.type)+'</span>'+
+      '<span class="did">'+esc(n.id)+'</span>'+
+      (n.support_level?'<span class="pill '+esc(n.support_level)+'">'+esc(n.support_level)+'</span>':'')+
+      (n.isolated?'<span class="pill iso">isolated</span>':'')+'</div>';
+    h += '<div class="dtitle">'+esc(n.title||"(untitled)")+'</div>';
+
+    // reasoning (primary, always open) — the agent's thinking IS the content of a step
+    let reason="";
+    if(n.thinking){
+      reason += '<div class="lead">'+esc(n.thinking)+'</div>';
+      if(n.body) reason += '<div class="didwhat">what it did</div><div>'+esc(n.body)+'</div>';
+    } else {
+      reason += n.body ? '<div class="lead">'+esc(n.body)+'</div>' : '<div class="empty">No description.</div>';
+    }
+    if(n.depends_on&&n.depends_on.length) reason += chips(n.depends_on.map(x=>"⇠ depends on "+x));
+    if(n.source_refs&&n.source_refs.length) reason += chips(n.source_refs, "ext");
+    if(n.built_on&&n.built_on.length) reason += chipRow("built on", n.built_on, "chip-built");
+    if(n.rejected_here&&n.rejected_here.length) reason += chipRow("rejected here", n.rejected_here, "chip-rej");
+    if(n.recipe_refs&&n.recipe_refs.length) reason += recipeChips(n.recipe_refs);
+    h += block(n.thinking?"reasoning":"what", n.type, reason, true, "reason");
+
+    // result (the grounded payload) — open
+    const r = n.result||{};
+    if((r.sources&&r.sources.length)||(r.figures&&r.figures.length)||(r.tables&&r.tables.length)||(r.data&&r.data.length)){
+      let s="";
+      (r.figures||[]).forEach(f=>{ s+='<figure><img src="'+esc(f.img)+'" alt="'+esc(f.caption||f.id)+'"/>'+
+        (f.caption?'<figcaption>'+esc(f.caption)+'</figcaption>':'')+'</figure>'; });
+      (r.tables||[]).forEach(t=>{ s+=(t.caption?'<div class="empty">'+esc(t.caption)+'</div>':'')+renderMd(t.markdown); });
+      (r.sources||[]).forEach(q=>{ s+='<div class="quote">'+esc(q.quote)+(q.ref?'<div class="ref">← '+esc(q.ref)+'</div>':'')+'</div>'; });
+      (r.data||[]).forEach(x=>{ s+='<div class="ptr">⛁ <span class="path">'+esc(x.path)+'</span>'+(x.note?' — '+esc(x.note):'')+'</div>'; });
+      h += block("result", "", s, true);
+    }
+
+    // why (claims) — supporting detail, collapsed
+    if(n.why&&n.why.length){
+      const w = n.why.map(c=>{
+        let s='<div class="claim"><h4>'+esc(c.id)+(c.title?' — '+esc(c.title):'')+'</h4>';
+        if(c.statement) s+='<div class="kv">'+esc(c.statement)+'</div>';
+        if(c.status) s+='<div class="kv"><b>status</b> <span class="status '+esc(String(c.status).toLowerCase())+'">'+esc(c.status)+'</span></div>';
+        if(c.conditions) s+='<div class="kv"><b>conditions</b> '+esc(c.conditions)+'</div>';
+        if(c.falsification) s+='<div class="kv"><b>falsified if</b> '+esc(c.falsification)+'</div>';
+        if(c.dependencies&&c.dependencies.length) s+='<div class="kv"><b>depends on</b> '+esc(c.dependencies.join(", "))+'</div>';
+        if(c.provenance) s+='<div class="kv"><span class="prov">provenance: '+esc(c.provenance)+'</span></div>';
+        return s+'</div>';
+      }).join("");
+      h += block("why", n.why.map(c=>c.id).join(" · "), w);
+    }
+
+    // how verified (experiments) — supporting detail, collapsed
+    if(n.verified_by&&n.verified_by.length){
+      const v = n.verified_by.map(e=>'<div class="claim"><h4>'+esc(e.id)+(e.title?' — '+esc(e.title):'')+'</h4>'+
+        (e.run?'<div class="kv"><b>run</b> <span class="path mono">'+esc(e.run)+'</span></div>':'')+
+        (e.setup?'<div class="kv"><b>setup</b> '+esc(e.setup)+'</div>':'')+
+        (e.metrics?'<div class="kv"><b>metrics</b> '+esc(e.metrics)+'</div>':'')+'</div>').join("");
+      h += block("how verified", n.verified_by.map(e=>e.id).join(" · "), v);
+    }
+
+    // artifact pointers (src/artifacts.md) — collapsed
+    if(n.artifact&&n.artifact.length){
+      const a = n.artifact.map(x=>'<div class="ptr">▸ <b>'+esc(x.name)+'</b> — <span class="path">'+esc(x.pointer)+'</span>'+
+        (x.what?'<div class="empty">'+esc(x.what)+'</div>':'')+'</div>').join("");
+      h += block("artifact", "pointer", a);
+    }
+
+    d.innerHTML = h;
+    if(typeof LEX!=="undefined" && LEX) linkifyConcepts(d);
+    d.scrollTop = 0;
+  }
+
+  // ---- map ----
+  let selected = null;
+  function selectNode(id){
+    if(!byId.has(id)) return;
+    selected = id;
+    document.querySelectorAll(".node").forEach(el=>el.classList.toggle("sel", el.dataset.id===id));
+    const el = document.querySelector('.node[data-id="'+CSS.escape(id)+'"]');
+    if(el) el.scrollIntoView({block:"nearest"});
+    renderDetail(byId.get(id));
+    rstat();
+  }
+
+  function nodeRow(n){
+    const row = document.createElement("div");
+    row.className = "node "+(n.type==="dead_end"?"dead":"");
+    row.dataset.id = n.id; row.dataset.type = n.type;
+    // calmer than before: one glyph + id + (quiet) cross-edge marker; the ⊕/⊘ count soup is gone.
+    row.innerHTML = '<span class="glyph '+cls(n.type)+'">'+glyph(n.type)+'</span>'+
+      '<span><span class="meta"><span class="nid">'+esc(n.id)+'</span>'+
+      (n.depends_on&&n.depends_on.length?'<span class="dep" title="depends on '+esc(n.depends_on.join(", "))+'">⇠ '+esc(n.depends_on.join(","))+'</span>':'')+
+      '</span><div class="ntitle">'+esc(n.title||n.body||"(untitled)")+'</div></span>';
+    row.addEventListener("click", ()=>selectNode(n.id));
+    // hover a node to highlight its cross-edge targets (gentler than always-on connectors)
+    if(n.depends_on&&n.depends_on.length){
+      row.addEventListener("mouseenter", ()=>n.depends_on.forEach(t=>{ const el=document.querySelector('.node[data-id="'+CSS.escape(t)+'"]'); if(el) el.classList.add("deptarget"); }));
+      row.addEventListener("mouseleave", ()=>document.querySelectorAll(".node.deptarget").forEach(el=>el.classList.remove("deptarget")));
+    }
+    return row;
+  }
+  function renderSubtree(id, container){
+    const n = byId.get(id); if(!n) return;
+    container.appendChild(nodeRow(n));
+    const cs = kids.get(id)||[];
+    if(cs.length){ const wrap=document.createElement("div"); wrap.className="kid"; cs.forEach(c=>renderSubtree(c,wrap)); container.appendChild(wrap); }
+  }
+  function renderMap(){
+    const map = document.getElementById("map"); map.innerHTML="";
+    const normalRoots = roots.filter(id=>!byId.get(id).isolated);
+    const isoRoots = roots.filter(id=>byId.get(id).isolated);
+    normalRoots.forEach(id=>renderSubtree(id, map));
+    if(isoRoots.length){
+      const box=document.createElement("div"); box.className="isobox";
+      const hdr=document.createElement("div"); hdr.className="isohdr"; hdr.textContent="isolated subtree"; box.appendChild(hdr);
+      isoRoots.forEach(id=>renderSubtree(id, box)); map.appendChild(box);
+    }
+  }
+
+  // ---- filter / search ----
+  function applyFilters(){
+    const q = document.getElementById("q").value.trim().toLowerCase();
+    const ty = document.getElementById("ftype").value;
+    const deadOnly = document.getElementById("fdead").checked;
+    let shown=0;
+    document.querySelectorAll(".node").forEach(el=>{
+      const n = byId.get(el.dataset.id);
+      const text = (n.id+" "+(n.title||"")+" "+(n.body||"")).toLowerCase();
+      const ok = (!q||text.includes(q)) && (!ty||n.type===ty) && (!deadOnly||n.type==="dead_end");
+      el.classList.toggle("dim", !ok);
+      if(ok) shown++;
+    });
+    document.getElementById("rstat").textContent = shown+" / "+nodes.length+" steps";
+  }
+  function rstat(){
+    const i = selected?order.indexOf(selected):-1;
+    document.getElementById("rstat").textContent = (i>=0?("step "+(i+1)+" / "+order.length):(nodes.length+" steps"));
+  }
+
+  // ---- replay ----
+  let timer=null;
+  function step(delta){
+    let i = selected?order.indexOf(selected):-1;
+    i = Math.max(0, Math.min(order.length-1, i+delta));
+    selectNode(order[i]);
+  }
+  function play(){
+    if(timer){ stop(); return; }
+    if(!selected) selectNode(order[0]);
+    document.getElementById("rplay").textContent="⏸ Pause";
+    timer = setInterval(()=>{
+      const i = selected?order.indexOf(selected):-1;
+      if(i>=order.length-1){ stop(); return; }
+      step(1);
+    }, 1300);
+  }
+  function stop(){ if(timer){clearInterval(timer);timer=null;} document.getElementById("rplay").textContent="▶ Replay"; }
+
+  // ======================= v1.1 enrichment layers (all inert unless present) =======================
+  const CTX = DATA.context, GLO = DATA.glossary, DEP = DATA.dependencies, REC = DATA.recipes;
+  const LAYERS = { context:CTX, glossary:GLO, dependencies:DEP, recipes:REC };
+
+  // ---- indexes (built once) ----
+  const claimToNodes = new Map();
+  nodes.forEach(n => (n.why||[]).forEach(c => { if(c&&c.id){ if(!claimToNodes.has(c.id)) claimToNodes.set(c.id,[]); claimToNodes.get(c.id).push(n.id); } }));
+  const firstNodeForClaim = id => (claimToNodes.get(id)||[])[0] || null;
+  const rwById   = new Map(((DEP&&DEP.entries)||[]).map(e => [e.rw_id, e]));
+  const termById = new Map(((GLO&&GLO.terms)||[]).map(t => [t.term_id, t]));
+  // concept "used by" (inferred) from each node's name-matched concepts[]
+  if(GLO){
+    const nameToTerm = new Map();
+    (GLO.terms||[]).forEach(t => { if(t.name) nameToTerm.set(String(t.name).toLowerCase(), t); (t.aliases||[]).forEach(a=>nameToTerm.set(String(a).toLowerCase(), t)); });
+    nodes.forEach(n => (n.concepts||[]).forEach(cn => { const t=nameToTerm.get(String(cn).toLowerCase()); if(t){ (t._used=t._used||[]).push(n.id); } }));
+  }
+
+  // ---- tiny inline-math fallback (no CDN; operates on already-escaped text, adds only safe tags) ----
+  const GK={alpha:"α",beta:"β",gamma:"γ",delta:"δ",epsilon:"ε",eta:"η",theta:"θ",kappa:"κ",lambda:"λ",mu:"μ",nu:"ν",pi:"π",rho:"ρ",sigma:"σ",tau:"τ",phi:"φ",chi:"χ",psi:"ψ",omega:"ω",Delta:"Δ",Sigma:"Σ",Omega:"Ω",Phi:"Φ",Theta:"Θ",Lambda:"Λ",Gamma:"Γ",nabla:"∇",partial:"∂",times:"×",cdot:"·",infty:"∞",approx:"≈",leq:"≤",geq:"≥",neq:"≠",to:"→",in:"∈",sum:"Σ",prod:"Π",sqrt:"√",mathbb:"",mathcal:"",mathbf:"",mathrm:"",left:"",right:""};
+  function texInner(s){
+    s=s.replace(/\\(?:mathbb|mathcal|mathbf|mathrm)\{([^{}]*)\}/g,"$1");
+    s=s.replace(/\\frac\{([^{}]*)\}\{([^{}]*)\}/g,"($1)/($2)");
+    s=s.replace(/\\([A-Za-z]+)/g,(m,w)=>GK[w]!==undefined?GK[w]:m);
+    s=s.replace(/\^\{([^{}]*)\}/g,"<sup>$1</sup>").replace(/\^([\w()+\-])/g,"<sup>$1</sup>");
+    s=s.replace(/_\{([^{}]*)\}/g,"<sub>$1</sub>").replace(/_([\w()+\-])/g,"<sub>$1</sub>");
+    return s;
+  }
+  function mathPass(escaped){
+    if(escaped.indexOf("$")<0) return escaped;
+    return escaped.replace(/\$\$([^$]+)\$\$/g,(m,x)=>'<span class="math">'+texInner(x)+'</span>')
+                  .replace(/\$([^$]+)\$/g,(m,x)=>'<span class="math">'+texInner(x)+'</span>');
+  }
+  function mtext(v){ const e=esc(v); try{ return mathPass(e); }catch(_){ return e; } }
+
+  // ---- typed-ref rendering (off-ARA pointers stay inert; in-ARA targets become jump chips) ----
+  function refUrl(rf){
+    const raw=rf.raw||"";
+    if(rf.kind==="url"){ const m=raw.match(/https?:\/\/\S+/); return m?m[0]:""; }
+    if(rf.kind==="arxiv"){ const m=raw.match(/(\d{4}\.\d{4,5})/); return m?("https://arxiv.org/abs/"+m[1]):""; }
+    if(rf.kind==="doi"){ const m=raw.match(/(10\.\d{4,}\/\S+)/); return m?("https://doi.org/"+m[1]):""; }
+    return "";
+  }
+  function refChip(rf){
+    const raw=esc(rf.raw||""), url=refUrl(rf);
+    if(url) return '<a class="chip ext" href="'+esc(url)+'" target="_blank" rel="noopener">'+raw+'</a>';
+    if(rf.target){
+      if(rf.kind==="claim")        return '<span class="chip jump" data-jump-claim="'+esc(rf.target)+'">'+raw+'</span>';
+      if(rf.kind==="node")         return '<span class="chip jump" data-jump-node="'+esc(rf.target)+'">'+raw+'</span>';
+      if(rf.kind==="concept")      return '<span class="chip jump" data-open-term="'+esc(rf.target)+'">'+raw+'</span>';
+      if(rf.kind==="related_work") return '<span class="chip jump" data-open-panel="dependencies" data-anchor="ov-'+esc(rf.target)+'">'+raw+'</span>';
+      return '<span class="chip jump" data-scroll="ov-'+esc(rf.target)+'">'+raw+'</span>';
+    }
+    const dangle=(rf.kind==="claim"||rf.kind==="related_work"||rf.kind==="concept");
+    return '<span class="chip '+(dangle?'dangle" title="referenced but not found in this ARA':'ext')+'">'+raw+'</span>';
+  }
+  function refRow(refs){ return refs&&refs.length ? '<div class="chips">'+refs.map(refChip).join("")+'</div>' : ""; }
+
+  // ---- per-node provenance chips (consumed by renderDetail) ----
+  function chipRow(label, arr, klass){
+    const cs=arr.map(x=>{
+      const txt=[x.rw_id,x.name].filter(Boolean).join(" · ")||"?";
+      const tip=x.relation_raw?(' title="'+esc(x.relation_raw)+'"'):'';
+      const op =x.rw_id?(' data-open-panel="dependencies" data-anchor="ov-'+esc(x.rw_id)+'"'):'';
+      return '<span class="chip '+klass+(x.rw_id?' jump':'')+'"'+tip+op+'>'+esc(txt)+'</span>';
+    }).join("");
+    return '<div class="chiplabel">'+esc(label)+'</div><div class="chips">'+cs+'</div>';
+  }
+  function recipeChips(arr){
+    const cs=arr.map(x=>{
+      const anchor="ov-sec-"+(x.file||"")+"-"+(x.sec_id||"");
+      return '<span class="chip chip-recipe jump" data-open-panel="recipes" data-anchor="'+esc(anchor)+'" title="'+esc((x.file||"")+(x.role?(" · "+x.role):""))+'">▦ '+esc(x.heading||x.file||"recipe")+'</span>';
+    }).join("");
+    return '<div class="chiplabel">recipe</div><div class="chips">'+cs+'</div>';
+  }
+
+  // ---- the four overlay renderers (reuse block/chips/renderMd) ----
+  function renderContext(){
+    let h=""; if(CTX.summary) h+='<div class="ribbon">'+esc(CTX.summary)+'</div>';
+    (CTX.sections||[]).forEach(sec=>{
+      let inner="";
+      if(sec.present===false){ inner='<div class="muted grey">(not specified in this ARA)</div>'; }
+      else (sec.entries||[]).forEach(en=>{
+        let c='<div class="card" id="ov-'+esc(en.ent_id||"")+'"><h4>'+(en.ent_id?'<span class="did">'+esc(en.ent_id)+'</span> ':'')+esc(en.ent_title||"")+(en.inferred_id?' <span class="sub">(pos.)</span>':'')+'</h4>';
+        if(!en.unstructured && en.fields && en.fields.length) en.fields.forEach(f=>c+='<div class="kv"><b>'+esc(f.label)+'</b> '+mtext(f.value)+'</div>');
+        else if(en.text) c+='<div class="kv">'+mtext(en.text)+'</div>';
+        if(en.unstructured) c+='<div class="sub">unstructured</div>';
+        c+=refRow(en.refs)+'</div>'; inner+=c;
+      });
+      h+=block(sec.heading||sec.role||"section", sec.role||"", inner, sec.role==="insight");
+    });
+    return h || '<div class="muted">No problem context.</div>';
+  }
+  function renderGlossary(filter){
+    const f=(filter||"").trim().toLowerCase();
+    const match=t=>!f||((t.name||"")+" "+(t.aliases||[]).join(" ")+" "+(t.definition||"")).toLowerCase().includes(f);
+    function card(t){
+      let c='<div class="card" id="ov-'+esc(t.term_id)+'"><h4>'+esc(t.name)+(t.group?' <span class="sub">'+esc(t.group)+'</span>':'')+'</h4>';
+      if(t.aliases&&t.aliases.length) c+='<div class="chips">'+t.aliases.map(a=>'<span class="chip">'+esc(a)+'</span>').join("")+'</div>';
+      if(t.definition) c+='<div class="kv">'+mtext(t.definition)+'</div>';
+      (t.fields||[]).forEach(fl=>c+='<div class="kv"><b>'+esc(fl.label)+'</b> '+mtext(fl.value)+'</div>');
+      if(t.related&&t.related.length) c+='<div class="kv"><b>related</b> '+t.related.map(r=>{const rt=termById.get(r);return '<span class="chip jump" data-open-term="'+esc(r)+'">'+esc(rt?rt.name:r)+'</span>';}).join(" ")+'</div>';
+      if(t._used&&t._used.length) c+='<div class="kv"><b>mentions</b> '+[...new Set(t._used)].map(nid=>'<span class="chip jump" data-jump-node="'+esc(nid)+'">'+esc(nid)+'</span>').join(" ")+' <span class="sub">(inferred)</span></div>';
+      return c+refRow(t.refs)+'</div>';
+    }
+    const groups=GLO.groups&&GLO.groups.length?GLO.groups:null; let h="";
+    if(groups){
+      const grouped=new Set();
+      groups.forEach(g=>{ (g.term_ids||[]).forEach(id=>grouped.add(id)); const ts=(g.term_ids||[]).map(id=>termById.get(id)).filter(Boolean).filter(match); if(ts.length) h+=block(g.name||"group", String(ts.length), ts.map(card).join(""), true); });
+      const rest=(GLO.terms||[]).filter(t=>!grouped.has(t.term_id)).filter(match);
+      if(rest.length) h+=block("other", String(rest.length), rest.map(card).join(""), true);
+    } else { const ts=(GLO.terms||[]).filter(match); h=ts.map(card).join(""); }
+    return h || '<div class="muted">No matching terms.</div>';
+  }
+  function renderDeps(filter){
+    const f=(filter||"").trim().toLowerCase(); let h="";
+    if(DEP.preamble) h+='<div class="muted">'+esc(DEP.preamble)+'</div>';
+    if(DEP.attribution) h+='<div class="ribbon">'+esc(DEP.attribution)+'</div>';
+    const ents=(DEP.entries||[]).filter(e=>!e.is_footprint).filter(e=>!f||(((e.rw_id||"")+" "+(e.name||"")+" "+(e.relation_raw||"")+" "+(e.delta||"")).toLowerCase().includes(f)));
+    ents.forEach(e=>{
+      const rn=e.relation_norm, relc=["baseline","imports","extends","bounds","refutes"].includes(rn)?rn:"neutral";
+      let c='<div class="card" id="ov-'+esc(e.rw_id||"")+'"><h4>'+(e.rw_id?'<span class="did">'+esc(e.rw_id)+'</span> ':'')+esc(e.name||"")+'</h4>';
+      c+='<div class="chips"><span class="rel '+relc+'">'+esc(e.relation_raw||rn||"related")+'</span>'+(e.cross_agent?'<span class="chip" title="other-agent provenance">↔ other-agent</span>':'')+'</div>';
+      if(e.delta) c+='<div class="kv">'+mtext(e.delta)+'</div>';
+      if(e.adopted) c+='<div class="kv"><b>adopted</b> '+esc(e.adopted)+'</div>';
+      let prov=(e.grounding||[]).map(refChip).join("");
+      (e.claims||[]).filter(id=>claimToNodes.has(id)).forEach(id=>prov+='<span class="chip jump" data-jump-claim="'+esc(id)+'">'+esc(id)+'</span>');
+      c+= prov?('<div class="kv"><b>grounding</b> '+prov+'</div>'):'<div class="muted">ungrounded</div>';
+      h+=c+'</div>';
+    });
+    if(!ents.length) h+='<div class="muted">No matching dependencies.</div>';
+    const fp=DEP.footprint||[];
+    if(fp.length) h+=block("Citation footprint", String(fp.length), fp.map(x=>'<div class="ptr"><span class="muted">'+esc(x.ref_id||"")+'</span> '+esc(x.citation||"")+'</div>').join(""), false);
+    return h;
+  }
+  function renderRecipes(){
+    let h="";
+    (REC.files||[]).forEach(file=>{
+      let inner="";
+      (file.sections||[]).forEach(sec=>{
+        let c='<div class="card" id="ov-sec-'+esc((file.file||"")+"-"+(sec.sec_id||""))+'"><h4>'+(sec.sec_id?'<span class="did">'+esc(sec.sec_id)+'</span> ':'')+esc(sec.heading||"")+'</h4>';
+        if(sec.kind==="table"&&sec.markdown) c+=renderMd(sec.markdown);
+        else if(sec.kind==="steps"&&sec.steps&&sec.steps.length) c+='<ol>'+sec.steps.map(s=>'<li>'+mtext(String(s).replace(/^\s*\d+\.\s*/,""))+'</li>').join("")+'</ol>';
+        else if(sec.kind==="kv"&&sec.fields&&sec.fields.length) sec.fields.forEach(fl=>c+='<div class="kv"><b>'+esc(fl.label)+'</b> '+mtext(fl.value)+'</div>');
+        else if(sec.kind==="code"&&sec.code) c+='<pre class="snip">'+esc(sec.code)+'</pre>';
+        else if(sec.kind==="math"&&sec.code) c+='<div class="kv math">'+mtext(sec.code)+'</div>';
+        else if(sec.text) c+='<div class="kv">'+mtext(sec.text)+'</div>';
+        if(sec.warn) c+='<div class="warn">'+esc(sec.warn)+'</div>';
+        inner+=c+refRow(sec.refs)+'</div>';
+      });
+      h+=block((file.file_title||file.file||"recipe")+(file.role?("  ·  "+file.role):""), String((file.sections||[]).length), inner, true);
+    });
+    return h || '<div class="muted">No recipe content.</div>';
+  }
+
+  // ---- overlay open/close + layerbar wiring ----
+  const ov=document.getElementById("overlay");
+  let lastTrigger=null;
+  const PANEL_RENDER={ context:renderContext, glossary:()=>renderGlossary(""), dependencies:()=>renderDeps(""), recipes:renderRecipes };
+  function hasContent(name){ const L=LAYERS[name]; if(!L) return false;
+    if(name==="context") return (L.sections||[]).length>0;
+    if(name==="glossary") return (L.terms||[]).length>0;
+    if(name==="dependencies") return (L.entries||[]).length>0||(L.footprint||[]).length>0;
+    if(name==="recipes") return (L.files||[]).length>0; return false; }
+  function panelTitle(name){ const L=LAYERS[name]||{}; return L.title || ({context:"Context",glossary:"Concepts",dependencies:"Dependencies",recipes:"Solution"}[name]); }
+  function panelCount(name){ const L=LAYERS[name]||{};
+    if(name==="glossary") return (L.terms||[]).length;
+    if(name==="dependencies") return (L.entries||[]).length;
+    if(name==="recipes") return (L.files||[]).reduce((a,f)=>a+(f.sections||[]).length,0); return 0; }
+  function openPanel(name, anchor){
+    if(!hasContent(name)) return;
+    stop(); lastTrigger=document.activeElement;
+    document.getElementById("ov-title").textContent=panelTitle(name);
+    const body=document.getElementById("ov-body"); body.innerHTML=PANEL_RENDER[name]();
+    if(LEX) linkifyConcepts(body);
+    const q=document.getElementById("ov-q");
+    if(name==="glossary"||name==="dependencies"){ q.hidden=false; q.value=""; q.dataset.panel=name; } else { q.hidden=true; }
+    ov.hidden=false;
+    if(anchor){ const el=document.getElementById(anchor); if(el) el.scrollIntoView({block:"center"}); } else body.scrollTop=0;
+    (q.hidden?document.getElementById("ov-close"):q).focus();
+  }
+  function closePanel(){ ov.hidden=true; if(lastTrigger&&lastTrigger.focus) lastTrigger.focus(); }
+  document.querySelectorAll(".lbtn").forEach(b=>{ const name=b.dataset.panel;
+    if(hasContent(name)){ b.hidden=false; const c=b.querySelector(".cnt"); if(c){ const n=panelCount(name); if(n) c.textContent=n; } b.addEventListener("click",()=>openPanel(name)); } });
+  document.getElementById("ov-q").addEventListener("input", e=>{ const p=e.target.dataset.panel, body=document.getElementById("ov-body");
+    body.innerHTML = p==="glossary"?renderGlossary(e.target.value):renderDeps(e.target.value); if(LEX) linkifyConcepts(body); });
+
+  // ---- glossary lexicon + popover ----
+  const LEX=(GLO&&GLO.lexicon&&Object.keys(GLO.lexicon).length)?(function(){
+    const surf=Object.keys(GLO.lexicon).filter(s=>s.length>=3).sort((a,b)=>b.length-a.length);
+    if(!surf.length) return null;
+    const re=s=>s.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+    return { re:new RegExp("\\b("+surf.map(re).join("|")+")\\b","i"), map:GLO.lexicon };
+  })():null;
+  const SKIP_TAGS={A:1,CODE:1,PRE:1,BUTTON:1,SCRIPT:1,STYLE:1,H4:1,H5:1,SUMMARY:1};
+  function linkifyConcepts(root){
+    if(!LEX) return;
+    const walker=document.createTreeWalker(root, NodeFilter.SHOW_TEXT, { acceptNode(t){
+      if(!t.nodeValue||!t.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+      let p=t.parentNode; while(p&&p!==root){ if(p.classList&&p.classList.contains("gterm")) return NodeFilter.FILTER_REJECT; if(SKIP_TAGS[p.tagName]) return NodeFilter.FILTER_REJECT; p=p.parentNode; }
+      return NodeFilter.FILTER_ACCEPT; } });
+    const seen=new Set(), hits=[]; let t;
+    while((t=walker.nextNode())){ const m=LEX.re.exec(t.nodeValue); if(!m) continue; const tid=LEX.map[m[1].toLowerCase()]; if(!tid||seen.has(tid)) continue; seen.add(tid); hits.push({node:t,index:m.index,len:m[1].length,tid}); }
+    hits.forEach(hp=>{ const tn=hp.node, txt=tn.nodeValue, par=tn.parentNode; if(!par) return;
+      const span=document.createElement("span"); span.className="gterm"; span.dataset.term=hp.tid; span.tabIndex=0; span.textContent=txt.slice(hp.index,hp.index+hp.len);
+      const after=document.createTextNode(txt.slice(hp.index+hp.len));
+      par.replaceChild(after,tn); par.insertBefore(span,after); par.insertBefore(document.createTextNode(txt.slice(0,hp.index)),span); });
+  }
+  const gpop=document.getElementById("gpop");
+  function gpopShow(span){ const t=termById.get(span.dataset.term); if(!t) return;
+    const def=t.definition||""; gpop.innerHTML='<h5>'+esc(t.name)+'</h5><div>'+mtext(def.slice(0,240))+(def.length>240?'…':'')+'</div><span class="gp-open" data-open-term="'+esc(t.term_id)+'">open in glossary →</span>';
+    gpop.style.display="block"; const r=span.getBoundingClientRect();
+    gpop.style.left=Math.max(6,Math.min(r.left, window.innerWidth-372))+"px"; gpop.style.top=(r.bottom+6)+"px"; }
+  function gpopHide(){ gpop.style.display="none"; }
+
+  // ---- delegated interactions for the new layers ----
+  document.addEventListener("click", e=>{
+    const el=e.target.closest&&e.target.closest("[data-close],[data-jump-node],[data-jump-claim],[data-open-panel],[data-open-term],[data-scroll]");
+    if(!el) return;
+    if(el.hasAttribute("data-close")){ closePanel(); return; }
+    if(el.dataset.jumpNode){ closePanel(); selectNode(el.dataset.jumpNode); return; }
+    if(el.dataset.jumpClaim){ const nid=firstNodeForClaim(el.dataset.jumpClaim); if(nid){ closePanel(); selectNode(nid); } return; }
+    if(el.dataset.openTerm){ openPanel("glossary","ov-"+el.dataset.openTerm); return; }
+    if(el.hasAttribute("data-open-panel")){ openPanel(el.dataset.openPanel, el.dataset.anchor||null); return; }
+    if(el.dataset.scroll){ const t=document.getElementById(el.dataset.scroll); if(t) t.scrollIntoView({block:"center"}); return; }
+  });
+  document.addEventListener("mouseover", e=>{ const g=e.target.closest&&e.target.closest(".gterm"); if(g) gpopShow(g); });
+  document.addEventListener("mouseout",  e=>{ const g=e.target.closest&&e.target.closest(".gterm"); if(g) gpopHide(); });
+  document.addEventListener("focusin",   e=>{ const g=e.target.closest&&e.target.closest(".gterm"); if(g) gpopShow(g); });
+  document.addEventListener("focusout",  e=>{ const g=e.target.closest&&e.target.closest(".gterm"); if(g) gpopHide(); });
+  window.addEventListener("scroll", gpopHide, true);
+
+  document.getElementById("q").addEventListener("input", applyFilters);
+  document.getElementById("ftype").addEventListener("change", applyFilters);
+  document.getElementById("fdead").addEventListener("change", applyFilters);
+  document.getElementById("rplay").addEventListener("click", play);
+  document.getElementById("rprev").addEventListener("click", ()=>{stop();step(-1);});
+  document.getElementById("rnext").addEventListener("click", ()=>{stop();step(1);});
+  document.addEventListener("keydown", e=>{
+    if(e.key==="Escape"){ if(!ov.hidden){ closePanel(); return; } gpopHide(); }
+    if(e.target.tagName==="INPUT"||e.target.tagName==="SELECT") return;
+    if(e.key==="ArrowLeft"){stop();step(-1);} else if(e.key==="ArrowRight"){stop();step(1);}
+    else if(e.key==="c"||e.key==="g"||e.key==="d"||e.key==="r"){ const p={c:"context",g:"glossary",d:"dependencies",r:"recipes"}[e.key]; if(hasContent(p)) openPanel(p); }
+  });
+
+  renderMap();
+  rstat();
+})();
+</script>
+</body>
+</html>

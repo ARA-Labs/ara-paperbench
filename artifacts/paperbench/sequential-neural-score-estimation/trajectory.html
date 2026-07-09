@@ -1,0 +1,3229 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ARA Trajectory</title>
+<!--
+  ARA Trajectory Viewer — canonical self-contained scaffold for the `research-visualizer` skill.
+
+  HOW THE SKILL USES THIS FILE
+  ----------------------------
+  The rendering logic below is FIXED. The agent does NOT rewrite it. The agent only:
+    1. Parses the ARA into one ARA_DATA object (schema in references/binding.md).
+    2. base64-inlines every referenced figure .png into node.result.figures[].img.
+    3. Replaces ONLY the JSON between the BEGIN/END markers in the <script id="ara-data"> block.
+    4. Writes the result to <ara>/trajectory.html (or --output).
+  Everything is inline (no CDN, no fetch, no server) so the output is one portable file.
+
+  INJECTION CONTRACT
+  ------------------
+  - Replace exactly the lines between  __ARA_DATA_BEGIN__  and  __ARA_DATA_END__.
+  - The payload MUST be valid JSON (it is read with JSON.parse).
+  - JSON must not contain the literal substring "</script>"; escape any "<" in inlined
+    markdown/text as "<" to be safe.
+  - The demo payload shipped here renders a 3-node sample so the bare template opens and
+    shows every node state (experiment, dead_end, isolated). The skill overwrites it.
+-->
+<style>
+  /* Research Visualizer — "field notebook of a machine scientist".
+     Cool archival vellum + ink; monospace is the machine-readout voice for
+     structure / IDs / data, a humanist serif carries the reasoning prose. The
+     signature is a traced trajectory spine that forks at branches and is struck
+     through at dead ends. Type is read from glyph + label; colour is reserved
+     for true epistemic status (teal = chrome, green = supported, amber =
+     tentative, clay-red = dead end) — never decoration. */
+  :root{
+    /* paper & ink — deliberately cool vellum, NOT warm cream */
+    --bg:#e9ece4; --panel:#f4f6f0; --panel2:#e3e7dd; --line:#ccd3c7; --ink:#1b2420;
+    --muted:#67726a; --faint:#8a948b; --accent:#0e6b62; --accent-ink:#0a4f48; --chip:#e6eae0;
+    --ok:#3a6a39; --warn:#a6402c; --tentative:#8a6310; --glyph-bg:#e0e5da; --glyph-ink:#4a544c;
+    --sel-bg:#e3ede7; --code-bg:#eaeee6; --reason-bg:#f4f6f0;
+    --iso-line:#b7c0ae; --iso-bg:#e5eadf; --iso-ink:#5f6b58;
+    --scrim:rgba(20,28,24,.42); --shadow:rgba(20,28,24,.16);
+    --add-bg:#e0ebdb; --add-ink:#2f5a2e; --del-bg:#f1e0da; --del-ink:#8c3623; --hunk:#67726a;
+    --spine:#c3ccbd; --grid:rgba(27,36,32,.05);
+    /* legacy type vars retained so any leftover hooks resolve */
+    --q:var(--glyph-bg); --exp:var(--glyph-bg); --dec:var(--glyph-bg); --piv:var(--glyph-bg); --ins:var(--glyph-bg); --def:var(--glyph-bg); --dead:var(--warn);
+    /* type roles: a serif reads the prose, monospace reads the machine */
+    --serif:ui-serif,"New York","Iowan Old Style",Palatino,Georgia,serif;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--bg);color:var(--ink);font:14px/1.65 var(--sans);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  code,pre,.mono{font-family:var(--mono)}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+
+  /* ---- masthead ---- */
+  header{padding:20px 24px 14px;border-bottom:1px solid var(--line);background:var(--panel)}
+  header .title{font-family:var(--serif);font-size:23px;font-weight:600;margin:0;letter-spacing:-.012em}
+  header .sub{font-family:var(--mono);color:var(--muted);font-size:11.5px;margin-top:5px;letter-spacing:.01em}
+  header details{margin-top:10px;color:var(--ink)}
+  header summary{cursor:pointer;color:var(--accent-ink);font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em}
+  .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:16px}
+  .toolbar input[type=search],.toolbar select{background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:6px 10px;font-size:13px;font-family:var(--sans)}
+  .toolbar input[type=search]{min-width:230px}
+  .toolbar input[type=search]:focus,.toolbar select:focus{border-color:var(--accent);outline:none}
+  .toolbar label{color:var(--muted);font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.06em;display:flex;gap:6px;align-items:center}
+  .btn{background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:6px 11px;font-size:12.5px;font-family:var(--mono);cursor:pointer;transition:border-color .12s,color .12s,background .12s}
+  .btn:hover{border-color:var(--accent);color:var(--accent-ink)}
+  .btn.primary{border-color:var(--accent);color:#fff;background:var(--accent)}
+  .btn.primary:hover{background:var(--accent-ink)}
+  .spacer{flex:1}
+  .count{color:var(--muted);font-family:var(--mono);font-size:11px;letter-spacing:.04em;padding-left:10px;border-left:1px solid var(--line)}
+
+  main{display:grid;grid-template-columns:minmax(300px,36%) 1fr;height:calc(100% - 0px);min-height:0}
+  #map{overflow:auto;border-right:1px solid var(--line);padding:18px 12px 56px;background:var(--bg);
+    background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+    background-size:24px 24px;background-position:-1px -1px}
+  #detail{overflow:auto;padding:26px 32px 80px;background:var(--bg)}
+
+  /* ---- process map: the trajectory spine is the signature ---- */
+  .node{position:relative;display:flex;gap:10px;align-items:flex-start;padding:7px 9px;border-radius:6px;cursor:pointer;border:1px solid transparent}
+  .node:hover{background:var(--panel2)}
+  .node.sel{background:var(--sel-bg);border-color:var(--accent)}
+  .node.deptarget{background:var(--sel-bg);outline:1px dashed var(--accent);outline-offset:-1px}
+  .node.dim{opacity:.32}
+  .node .glyph{flex:none;width:20px;height:20px;border-radius:5px;display:grid;place-items:center;font-family:var(--mono);font-size:11px;font-weight:700;color:var(--glyph-ink);background:var(--glyph-bg);border:1px solid var(--line);margin-top:1px}
+  .node.sel .glyph{border-color:var(--accent);color:var(--accent-ink)}
+  .node .nid{color:var(--muted);font-size:10.5px;font-family:var(--mono);letter-spacing:.02em}
+  .node .ntitle{font-size:13px;line-height:1.45}
+  .node.dead .ntitle{color:var(--warn);text-decoration:line-through;text-decoration-color:rgba(166,64,44,.45)}
+  .node .meta{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  /* the spine + branch connectors: nested steps trace back to their parent */
+  .kid{margin-left:19px;border-left:2px solid var(--spine);padding-left:14px}
+  .kid>.node::before{content:"";position:absolute;left:-14px;top:14px;width:10px;height:2px;background:var(--spine)}
+  .kid>.node.sel::before{background:var(--accent)}
+  .isobox{border:1px dashed var(--iso-line);border-radius:8px;margin:12px 2px;padding:6px 4px;background:var(--iso-bg)}
+  .isobox .isohdr{color:var(--iso-ink);font-family:var(--mono);font-size:10px;padding:3px 8px 7px;text-transform:uppercase;letter-spacing:.1em}
+  .dep{color:var(--muted);font-size:10px;font-family:var(--mono);border:1px solid var(--line);border-radius:4px;padding:0 5px}
+
+  .glyph.dead_end{background:var(--warn);color:#fff;border-color:var(--warn)}
+
+  /* ---- detail pane ---- */
+  .dhead{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-bottom:2px}
+  .badge{font-family:var(--mono);font-size:10px;font-weight:700;border-radius:4px;padding:3px 9px;color:var(--glyph-ink);background:var(--glyph-bg);border:1px solid var(--line);text-transform:uppercase;letter-spacing:.08em}
+  .badge.dead_end{background:var(--warn);color:#fff;border-color:var(--warn)}
+  .pill{font-family:var(--mono);font-size:10px;border:1px solid var(--line);border-radius:20px;padding:2px 9px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+  .pill.explicit{border-color:var(--ok);color:var(--ok)} .pill.inferred{border-color:var(--tentative);color:var(--tentative)}
+  .pill.iso{border-color:var(--iso-line);color:var(--iso-ink)}
+  .dtitle{font-family:var(--serif);font-size:25px;font-weight:600;margin:12px 0 6px;letter-spacing:-.012em;line-height:1.28}
+  .did{color:var(--muted);font-family:var(--mono);font-size:11.5px}
+
+  .block{border:1px solid var(--line);border-radius:7px;margin:15px 0;background:var(--panel)}
+  .block>summary{cursor:pointer;padding:11px 15px;font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);list-style:none;display:flex;align-items:center;gap:8px}
+  .block>summary::-webkit-details-marker{display:none}
+  .block>summary:hover{color:var(--accent-ink)}
+  .block>summary .tag{margin-left:auto;color:var(--faint);font-size:10.5px;font-weight:400;font-family:var(--mono);text-transform:none;letter-spacing:0}
+  .block .body{padding:4px 16px 16px}
+  /* the primary reasoning block: the agent's thinking, set as typeset prose */
+  .block.reason{border-left:3px solid var(--accent);background:var(--reason-bg)}
+  .block.reason>summary{color:var(--accent-ink)}
+  .block.reason .lead{font-family:var(--serif);font-size:17px;line-height:1.7;color:var(--ink)}
+  .didwhat{color:var(--muted);font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.09em;margin:16px 0 4px}
+  .lead{font-family:var(--serif);color:#2a322c;font-size:16px;line-height:1.7}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:11px}
+  .chip{background:var(--chip);border:1px solid var(--line);border-radius:4px;padding:2px 8px;font-size:11px;color:#46504a;font-family:var(--mono)}
+  .chip.ext{color:var(--muted)}
+
+  .claim{border:1px solid var(--line);border-left:2px solid var(--accent);border-radius:0 6px 6px 0;padding:11px 13px;margin:11px 0;background:var(--panel2)}
+  .claim h4{margin:0 0 6px;font-family:var(--mono);font-size:12px}
+  .claim .kv{font-size:13px;line-height:1.6;margin:4px 0;color:#3a423c}
+  .claim .kv b{color:var(--muted);font-weight:600;font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em}
+  .status{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.05em;border-radius:4px;padding:1px 7px;border:1px solid var(--line)}
+  .status.supported{color:var(--ok);border-color:var(--ok)}
+  .status.refuted{color:var(--warn);border-color:var(--warn)}
+  .status.hypothesis{color:var(--tentative);border-color:var(--tentative)}
+  .prov{font-size:11px;color:var(--iso-ink);font-family:var(--mono)}
+
+  .quote{border-left:3px solid var(--accent);background:var(--panel);border-radius:0 6px 6px 0;padding:9px 13px;margin:9px 0;font-size:13.5px;line-height:1.6;color:#2a322c}
+  .quote .ref{color:var(--muted);font-size:10.5px;font-family:var(--mono);margin-top:5px}
+  figure{margin:14px 0}
+  figure img{max-width:100%;border:1px solid var(--line);border-radius:5px;background:#fff;padding:6px}
+  figcaption{color:var(--muted);font-family:var(--mono);font-size:11px;margin-top:7px}
+
+  table.md{border-collapse:collapse;width:100%;font-family:var(--mono);font-size:12px;margin:10px 0}
+  table.md th,table.md td{border:1px solid var(--line);padding:5px 9px;text-align:left}
+  table.md th{background:var(--panel2);color:var(--ink);font-weight:700;text-transform:uppercase;font-size:10.5px;letter-spacing:.04em}
+  pre.snip{background:var(--code-bg);border:1px solid var(--line);border-radius:6px;padding:10px 12px;overflow:auto;font-size:12px;color:var(--ink);white-space:pre-wrap}
+
+  .ptr{font-size:13px;margin:7px 0}
+  .ptr .path{font-family:var(--mono);color:#46504a}
+  .truncated{color:var(--muted);font-size:11.5px;font-style:italic}
+  .empty{color:var(--muted);font-size:13px}
+  .none{color:var(--muted);padding:40px 24px;text-align:center;font-family:var(--mono);font-size:12px;letter-spacing:.02em}
+  kbd{background:var(--panel2);border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 5px;font-family:var(--mono);font-size:11px}
+
+  /* ---- enrichment layers (all inert unless the data is present) ---- */
+  .layerbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+  .lbtn .cnt{color:var(--muted);font-size:10.5px}
+  .chiplabel{color:var(--muted);font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.08em;margin:12px 0 3px}
+  .chip.jump{cursor:pointer}
+  .chip.jump:hover{border-color:var(--accent);color:var(--accent-ink)}
+  .chip.dangle{color:#9aa49b;text-decoration:line-through;cursor:not-allowed}
+  .chip.infer{border-style:dashed}
+  .chip-built{border-color:var(--ok);color:var(--ok)}
+  .chip-rej{border-color:var(--warn);color:var(--warn)}
+  .chip-recipe{border-color:var(--accent);color:var(--accent-ink)}
+  .nmark{color:var(--muted);font-size:10px;margin-left:5px;font-family:var(--mono)}
+  .rel{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.05em;border-radius:4px;padding:2px 8px;color:var(--glyph-ink);background:var(--glyph-bg);font-weight:700}
+  .rel.bounds,.rel.refutes{background:var(--warn);color:#fff}
+  .rel.neutral{background:var(--chip);color:var(--ink);border:1px solid var(--line);font-weight:400}
+  .ribbon{border-left:3px solid var(--accent);background:var(--panel2);border-radius:0 6px 6px 0;padding:9px 13px;margin:9px 0;color:#3a423c;font-size:13px;line-height:1.6}
+  .warn{border-left:3px solid var(--warn);background:var(--del-bg);border-radius:0 6px 6px 0;padding:9px 13px;margin:9px 0;font-size:13px;line-height:1.6}
+  .muted{color:var(--muted);font-size:11.5px}
+  .math{font-family:var(--serif);font-style:italic}
+  .gterm{border-bottom:1px dashed var(--accent);cursor:help}
+  #gpop{position:fixed;max-width:360px;background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:11px 13px;z-index:60;box-shadow:0 8px 28px var(--shadow);font-size:13px;line-height:1.55;display:none}
+  #gpop h5{margin:0 0 5px;font-family:var(--mono);font-size:12px;text-transform:uppercase;letter-spacing:.05em}
+  #gpop .gp-open{color:var(--accent);cursor:pointer;font-family:var(--mono);font-size:11px;margin-top:7px;display:inline-block}
+  .ov{position:fixed;inset:0;z-index:50}
+  .ov[hidden]{display:none}
+  .ov-scrim{position:absolute;inset:0;background:var(--scrim)}
+  .ov-sheet{position:relative;margin:5vh auto;max-width:920px;max-height:86vh;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 16px 48px var(--shadow)}
+  .ov-head{position:sticky;top:0;display:flex;gap:10px;align-items:center;padding:13px 17px;border-bottom:1px solid var(--line);background:var(--panel);z-index:1}
+  .ov-head #ov-title{font-family:var(--mono);font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.09em;color:var(--accent-ink)}
+  .ov-head input[type=search]{flex:1;max-width:260px;background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:5px 10px;font-size:13px}
+  .ov-body{padding:10px 17px 26px}
+  .ov-body .spacer{flex:1}
+  .card{border:1px solid var(--line);border-radius:6px;padding:11px 13px;margin:11px 0;background:var(--panel2)}
+  .card h4{margin:0 0 6px;font-family:var(--mono);font-size:12px}
+  .card .sub{color:var(--muted);font-family:var(--mono);font-size:10.5px}
+  .grey{opacity:.5}
+
+  /* responsive: stack the two panes on a narrow screen */
+  @media (max-width:720px){
+    main{grid-template-columns:1fr;grid-template-rows:42vh 1fr}
+    #map{border-right:none;border-bottom:1px solid var(--line)}
+    #detail{padding:20px 18px 64px}
+    .dtitle{font-size:21px}
+  }
+  /* honour reduced-motion */
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<header>
+  <h1 class="title" id="h-title">ARA Trajectory</h1>
+  <div class="sub" id="h-sub"></div>
+  <details id="h-abstract-wrap"><summary>Abstract</summary><div class="lead" id="h-abstract"></div></details>
+  <div class="toolbar">
+    <input type="search" id="q" placeholder="search steps…" autocomplete="off" />
+    <label>type
+      <select id="ftype"><option value="">all</option></select>
+    </label>
+    <label><input type="checkbox" id="fdead" /> dead ends only</label>
+    <span class="spacer"></span>
+    <button class="btn" id="rprev" title="previous (←)">‹</button>
+    <button class="btn primary" id="rplay">▶ Replay</button>
+    <button class="btn" id="rnext" title="next (→)">›</button>
+    <span class="count" id="rstat"></span>
+  </div>
+  <div class="layerbar" id="layerbar">
+    <button class="btn lbtn" data-panel="context" hidden>◧ Context</button>
+    <button class="btn lbtn" data-panel="glossary" hidden>▤ Glossary <span class="cnt"></span></button>
+    <button class="btn lbtn" data-panel="dependencies" hidden>⇄ Dependencies <span class="cnt"></span></button>
+    <button class="btn lbtn" data-panel="recipes" hidden>▦ Recipes <span class="cnt"></span></button>
+  </div>
+</header>
+
+<main>
+  <aside id="map"></aside>
+  <section id="detail"><div class="none">Select a step on the left, or press <kbd>▶ Replay</kbd>.</div></section>
+</main>
+
+<!-- v1.1: one shared modal overlay for the Context/Glossary/Dependencies/Recipes panels, + a glossary popover. Both inert unless their data is present. -->
+<div id="overlay" class="ov" hidden role="dialog" aria-modal="true">
+  <div class="ov-scrim" data-close></div>
+  <div class="ov-sheet">
+    <div class="ov-head"><span id="ov-title"></span>
+      <input type="search" id="ov-q" placeholder="filter…" hidden autocomplete="off" />
+      <span class="spacer"></span>
+      <button class="btn" id="ov-close" data-close>✕ <kbd>Esc</kbd></button>
+    </div>
+    <div class="ov-body" id="ov-body"></div>
+  </div>
+</div>
+<div id="gpop"></div>
+
+<!-- The skill replaces ONLY the JSON between the two markers below. -->
+<script id="ara-data" type="application/json">
+/* __ARA_DATA_BEGIN__ */
+{
+  "meta": {
+    "title": "Sequential Neural Score Estimation: Likelihood-Free Inference with Conditional Score Based Diffusion Models",
+    "authors": [
+      "Louis Sharrock",
+      "Jack Simons",
+      "Song Liu",
+      "Mark Beaumont"
+    ],
+    "year": "2024",
+    "venue": "Proceedings of the 41st International Conference on Machine Learning (ICML 2024)",
+    "ara_dir": "sequential-neural-score-estimation",
+    "abstract": "We introduce Sequential Neural Posterior Score Estimation (SNPSE), a score-based method for Bayesian inference in simulator-based models. Our method, inspired by the remarkable success of score-based methods in generative modelling, leverages conditional score-based diffusion models to generate samples from the posterior distribution of interest. The model is trained using an objective function which directly estimates the score of the posterior. We embed the model into a sequential training procedure, which guides simulations using the current approximation of the posterior at the observation of interest, thereby reducing the simulation cost. We also introduce several alternative sequential approaches, and discuss their relative merits. We then validate our method, as well as its amortised, non-sequential, variant on several numerical examples, demonstrating comparable or superior performance to existing state-of-the-art methods such as Sequential Neural Posterior Estimation (SNPE)."
+  },
+  "order": [
+    "N01",
+    "N02",
+    "N03",
+    "N04",
+    "N05",
+    "N06",
+    "N07",
+    "N08",
+    "N09",
+    "N10",
+    "N11",
+    "N12",
+    "N13",
+    "N14"
+  ],
+  "nodes": [
+    {
+      "id": "N01",
+      "type": "question",
+      "parent": null,
+      "title": "Can conditional score-based diffusion models replace normalising flows for SBI?",
+      "body": "The central question: given that diffusion models achieve state-of-the-art generative quality and avoid architectural restrictions of normalising flows, can they be used to estimate the posterior score ∇_θ log p(θ|x) in the simulation-based inference setting where the likelihood p(x|θ) is intractable?",
+      "thinking": "The starting question for this paper: normalising-flow-based methods (like SNPE) are the standard way to do simulation-based inference (SBI), where the goal is to infer parameters of a simulator whose likelihood is intractable. Diffusion models had recently become state of the art for generative modelling elsewhere, without the architectural restrictions flows impose (they must be invertible). This step asks whether that same diffusion machinery, specifically estimating the score, the gradient of the log-density, of the posterior, could be adapted to the SBI setting.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [],
+      "built_on": [],
+      "rejected_here": [],
+      "concepts": [
+        "Simulation-Based Inference (SBI)"
+      ],
+      "recipe_refs": []
+    },
+    {
+      "id": "N02",
+      "type": "experiment",
+      "parent": "N01",
+      "title": "Derive tractable DSM objective for posterior score estimation",
+      "body": "Showed that the intractable posterior score matching objective J^SM_post is equivalent to the tractable denoising objective J^DSM_post (Eq. 7), which only requires samples from p(θ)p(x|θ) and closed-form transition scores. This yields NPSE — the amortised non-sequential algorithm.",
+      "thinking": "The obstacle to using diffusion models here is that the natural training objective (matching the true, intractable posterior score) can't be computed directly. This step shows algebraically that a tractable surrogate, denoising score matching (DSM), is equivalent to it: it only needs samples from the joint p(θ)p(x|θ) and a closed-form noise-transition score, both available even without a tractable likelihood. That equivalence is what makes the whole approach possible, and it defines NPSE, the amortised (train-once, query-any-observation) version of the method.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [
+        "Eq. 6-7",
+        "Appendix A.1"
+      ],
+      "why": [
+        {
+          "id": "C01",
+          "title": "NPSE matches or surpasses NPE on standard SBI benchmarks",
+          "statement": "NPSE-VE and NPSE-VP achieve C2ST scores comparable to or lower than NPE (Papamakarios & Murray, 2016) on 8 standard sbibm benchmark tasks at simulation budgets of 1000, 10000, and 100000.",
+          "status": "supported",
+          "conditions": "",
+          "falsification": "NPE achieves strictly lower C2ST than both NPSE-VE and NPSE-VP on the majority of tasks and budgets.",
+          "dependencies": [],
+          "provenance": null
+        }
+      ],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [
+          {
+            "id": "fig2_nonseq_c2st",
+            "caption": "Results on eight benchmark tasks (non-sequential methods).",
+            "markdown": "| Budget | NPSE-VE | NPSE-VP | NPE |\n|--------|---------|---------|-----|\n| 10k | ≈0.75 | ≈0.75 | ≈0.75 |\n| 100k | ≈0.65 | ≈0.65 | ≈0.70 |"
+          },
+          {
+            "id": "fig5_npse_vs_nlse",
+            "caption": "Comparison between NPSE and NLSE on four benchmark tasks.",
+            "markdown": "| Task | Budget | NPSE-VE | NPSE-VP | NLSE-VE |\n|------|--------|---------|---------|---------|\n| Task A | 10k | ≈0.65 | ≈0.65 | ≈0.65 |\n| Task A | 100k | ≈0.55 | ≈0.55 | ≈0.55 |\n| Task B | 10k | ≈0.70 | ≈0.73 | ≈0.70 |\n| Task B | 100k | ≈0.60 | ≈0.63 | ≈0.60 |\n| Task C | 10k | ≈0.63 | ≈0.78 | ≈0.63 |\n| Task C | 100k | ≈0.54 | ≈0.72 | ≈0.54 |\n| Task D | 10k | ≈0.65 | ≈0.65 | ≈0.65 |\n| Task D | 100k | ≈0.57 | ≈0.57 | ≈0.57 |"
+          },
+          {
+            "id": "fig9_npse_vs_fmpe",
+            "caption": "Comparison between NPSE and FMPE on eight benchmark tasks.",
+            "markdown": "| Task | Budget | NPSE-VE | NPSE-VP | FMPE |\n|------|--------|---------|---------|------|\n| Lotka Volterra | 10k | ≈0.75 | ≈0.75 | ≈0.73 |\n| Lotka Volterra | 100k | ≈0.65 | ≈0.65 | ≈0.62 |\n| SLCP | 10k | ≈0.72 | ≈0.72 | ≈0.68 |\n| SLCP | 100k | ≈0.58 | ≈0.58 | ≈0.56 |\n| Gaussian Linear Uniform | 10k | ≈0.70 | ≈0.70 | ≈0.60 |\n| Gaussian Linear Uniform | 100k | ≈0.62 | ≈0.62 | ≈0.53 |\n| Bernoulli GLM | 10k | ≈0.65 | ≈0.65 | ≈0.62 |\n| Bernoulli GLM | 100k | ≈0.58 | ≈0.58 | ≈0.56 |\n| SIR | 10k | ≈0.62 | ≈0.73 | ≈0.57 |\n| SIR | 100k | ≈0.55 | ≈0.65 | ≈0.52 |\n| Two Moons | 10k | ≈0.65 | ≈0.78 | ≈0.57 |\n| Two Moons | 100k | ≈0.55 | ≈0.72 | ≈0.52 |\n| Gaussian Mixture | 10k | ≈0.62 | ≈0.78 | ≈0.58 |\n| Gaussian Mixture | 100k | ≈0.53 | ≈0.70 | ≈0.52 |\n| Gaussian Linear | 10k | ≈0.60 | ≈0.60 | ≈0.55 |\n| Gaussian Linear | 100k | ≈0.53 | ≈0.53 | ≈0.51 |"
+          }
+        ],
+        "data": []
+      },
+      "verified_by": [
+        {
+          "id": "E01",
+          "title": "Non-sequential benchmark — NPSE-VE/VP vs NPE",
+          "run": "",
+          "setup": "Model: Score network (3-layer MLP, 256 hidden units per layer, SiLU), θ/x/t embeddings as described in Appendix E.3.2\nHardware: Not specified in paper\nDataset: 8 sbibm benchmark tasks (Gaussian Linear, Gaussian Mixture, Two Moons, Gaussian Linear Uniform, Bernoulli GLM, SLCP, SIR, Lotka Volterra); simulation budgets 1000, 10000, 100000\nSystem: NPSE-VE and NPSE-VP trained independently; NPE results from sbibm toolkit",
+          "metrics": "C2ST score (range [0.5, 1.0], lower is better), reported per task per budget."
+        }
+      ],
+      "artifact": [
+        {
+          "name": "sequential-neural-score-estimation implementation",
+          "pointer": "src/execution/ (8 files): cnf.py, model.py, npse.py, npse_core.py, score_network.py, sde.py, training.py, tsnpse.py",
+          "what": "transcribed source code pointer index (not an external run-store pointer)"
+        }
+      ],
+      "built_on": [
+        {
+          "rw_id": "RW01",
+          "name": "Papamakarios & Murray, 2016 (SNPE-A)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW05",
+          "name": "Song et al., 2021 (Score-Based Generative Modelling via SDEs)",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW06",
+          "name": "Batzolis et al., 2021 (Conditional Score-Based Diffusion)",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW07",
+          "name": "Geffner et al., 2023 (Compositional Score Modeling for SBI)",
+          "relation_raw": "extends"
+        },
+        {
+          "rw_id": "RW08",
+          "name": "Dax et al., 2023 (FMPE — Flow Matching)",
+          "relation_raw": "extends"
+        },
+        {
+          "rw_id": "RW09",
+          "name": "Papamakarios et al., 2019 (SNLE)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW10",
+          "name": "Durkan et al., 2020 (SNRE)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW12",
+          "name": "Benton et al., 2024 (Error Bounds for Flow Matching)",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW14",
+          "name": "Hyvarinen, 2005 (Score Matching)",
+          "relation_raw": "imports"
+        }
+      ],
+      "rejected_here": [
+        {
+          "rw_id": "RW11",
+          "name": "Lueckmann et al., 2021 (sbibm benchmark)",
+          "relation_raw": "bounds"
+        }
+      ],
+      "concepts": [
+        "NPSE (Neural Posterior Score Estimation)",
+        "C2ST (Classification-Based Two-Sample Test)"
+      ],
+      "recipe_refs": []
+    },
+    {
+      "id": "N03",
+      "type": "experiment",
+      "parent": "N02",
+      "title": "Validate NPSE (VE/VP SDE) vs NPE on 8 sbibm benchmarks",
+      "body": "NPSE-VE and NPSE-VP achieve comparable C2ST to NPE on most tasks. On SLCP and Lotka Volterra (hardest tasks), NPSE variants outperform NPE. VE SDE is better for low-dimensional tasks; VP SDE for high-dimensional.",
+      "thinking": "With the objective in hand, the next step is an empirical sanity check: does NPSE actually perform as well as the established normalising-flow baseline, NPE, across eight standard SBI benchmark tasks spanning a range of difficulty and dimensionality? The two SDE variants tried, VE (variance-exploding) and VP (variance-preserving), roughly match NPE on most tasks and clearly beat it on the two hardest ones, with VE better suited to low-dimensional problems and VP to higher-dimensional ones.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [],
+      "why": [
+        {
+          "id": "C01",
+          "title": "NPSE matches or surpasses NPE on standard SBI benchmarks",
+          "statement": "NPSE-VE and NPSE-VP achieve C2ST scores comparable to or lower than NPE (Papamakarios & Murray, 2016) on 8 standard sbibm benchmark tasks at simulation budgets of 1000, 10000, and 100000.",
+          "status": "supported",
+          "conditions": "",
+          "falsification": "NPE achieves strictly lower C2ST than both NPSE-VE and NPSE-VP on the majority of tasks and budgets.",
+          "dependencies": [],
+          "provenance": null
+        },
+        {
+          "id": "C05",
+          "title": "VE SDE is preferable for low-dimensional tasks; VP SDE for high-dimensional tasks",
+          "statement": "Empirically, VE SDE yields better C2ST than VP SDE on low-dimensional benchmarks (SIR, Two Moons, Gaussian Mixture), while VP SDE performs comparably or better on high-dimensional tasks (SLCP, Lotka Volterra, Bernoulli GLM, Gaussian Linear Uniform).",
+          "status": "supported",
+          "conditions": "",
+          "falsification": "Neither SDE type dominates across the dimension spectrum — performance is uncorrelated with parameter dimensionality.",
+          "dependencies": [
+            "C01"
+          ],
+          "provenance": null
+        }
+      ],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [
+          {
+            "id": "fig2_nonseq_c2st",
+            "caption": "Results on eight benchmark tasks (non-sequential methods).",
+            "markdown": "| Budget | NPSE-VE | NPSE-VP | NPE |\n|--------|---------|---------|-----|\n| 10k | ≈0.75 | ≈0.75 | ≈0.75 |\n| 100k | ≈0.65 | ≈0.65 | ≈0.70 |"
+          },
+          {
+            "id": "fig5_npse_vs_nlse",
+            "caption": "Comparison between NPSE and NLSE on four benchmark tasks.",
+            "markdown": "| Task | Budget | NPSE-VE | NPSE-VP | NLSE-VE |\n|------|--------|---------|---------|---------|\n| Task A | 10k | ≈0.65 | ≈0.65 | ≈0.65 |\n| Task A | 100k | ≈0.55 | ≈0.55 | ≈0.55 |\n| Task B | 10k | ≈0.70 | ≈0.73 | ≈0.70 |\n| Task B | 100k | ≈0.60 | ≈0.63 | ≈0.60 |\n| Task C | 10k | ≈0.63 | ≈0.78 | ≈0.63 |\n| Task C | 100k | ≈0.54 | ≈0.72 | ≈0.54 |\n| Task D | 10k | ≈0.65 | ≈0.65 | ≈0.65 |\n| Task D | 100k | ≈0.57 | ≈0.57 | ≈0.57 |"
+          },
+          {
+            "id": "fig9_npse_vs_fmpe",
+            "caption": "Comparison between NPSE and FMPE on eight benchmark tasks.",
+            "markdown": "| Task | Budget | NPSE-VE | NPSE-VP | FMPE |\n|------|--------|---------|---------|------|\n| Lotka Volterra | 10k | ≈0.75 | ≈0.75 | ≈0.73 |\n| Lotka Volterra | 100k | ≈0.65 | ≈0.65 | ≈0.62 |\n| SLCP | 10k | ≈0.72 | ≈0.72 | ≈0.68 |\n| SLCP | 100k | ≈0.58 | ≈0.58 | ≈0.56 |\n| Gaussian Linear Uniform | 10k | ≈0.70 | ≈0.70 | ≈0.60 |\n| Gaussian Linear Uniform | 100k | ≈0.62 | ≈0.62 | ≈0.53 |\n| Bernoulli GLM | 10k | ≈0.65 | ≈0.65 | ≈0.62 |\n| Bernoulli GLM | 100k | ≈0.58 | ≈0.58 | ≈0.56 |\n| SIR | 10k | ≈0.62 | ≈0.73 | ≈0.57 |\n| SIR | 100k | ≈0.55 | ≈0.65 | ≈0.52 |\n| Two Moons | 10k | ≈0.65 | ≈0.78 | ≈0.57 |\n| Two Moons | 100k | ≈0.55 | ≈0.72 | ≈0.52 |\n| Gaussian Mixture | 10k | ≈0.62 | ≈0.78 | ≈0.58 |\n| Gaussian Mixture | 100k | ≈0.53 | ≈0.70 | ≈0.52 |\n| Gaussian Linear | 10k | ≈0.60 | ≈0.60 | ≈0.55 |\n| Gaussian Linear | 100k | ≈0.53 | ≈0.53 | ≈0.51 |"
+          },
+          {
+            "id": "fig3_seq_c2st",
+            "caption": "Results on eight benchmark tasks (sequential methods).",
+            "markdown": "| Budget | TSNPSE-VE | TSNPSE-VP | SNPE | TSNPE |\n|--------|-----------|-----------|------|-------|\n| 10k | ≈0.65 | ≈0.65 | ≈0.75 | ≈0.72 |\n| 100k | ≈0.57 | ≈0.57 | ≈0.70 | ≈0.68 |"
+          }
+        ],
+        "data": []
+      },
+      "verified_by": [
+        {
+          "id": "E01",
+          "title": "Non-sequential benchmark — NPSE-VE/VP vs NPE",
+          "run": "",
+          "setup": "Model: Score network (3-layer MLP, 256 hidden units per layer, SiLU), θ/x/t embeddings as described in Appendix E.3.2\nHardware: Not specified in paper\nDataset: 8 sbibm benchmark tasks (Gaussian Linear, Gaussian Mixture, Two Moons, Gaussian Linear Uniform, Bernoulli GLM, SLCP, SIR, Lotka Volterra); simulation budgets 1000, 10000, 100000\nSystem: NPSE-VE and NPSE-VP trained independently; NPE results from sbibm toolkit",
+          "metrics": "C2ST score (range [0.5, 1.0], lower is better), reported per task per budget."
+        },
+        {
+          "id": "E02",
+          "title": "Sequential benchmark — TSNPSE-VE/VP vs SNPE-C and TSNPE",
+          "run": "",
+          "setup": "Model: Same score network architecture as E01.\nHardware: Not specified in paper.\nDataset: Same 8 sbibm benchmark tasks; simulation budgets 10000 and 100000. (1000 budget also tested; results reported.)\nSystem: R=10 rounds; M = N/R simulations per round; SNPE-C and TSNPE results from sbibm toolkit.",
+          "metrics": "C2ST score per task per budget."
+        }
+      ],
+      "artifact": [
+        {
+          "name": "sequential-neural-score-estimation implementation",
+          "pointer": "src/execution/ (8 files): cnf.py, model.py, npse.py, npse_core.py, score_network.py, sde.py, training.py, tsnpse.py",
+          "what": "transcribed source code pointer index (not an external run-store pointer)"
+        }
+      ],
+      "built_on": [
+        {
+          "rw_id": "RW01",
+          "name": "Papamakarios & Murray, 2016 (SNPE-A)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW05",
+          "name": "Song et al., 2021 (Score-Based Generative Modelling via SDEs)",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW06",
+          "name": "Batzolis et al., 2021 (Conditional Score-Based Diffusion)",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW07",
+          "name": "Geffner et al., 2023 (Compositional Score Modeling for SBI)",
+          "relation_raw": "extends"
+        },
+        {
+          "rw_id": "RW08",
+          "name": "Dax et al., 2023 (FMPE — Flow Matching)",
+          "relation_raw": "extends"
+        },
+        {
+          "rw_id": "RW09",
+          "name": "Papamakarios et al., 2019 (SNLE)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW10",
+          "name": "Durkan et al., 2020 (SNRE)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW12",
+          "name": "Benton et al., 2024 (Error Bounds for Flow Matching)",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW14",
+          "name": "Hyvarinen, 2005 (Score Matching)",
+          "relation_raw": "imports"
+        }
+      ],
+      "rejected_here": [
+        {
+          "rw_id": "RW11",
+          "name": "Lueckmann et al., 2021 (sbibm benchmark)",
+          "relation_raw": "bounds"
+        }
+      ],
+      "concepts": [
+        "VE SDE (Variance-Exploding SDE)",
+        "VP SDE (Variance-Preserving SDE)",
+        "NPSE (Neural Posterior Score Estimation)",
+        "C2ST (Classification-Based Two-Sample Test)"
+      ],
+      "recipe_refs": []
+    },
+    {
+      "id": "N04",
+      "type": "decision",
+      "parent": "N03",
+      "title": "Should we develop a sequential variant of NPSE?",
+      "body": "Yes — for a fixed observation x_obs, concentrating simulations near the posterior reduces simulation cost without sacrificing accuracy (same motivation as SNPE vs NPE). Develop SNPSE.\n\nAlternatives considered: Keep NPSE amortised-only (simpler, no proposal correction needed); Use MCMC with NPSE score for sequential inference",
+      "thinking": "NPSE as validated is amortised: it trains one network that can answer any observation, which wastes simulation budget on regions of parameter space irrelevant to the one observation actually being investigated. This mirrors a problem SNPE already solved for normalising flows by training sequentially, round by round, on data increasingly concentrated near the observation of interest. The decision here is to pursue the same idea for the score-based method, rather than settling for the simpler amortised-only version or falling back to MCMC sampling.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [
+        "Section 3 motivation; prior sequential SBI success (SNPE, TSNPE)"
+      ],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [],
+      "built_on": [],
+      "rejected_here": [],
+      "concepts": [
+        "NPSE (Neural Posterior Score Estimation)"
+      ],
+      "recipe_refs": []
+    },
+    {
+      "id": "N05",
+      "type": "question",
+      "parent": "N04",
+      "title": "How to correct for proposal prior mismatch in sequential NPSE?",
+      "body": "When training on proposal distribution ˜p(θ) instead of prior p(θ), the DSM objective minimiser learns the proposal posterior score ∇_θ log ˜p_t(θ_t|x), not the true posterior score. Four approaches were explored in parallel.",
+      "thinking": "Training sequentially means each round draws parameters from a proposal distribution instead of the prior, and the DSM objective, left unmodified, would converge to the score of the wrong (proposal-conditioned) posterior rather than the true one. So the open question is how to correct for that mismatch. Four different corrections are tried in parallel to see which one actually works.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [],
+      "built_on": [],
+      "rejected_here": [],
+      "concepts": [
+        "NPSE (Neural Posterior Score Estimation)"
+      ],
+      "recipe_refs": []
+    },
+    {
+      "id": "N06",
+      "type": "experiment",
+      "parent": "N05",
+      "title": "SNPSE-A: Post-hoc SIR importance weight correction",
+      "body": "Works in principle but limited by mismatch between true proposal posterior ˜p(θ|x_obs) and the learned approximation ˜p_ψ(θ|x_obs). High variance in practice; only tractable for ≤2 rounds without approximating the normalising constant.",
+      "thinking": "The first attempt, SNPSE-A, borrows a post-hoc idea from SNPE-A: use sampling-importance-resampling (SIR) to reweight samples after training so they reflect the true posterior rather than the proposal posterior. It is correct in principle, but the importance weights depend on the gap between the true and the learned proposal posterior, which is itself only approximate, so the correction is high-variance and only holds up for two rounds before it needs to approximate an intractable normalising constant.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [
+        "Appendix C.2"
+      ],
+      "why": [
+        {
+          "id": "C03",
+          "title": "TSNPSE dominates all alternative sequential NPSE corrections",
+          "statement": "TSNPSE achieves lower C2ST than SNPSE-A and SNPSE-B on tested benchmark tasks; SNPSE-C fails to produce meaningful results (C2ST ≈ 1).",
+          "status": "supported",
+          "conditions": "",
+          "falsification": "SNPSE-A or SNPSE-B achieves equal or lower C2ST than TSNPSE on any tested task.",
+          "dependencies": [
+            "C01"
+          ],
+          "provenance": null
+        }
+      ],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [
+          {
+            "id": "fig6_seq_comparison",
+            "caption": "Comparison between SNPSE-A, SNPSE-B, and TSNPSE on two benchmark tasks.",
+            "markdown": "| Budget | TSNPSE | SNPSE-A | SNPSE-B |\n|--------|--------|---------|---------|\n| 10k | ≈0.67 | ≈0.82 | ≈0.85 |\n| 100k | ≈0.55 | ≈0.78 | ≈0.80 |"
+          }
+        ],
+        "data": []
+      },
+      "verified_by": [
+        {
+          "id": "E03",
+          "title": "Ablation — TSNPSE vs SNPSE-A/B/C sequential variants",
+          "run": "",
+          "setup": "Model: Same score network as E01/E02.\nHardware: Not specified in paper.\nDataset: SLCP and Gaussian Linear Uniform (GLU) benchmark tasks.\nSystem: R rounds sequential; same budget allocations.",
+          "metrics": "C2ST score per method per task."
+        }
+      ],
+      "artifact": [
+        {
+          "name": "sequential-neural-score-estimation implementation",
+          "pointer": "src/execution/ (8 files): cnf.py, model.py, npse.py, npse_core.py, score_network.py, sde.py, training.py, tsnpse.py",
+          "what": "transcribed source code pointer index (not an external run-store pointer)"
+        }
+      ],
+      "built_on": [
+        {
+          "rw_id": "RW02",
+          "name": "Lueckmann et al., 2017 (SNPE-B)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW03",
+          "name": "Greenberg et al., 2019 (SNPE-C / APT)",
+          "relation_raw": "baseline"
+        }
+      ],
+      "rejected_here": [
+        {
+          "rw_id": "RW11",
+          "name": "Lueckmann et al., 2021 (sbibm benchmark)",
+          "relation_raw": "bounds"
+        }
+      ],
+      "concepts": [
+        "TSNPSE (Truncated Sequential NPSE)",
+        "C2ST (Classification-Based Two-Sample Test)"
+      ],
+      "recipe_refs": []
+    },
+    {
+      "id": "N07",
+      "type": "dead_end",
+      "parent": "N06",
+      "title": "SNPSE-A limited to 2 rounds without additional approximation",
+      "body": "Hypothesis: SIR correction would be exact in the limit of infinite samples, giving a principled sequential algorithm analogous to SNPE-A.\n\nFailure mode: For r>2 rounds, computing ˜p^r(θ) requires intractable normalising constants. Approximate alternatives (KDE, normalising flow) introduce additional errors. Empirically inferior to TSNPSE on SLCP and GLU.\n\nLesson: Importance weight corrections are fundamentally limited by the approximation gap between true and learned proposal posteriors. Led to search for correction-free sequential approach.",
+      "thinking": "The hypothesis behind SNPSE-A was that the SIR correction would become exact as the sample size grows, giving a principled multi-round algorithm just like SNPE-A. That breaks down beyond two rounds: computing the reweighting needs a normalising constant with no closed form, and every tractable approximation to it (kernel density estimation, normalising flows) injects its own error. Empirically SNPSE-A trails TSNPSE on both SLCP and Gaussian Linear Uniform, and the lesson is that any correction built on the gap between a true and a learned proposal posterior is inherently limited, motivating a search for a correction-free approach instead.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [],
+      "built_on": [],
+      "rejected_here": [],
+      "concepts": [
+        "TSNPSE (Truncated Sequential NPSE)"
+      ],
+      "recipe_refs": []
+    },
+    {
+      "id": "N08",
+      "type": "experiment",
+      "parent": "N05",
+      "title": "SNPSE-B: Importance-weighted DSM loss",
+      "body": "Theoretically correct (equivalent to true DSM objective after reweighting). Practically, importance weights p(θ)/˜p^r(θ) are high-variance, causing unstable training and poor performance.",
+      "thinking": "The second attempt, SNPSE-B, folds the correction directly into the training loss instead of applying it after the fact: reweight each training example by the ratio of prior to proposal density, so minimising the reweighted DSM objective recovers the true posterior score in expectation. That reweighting is mathematically exact, but the weights turn out to have very high variance across rounds, a well-known failure mode.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [
+        "Appendix C.3"
+      ],
+      "why": [
+        {
+          "id": "C03",
+          "title": "TSNPSE dominates all alternative sequential NPSE corrections",
+          "statement": "TSNPSE achieves lower C2ST than SNPSE-A and SNPSE-B on tested benchmark tasks; SNPSE-C fails to produce meaningful results (C2ST ≈ 1).",
+          "status": "supported",
+          "conditions": "",
+          "falsification": "SNPSE-A or SNPSE-B achieves equal or lower C2ST than TSNPSE on any tested task.",
+          "dependencies": [
+            "C01"
+          ],
+          "provenance": null
+        }
+      ],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [
+          {
+            "id": "fig6_seq_comparison",
+            "caption": "Comparison between SNPSE-A, SNPSE-B, and TSNPSE on two benchmark tasks.",
+            "markdown": "| Budget | TSNPSE | SNPSE-A | SNPSE-B |\n|--------|--------|---------|---------|\n| 10k | ≈0.67 | ≈0.82 | ≈0.85 |\n| 100k | ≈0.55 | ≈0.78 | ≈0.80 |"
+          }
+        ],
+        "data": []
+      },
+      "verified_by": [
+        {
+          "id": "E03",
+          "title": "Ablation — TSNPSE vs SNPSE-A/B/C sequential variants",
+          "run": "",
+          "setup": "Model: Same score network as E01/E02.\nHardware: Not specified in paper.\nDataset: SLCP and Gaussian Linear Uniform (GLU) benchmark tasks.\nSystem: R rounds sequential; same budget allocations.",
+          "metrics": "C2ST score per method per task."
+        }
+      ],
+      "artifact": [
+        {
+          "name": "sequential-neural-score-estimation implementation",
+          "pointer": "src/execution/ (8 files): cnf.py, model.py, npse.py, npse_core.py, score_network.py, sde.py, training.py, tsnpse.py",
+          "what": "transcribed source code pointer index (not an external run-store pointer)"
+        }
+      ],
+      "built_on": [
+        {
+          "rw_id": "RW02",
+          "name": "Lueckmann et al., 2017 (SNPE-B)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW03",
+          "name": "Greenberg et al., 2019 (SNPE-C / APT)",
+          "relation_raw": "baseline"
+        }
+      ],
+      "rejected_here": [
+        {
+          "rw_id": "RW11",
+          "name": "Lueckmann et al., 2021 (sbibm benchmark)",
+          "relation_raw": "bounds"
+        }
+      ],
+      "concepts": [
+        "TSNPSE (Truncated Sequential NPSE)",
+        "C2ST (Classification-Based Two-Sample Test)"
+      ],
+      "recipe_refs": []
+    },
+    {
+      "id": "N09",
+      "type": "dead_end",
+      "parent": "N08",
+      "title": "SNPSE-B high-variance importance weights degrade training",
+      "body": "Hypothesis: Reweighting the DSM loss by p(θ)/˜p^r(θ) should recover the true posterior score, analogous to SNPE-B.\n\nFailure mode: Importance weights are high-variance for multi-round proposals, causing noisy gradient estimates and unstable convergence. Mirrors the known failure mode of SNPE-B (Lueckmann et al., 2017).\n\nLesson: In-loss importance weighting is not robust; confirms that SNPE-B's instability extends to the score-based setting.",
+      "thinking": "The hope was that reweighting the loss by the prior/proposal ratio would recover the true posterior score, the same mechanism used by SNPE-B. In practice the importance weights blow up in variance once the proposal has been updated over several rounds, producing noisy gradients and unstable training, mirroring SNPE-B's own known weakness. The lesson: in-loss importance weighting doesn't become more robust just because the underlying model is a score network instead of a normalising flow.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [],
+      "built_on": [],
+      "rejected_here": [],
+      "concepts": [],
+      "recipe_refs": []
+    },
+    {
+      "id": "N10",
+      "type": "experiment",
+      "parent": "N05",
+      "title": "SNPSE-C: Score-space correction via proposal prior score",
+      "body": "Theoretically elegant: parameterises ˜s^r_ψ = s_ψ + ∇log˜p^r_t(θ_t) - ∇log p_t(θ_t) so that minimising the proposal DSM objective recovers the true posterior score. Requires approximating ∇log˜p^r_t(θ_t), which compounds errors. Empirically: C2ST ≈ 1 (complete failure).",
+      "thinking": "The third attempt, SNPSE-C, tries to sidestep the weighting problem entirely by correcting in score space: it adds the difference between the proposal's noised score and the prior's noised score directly onto the network's output, so that minimising the uncorrected proposal objective still yields the true posterior score. It's an elegant idea, but it requires a second, auxiliary network to estimate the proposal's own score, and any error in that auxiliary estimate feeds straight into the final result, which turns out to be catastrophic: the method collapses to chance-level performance (C2ST ≈ 1).",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [
+        "Appendix C.4"
+      ],
+      "why": [
+        {
+          "id": "C03",
+          "title": "TSNPSE dominates all alternative sequential NPSE corrections",
+          "statement": "TSNPSE achieves lower C2ST than SNPSE-A and SNPSE-B on tested benchmark tasks; SNPSE-C fails to produce meaningful results (C2ST ≈ 1).",
+          "status": "supported",
+          "conditions": "",
+          "falsification": "SNPSE-A or SNPSE-B achieves equal or lower C2ST than TSNPSE on any tested task.",
+          "dependencies": [
+            "C01"
+          ],
+          "provenance": null
+        }
+      ],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [
+          {
+            "id": "fig6_seq_comparison",
+            "caption": "Comparison between SNPSE-A, SNPSE-B, and TSNPSE on two benchmark tasks.",
+            "markdown": "| Budget | TSNPSE | SNPSE-A | SNPSE-B |\n|--------|--------|---------|---------|\n| 10k | ≈0.67 | ≈0.82 | ≈0.85 |\n| 100k | ≈0.55 | ≈0.78 | ≈0.80 |"
+          }
+        ],
+        "data": []
+      },
+      "verified_by": [
+        {
+          "id": "E03",
+          "title": "Ablation — TSNPSE vs SNPSE-A/B/C sequential variants",
+          "run": "",
+          "setup": "Model: Same score network as E01/E02.\nHardware: Not specified in paper.\nDataset: SLCP and Gaussian Linear Uniform (GLU) benchmark tasks.\nSystem: R rounds sequential; same budget allocations.",
+          "metrics": "C2ST score per method per task."
+        }
+      ],
+      "artifact": [
+        {
+          "name": "sequential-neural-score-estimation implementation",
+          "pointer": "src/execution/ (8 files): cnf.py, model.py, npse.py, npse_core.py, score_network.py, sde.py, training.py, tsnpse.py",
+          "what": "transcribed source code pointer index (not an external run-store pointer)"
+        }
+      ],
+      "built_on": [
+        {
+          "rw_id": "RW02",
+          "name": "Lueckmann et al., 2017 (SNPE-B)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW03",
+          "name": "Greenberg et al., 2019 (SNPE-C / APT)",
+          "relation_raw": "baseline"
+        }
+      ],
+      "rejected_here": [
+        {
+          "rw_id": "RW11",
+          "name": "Lueckmann et al., 2021 (sbibm benchmark)",
+          "relation_raw": "bounds"
+        }
+      ],
+      "concepts": [
+        "TSNPSE (Truncated Sequential NPSE)",
+        "C2ST (Classification-Based Two-Sample Test)"
+      ],
+      "recipe_refs": []
+    },
+    {
+      "id": "N11",
+      "type": "dead_end",
+      "parent": "N10",
+      "title": "SNPSE-C: proposal prior score approximation compounds errors fatally",
+      "body": "Hypothesis: Estimating ∇log˜p^r_t(θ_t) with an auxiliary score network (trained via Eq. 123) and substituting into the score correction (Eq. 103) would allow recovering the true posterior score.\n\nFailure mode: Training the proposal prior score network requires large samples and additional iterations. Its approximation error directly contaminates the posterior score estimate. In practice C2ST ≈ 1.0 on all tested tasks, indicating complete failure.\n\nLesson: Score-space corrections require highly accurate auxiliary estimates; any approximation errors cascade. Avoid approaches that chain multiple approximate score networks.",
+      "thinking": "The plan was to train an auxiliary score network for the proposal prior's noised score and substitute it into the correction term, recovering the true posterior score without any reweighting. Training that auxiliary network well enough proves expensive, and its approximation error propagates directly into the main posterior estimate, so every tested task ends up at C2ST ≈ 1, indistinguishable from failure. The lesson generalises beyond this one method: chaining multiple approximate score networks compounds their errors, so corrections requiring an auxiliary estimate like this should be avoided.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [],
+      "built_on": [],
+      "rejected_here": [],
+      "concepts": [
+        "C2ST (Classification-Based Two-Sample Test)"
+      ],
+      "recipe_refs": []
+    },
+    {
+      "id": "N12",
+      "type": "experiment",
+      "parent": "N05",
+      "title": "TSNPSE: Truncated proposals require no correction (Proposition 3.1)",
+      "body": "If ˜p^r(θ) ∝ p(θ) · I{θ ∈ HPR_ε} with the true posterior support Θ_obs ⊆ HPR_ε, then ˜p^r(θ) ∝ p(θ) on Θ_obs, and the DSM objective is minimised by the true posterior score (no correction needed). Empirically outperforms SNPSE-A, B, C on all tested tasks.",
+      "thinking": "Having watched three correction strategies fail for related but distinct reasons, the paper finds a way to avoid needing a correction at all: if the proposal in round r is built by truncating the prior to a high-probability region (HPR) around the current posterior estimate, rather than reweighting it, then the proposal is exactly proportional to the true prior everywhere the true posterior has support. That means the ordinary DSM objective, run on samples from this truncated proposal, is already minimised by the true posterior score, no importance weights, no auxiliary networks, no post-hoc reweighting (this is Proposition 3.1). It directly resolves the failure modes of SNPSE-A, B and C explored just before it, and empirically the resulting algorithm, TSNPSE, beats all three on every task tested.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [
+        "N06",
+        "N08",
+        "N10"
+      ],
+      "source_refs": [
+        "Proposition 3.1"
+      ],
+      "why": [
+        {
+          "id": "C02",
+          "title": "TSNPSE outperforms SNPE-C and TSNPE on high-dimensional benchmarks",
+          "statement": "TSNPSE-VE and/or TSNPSE-VP achieve lower C2ST than both SNPE-C and TSNPE on the SLCP and Lotka Volterra benchmarks (the two most challenging tasks), demonstrating superior scaling to high dimensions.",
+          "status": "supported",
+          "conditions": "",
+          "falsification": "SNPE-C or TSNPE achieves equal or lower C2ST than both TSNPSE variants on SLCP and Lotka Volterra at all tested budgets.",
+          "dependencies": [
+            "C01"
+          ],
+          "provenance": null
+        },
+        {
+          "id": "C03",
+          "title": "TSNPSE dominates all alternative sequential NPSE corrections",
+          "statement": "TSNPSE achieves lower C2ST than SNPSE-A and SNPSE-B on tested benchmark tasks; SNPSE-C fails to produce meaningful results (C2ST ≈ 1).",
+          "status": "supported",
+          "conditions": "",
+          "falsification": "SNPSE-A or SNPSE-B achieves equal or lower C2ST than TSNPSE on any tested task.",
+          "dependencies": [
+            "C01"
+          ],
+          "provenance": null
+        },
+        {
+          "id": "C04",
+          "title": "TSNPSE achieves superior valid summary statistics on the Pyloric problem",
+          "statement": "TSNPSE (using VP SDE, 9 rounds, 30000 initial + 20000 per round) achieves 81% valid summary statistics in the final round, higher than TSNPE and SNVI at the same simulation budget.",
+          "status": "supported",
+          "conditions": "",
+          "falsification": "TSNPE or SNVI achieves ≥81% valid summary statistics at any matched simulation budget, or TSNPSE does not exceed both baselines across all budgets ≤ 200k.",
+          "dependencies": [
+            "C02"
+          ],
+          "provenance": null
+        }
+      ],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [
+          {
+            "id": "fig3_seq_c2st",
+            "caption": "Results on eight benchmark tasks (sequential methods).",
+            "markdown": "| Budget | TSNPSE-VE | TSNPSE-VP | SNPE | TSNPE |\n|--------|-----------|-----------|------|-------|\n| 10k | ≈0.65 | ≈0.65 | ≈0.75 | ≈0.72 |\n| 100k | ≈0.57 | ≈0.57 | ≈0.70 | ≈0.68 |"
+          },
+          {
+            "id": "fig6_seq_comparison",
+            "caption": "Comparison between SNPSE-A, SNPSE-B, and TSNPSE on two benchmark tasks.",
+            "markdown": "| Budget | TSNPSE | SNPSE-A | SNPSE-B |\n|--------|--------|---------|---------|\n| 10k | ≈0.67 | ≈0.82 | ≈0.85 |\n| 100k | ≈0.55 | ≈0.78 | ≈0.80 |"
+          },
+          {
+            "id": "fig4c_pyloric_valid",
+            "caption": "Percentage of valid summary statistics from the pyloric simulator against simulation budget for 3 different methods, SNPSE (ours, blue), TSNPE (orange), SNVI (pink).",
+            "markdown": "| Budget (×10³) | SNPSE (ours, VP) | TSNPE | SNVI |\n|---------------|------------------|-------|------|\n| 30 (round 1) | ≈2% | ≈2% | ≈2% |\n| 50 | ≈15% | ≈5% | ≈5% |\n| 70 (round 3) | ≈35% | ≈10% | ≈8% |\n| 90 | ≈50% | ≈18% | ≈12% |\n| 110 (round 5) | ≈62% | ≈28% | ≈18% |\n| 130 | ≈68% | ≈38% | ≈25% |\n| 150 (round 7) | ≈73% | ≈45% | ≈32% |\n| 170 | ≈77% | ≈52% | ≈38% |\n| 190 (round 9) | ≈81% | ≈58% | ≈45% |"
+          }
+        ],
+        "data": []
+      },
+      "verified_by": [
+        {
+          "id": "E02",
+          "title": "Sequential benchmark — TSNPSE-VE/VP vs SNPE-C and TSNPE",
+          "run": "",
+          "setup": "Model: Same score network architecture as E01.\nHardware: Not specified in paper.\nDataset: Same 8 sbibm benchmark tasks; simulation budgets 10000 and 100000. (1000 budget also tested; results reported.)\nSystem: R=10 rounds; M = N/R simulations per round; SNPE-C and TSNPE results from sbibm toolkit.",
+          "metrics": "C2ST score per task per budget."
+        },
+        {
+          "id": "E03",
+          "title": "Ablation — TSNPSE vs SNPSE-A/B/C sequential variants",
+          "run": "",
+          "setup": "Model: Same score network as E01/E02.\nHardware: Not specified in paper.\nDataset: SLCP and Gaussian Linear Uniform (GLU) benchmark tasks.\nSystem: R rounds sequential; same budget allocations.",
+          "metrics": "C2ST score per method per task."
+        },
+        {
+          "id": "E04",
+          "title": "Real-world Pyloric neuroscience problem",
+          "run": "",
+          "setup": "Model: Same score network architecture (VP SDE) as used in benchmarks; same hyperparameters for robustness demonstration.\nHardware: Not specified in paper.\nDataset: Pyloric network simulator (Prinz et al., 2003; 2004); 31 parameters (conductances/synapses of 3 neurons: AB, LP, PY), 18 summary statistics; prior = uniform over known parameter ranges; observed data from Haddad & Marder (2021) at Zenodo.\nSystem: 9 rounds; 30000 initial simulations + 20000 per subsequent round.",
+          "metrics": "Percentage of valid (non-NaN) summary statistics from the simulator per round, posterior mean-predictive trace vs observed data."
+        }
+      ],
+      "artifact": [
+        {
+          "name": "sequential-neural-score-estimation implementation",
+          "pointer": "src/execution/ (8 files): cnf.py, model.py, npse.py, npse_core.py, score_network.py, sde.py, training.py, tsnpse.py",
+          "what": "transcribed source code pointer index (not an external run-store pointer)"
+        }
+      ],
+      "built_on": [
+        {
+          "rw_id": "RW01",
+          "name": "Papamakarios & Murray, 2016 (SNPE-A)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW03",
+          "name": "Greenberg et al., 2019 (SNPE-C / APT)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW04",
+          "name": "Deistler et al., 2022a (TSNPE)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW05",
+          "name": "Song et al., 2021 (Score-Based Generative Modelling via SDEs)",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW08",
+          "name": "Dax et al., 2023 (FMPE — Flow Matching)",
+          "relation_raw": "extends"
+        },
+        {
+          "rw_id": "RW02",
+          "name": "Lueckmann et al., 2017 (SNPE-B)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW13",
+          "name": "Glöckler et al., 2022 (SNVI)",
+          "relation_raw": "baseline"
+        }
+      ],
+      "rejected_here": [
+        {
+          "rw_id": "RW11",
+          "name": "Lueckmann et al., 2021 (sbibm benchmark)",
+          "relation_raw": "bounds"
+        }
+      ],
+      "concepts": [
+        "VP SDE (Variance-Preserving SDE)",
+        "TSNPSE (Truncated Sequential NPSE)",
+        "C2ST (Classification-Based Two-Sample Test)"
+      ],
+      "recipe_refs": []
+    },
+    {
+      "id": "N13",
+      "type": "decision",
+      "parent": "N12",
+      "title": "Adopt TSNPSE as the preferred sequential method",
+      "body": "TSNPSE: truncated proposal with rejection sampling (hypercube pre-rejection + log-density threshold κ), HPR estimated with ε=5×10⁻⁴ using 20000 ODE samples.\n\nAlternatives considered: SNPSE-A (2-round limitation, SIR correction); SNPSE-B (importance-weighted loss, high variance); SNPSE-C (score-space correction, empirically fails)",
+      "thinking": "With TSNPSE both theoretically justified (Proposition 3.1) and empirically dominant over the three earlier correction attempts, the paper commits to it as the sequential method going forward. Concretely: truncated-proposal rejection sampling implemented as a cheap hypercube pre-filter followed by a log-density threshold κ, with the truncation region (the HPR) re-estimated each round from 20,000 samples at ε = 5×10⁻⁴.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [
+          {
+            "id": "fig6_seq_comparison",
+            "caption": "Comparison between SNPSE-A, SNPSE-B, and TSNPSE on two benchmark tasks.",
+            "markdown": "| Budget | TSNPSE | SNPSE-A | SNPSE-B |\n|--------|--------|---------|---------|\n| 10k | ≈0.67 | ≈0.82 | ≈0.85 |\n| 100k | ≈0.55 | ≈0.78 | ≈0.80 |"
+          }
+        ],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [],
+      "built_on": [],
+      "rejected_here": [],
+      "concepts": [
+        "TSNPSE (Truncated Sequential NPSE)",
+        "HPR (Highest Probability Region)"
+      ],
+      "recipe_refs": []
+    },
+    {
+      "id": "N14",
+      "type": "experiment",
+      "parent": "N13",
+      "title": "Validate TSNPSE on 8 benchmarks + Pyloric neuroscience",
+      "body": "TSNPSE outperforms SNPE-C and TSNPE on SLCP and Lotka Volterra. Results mixed on simpler tasks. Achieves 81% valid summary statistics on Pyloric (9 rounds), superior to TSNPE and SNVI.",
+      "thinking": "The final validation step runs TSNPSE through the same eight-benchmark suite as before, plus a genuinely hard real-world test: a 31-parameter neuroscience simulator of the pyloric circuit. TSNPSE beats the flow-based sequential baselines (SNPE-C, TSNPE) on the two hardest benchmark tasks, gives mixed results on the easier ones, and on the pyloric problem reaches 81% valid summary statistics after nine rounds, ahead of both TSNPE and SNVI at matched simulation budgets.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [],
+      "why": [
+        {
+          "id": "C02",
+          "title": "TSNPSE outperforms SNPE-C and TSNPE on high-dimensional benchmarks",
+          "statement": "TSNPSE-VE and/or TSNPSE-VP achieve lower C2ST than both SNPE-C and TSNPE on the SLCP and Lotka Volterra benchmarks (the two most challenging tasks), demonstrating superior scaling to high dimensions.",
+          "status": "supported",
+          "conditions": "",
+          "falsification": "SNPE-C or TSNPE achieves equal or lower C2ST than both TSNPSE variants on SLCP and Lotka Volterra at all tested budgets.",
+          "dependencies": [
+            "C01"
+          ],
+          "provenance": null
+        },
+        {
+          "id": "C04",
+          "title": "TSNPSE achieves superior valid summary statistics on the Pyloric problem",
+          "statement": "TSNPSE (using VP SDE, 9 rounds, 30000 initial + 20000 per round) achieves 81% valid summary statistics in the final round, higher than TSNPE and SNVI at the same simulation budget.",
+          "status": "supported",
+          "conditions": "",
+          "falsification": "TSNPE or SNVI achieves ≥81% valid summary statistics at any matched simulation budget, or TSNPSE does not exceed both baselines across all budgets ≤ 200k.",
+          "dependencies": [
+            "C02"
+          ],
+          "provenance": null
+        }
+      ],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [
+          {
+            "id": "fig3_seq_c2st",
+            "caption": "Results on eight benchmark tasks (sequential methods).",
+            "markdown": "| Budget | TSNPSE-VE | TSNPSE-VP | SNPE | TSNPE |\n|--------|-----------|-----------|------|-------|\n| 10k | ≈0.65 | ≈0.65 | ≈0.75 | ≈0.72 |\n| 100k | ≈0.57 | ≈0.57 | ≈0.70 | ≈0.68 |"
+          },
+          {
+            "id": "fig4c_pyloric_valid",
+            "caption": "Percentage of valid summary statistics from the pyloric simulator against simulation budget for 3 different methods, SNPSE (ours, blue), TSNPE (orange), SNVI (pink).",
+            "markdown": "| Budget (×10³) | SNPSE (ours, VP) | TSNPE | SNVI |\n|---------------|------------------|-------|------|\n| 30 (round 1) | ≈2% | ≈2% | ≈2% |\n| 50 | ≈15% | ≈5% | ≈5% |\n| 70 (round 3) | ≈35% | ≈10% | ≈8% |\n| 90 | ≈50% | ≈18% | ≈12% |\n| 110 (round 5) | ≈62% | ≈28% | ≈18% |\n| 130 | ≈68% | ≈38% | ≈25% |\n| 150 (round 7) | ≈73% | ≈45% | ≈32% |\n| 170 | ≈77% | ≈52% | ≈38% |\n| 190 (round 9) | ≈81% | ≈58% | ≈45% |"
+          }
+        ],
+        "data": []
+      },
+      "verified_by": [
+        {
+          "id": "E02",
+          "title": "Sequential benchmark — TSNPSE-VE/VP vs SNPE-C and TSNPE",
+          "run": "",
+          "setup": "Model: Same score network architecture as E01.\nHardware: Not specified in paper.\nDataset: Same 8 sbibm benchmark tasks; simulation budgets 10000 and 100000. (1000 budget also tested; results reported.)\nSystem: R=10 rounds; M = N/R simulations per round; SNPE-C and TSNPE results from sbibm toolkit.",
+          "metrics": "C2ST score per task per budget."
+        },
+        {
+          "id": "E04",
+          "title": "Real-world Pyloric neuroscience problem",
+          "run": "",
+          "setup": "Model: Same score network architecture (VP SDE) as used in benchmarks; same hyperparameters for robustness demonstration.\nHardware: Not specified in paper.\nDataset: Pyloric network simulator (Prinz et al., 2003; 2004); 31 parameters (conductances/synapses of 3 neurons: AB, LP, PY), 18 summary statistics; prior = uniform over known parameter ranges; observed data from Haddad & Marder (2021) at Zenodo.\nSystem: 9 rounds; 30000 initial simulations + 20000 per subsequent round.",
+          "metrics": "Percentage of valid (non-NaN) summary statistics from the simulator per round, posterior mean-predictive trace vs observed data."
+        }
+      ],
+      "artifact": [
+        {
+          "name": "sequential-neural-score-estimation implementation",
+          "pointer": "src/execution/ (8 files): cnf.py, model.py, npse.py, npse_core.py, score_network.py, sde.py, training.py, tsnpse.py",
+          "what": "transcribed source code pointer index (not an external run-store pointer)"
+        }
+      ],
+      "built_on": [
+        {
+          "rw_id": "RW01",
+          "name": "Papamakarios & Murray, 2016 (SNPE-A)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW03",
+          "name": "Greenberg et al., 2019 (SNPE-C / APT)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW04",
+          "name": "Deistler et al., 2022a (TSNPE)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW05",
+          "name": "Song et al., 2021 (Score-Based Generative Modelling via SDEs)",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW08",
+          "name": "Dax et al., 2023 (FMPE — Flow Matching)",
+          "relation_raw": "extends"
+        },
+        {
+          "rw_id": "RW13",
+          "name": "Glöckler et al., 2022 (SNVI)",
+          "relation_raw": "baseline"
+        }
+      ],
+      "rejected_here": [
+        {
+          "rw_id": "RW11",
+          "name": "Lueckmann et al., 2021 (sbibm benchmark)",
+          "relation_raw": "bounds"
+        }
+      ],
+      "concepts": [
+        "VP SDE (Variance-Preserving SDE)",
+        "TSNPSE (Truncated Sequential NPSE)",
+        "C2ST (Classification-Based Two-Sample Test)"
+      ],
+      "recipe_refs": []
+    }
+  ],
+  "context": {
+    "title": "Problem",
+    "summary": "- **Insight**: The denoising posterior score matching (DSM) objective is minimised by the true posterior score even when the training distribution uses a proposal prior `˜p(θ)` that is proportional to the true prior…",
+    "sections": [
+      {
+        "role": "setting",
+        "heading": "Setting",
+        "present": false,
+        "entries": []
+      },
+      {
+        "role": "observations",
+        "heading": "Observations",
+        "present": true,
+        "entries": [
+          {
+            "ent_id": "O1",
+            "inferred_id": false,
+            "ent_title": "Simulator-based models have intractable likelihoods",
+            "text": "- **Statement**: Many scientific models generate synthetic data via stochastic simulators, making the likelihood p(x|θ) analytically unavailable or computationally intractable to evaluate.\n- **Evidence**: Acknowledged across neuroscience (Gonçalves et al., 2020), evolutionary biology (Beaumont et al., 2002), ecology (Wood, 2010), epidemiology (Corander et al., 2017), climate science (Holden et al., 2018), cosmology, high-energy physics, and econometrics.\n- **Implication**: Standard likelihood-based Bayesian methods (MCMC, VI) cannot be applied directly.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "Many scientific models generate synthetic data via stochastic simulators, making the likelihood p(x|θ) analytically unavailable or computationally intractable to evaluate."
+              },
+              {
+                "label": "Evidence",
+                "value": "Acknowledged across neuroscience (Gonçalves et al., 2020), evolutionary biology (Beaumont et al., 2002), ecology (Wood, 2010), epidemiology (Corander et al., 2017), climate science (Holden et al., 2018), cosmology, high-energy physics, and econometrics."
+              },
+              {
+                "label": "Implication",
+                "value": "Standard likelihood-based Bayesian methods (MCMC, VI) cannot be applied directly."
+              }
+            ],
+            "refs": []
+          },
+          {
+            "ent_id": "O2",
+            "inferred_id": false,
+            "ent_title": "Normalizing-flow-based SBI methods impose architectural constraints",
+            "text": "- **Statement**: Existing state-of-the-art SBI methods (SNPE, SNLE) rely on normalizing flows, which require invertible architectures and thus restrict model design.\n- **Evidence**: Section 1, comparison to SNPE (Greenberg et al., 2019), SNLE (Papamakarios et al., 2019).\n- **Implication**: Architectural inflexibility may limit expressiveness, especially in high-dimensional parameter spaces.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "Existing state-of-the-art SBI methods (SNPE, SNLE) rely on normalizing flows, which require invertible architectures and thus restrict model design."
+              },
+              {
+                "label": "Evidence",
+                "value": "Section 1, comparison to SNPE (Greenberg et al., 2019), SNLE (Papamakarios et al., 2019)."
+              },
+              {
+                "label": "Implication",
+                "value": "Architectural inflexibility may limit expressiveness, especially in high-dimensional parameter spaces."
+              }
+            ],
+            "refs": []
+          },
+          {
+            "ent_id": "O3",
+            "inferred_id": false,
+            "ent_title": "Score-based diffusion models achieve state-of-the-art generative quality",
+            "text": "- **Statement**: Score-based generative models (Song et al., 2021; Ho et al., 2020) achieve high-quality sample generation without adversarial training and with greater architectural flexibility than normalizing flows.\n- **Evidence**: Cited state-of-the-art results in image, audio, and video generation.\n- **Implication**: Score-based methods are a natural alternative backbone for SBI.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "Score-based generative models (Song et al., 2021; Ho et al., 2020) achieve high-quality sample generation without adversarial training and with greater architectural flexibility than normalizing flows."
+              },
+              {
+                "label": "Evidence",
+                "value": "Cited state-of-the-art results in image, audio, and video generation."
+              },
+              {
+                "label": "Implication",
+                "value": "Score-based methods are a natural alternative backbone for SBI."
+              }
+            ],
+            "refs": []
+          },
+          {
+            "ent_id": "O4",
+            "inferred_id": false,
+            "ent_title": "Naive amortised inference wastes simulation budget for a specific observation",
+            "text": "- **Statement**: When only a single observation x_obs is of interest, training an amortised posterior estimator over all of R^p wastes simulations on regions far from p(x|x_obs).\n- **Evidence**: Section 3, motivation for sequential training.\n- **Implication**: A sequential approach that concentrates simulations near x_obs can reduce the total simulation budget required for accurate inference.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "When only a single observation x_obs is of interest, training an amortised posterior estimator over all of R^p wastes simulations on regions far from p(x|x_obs)."
+              },
+              {
+                "label": "Evidence",
+                "value": "Section 3, motivation for sequential training."
+              },
+              {
+                "label": "Implication",
+                "value": "A sequential approach that concentrates simulations near x_obs can reduce the total simulation budget required for accurate inference."
+              }
+            ],
+            "refs": []
+          },
+          {
+            "ent_id": "O5",
+            "inferred_id": false,
+            "ent_title": "Alternative sequential corrections suffer from variance or approximation errors",
+            "text": "- **Statement**: SNPE-A uses post-hoc SIR (high variance), SNPE-B uses importance-weighted loss (high-variance gradients), and SNPE-C requires complex reparameterisation; empirically TSNPE outperforms these.\n- **Evidence**: Section 3.2, Appendix C, Figure 6.\n- **Implication**: A truncated-proposal approach that avoids explicit correction is preferable.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "SNPE-A uses post-hoc SIR (high variance), SNPE-B uses importance-weighted loss (high-variance gradients), and SNPE-C requires complex reparameterisation; empirically TSNPE outperforms these."
+              },
+              {
+                "label": "Evidence",
+                "value": "Section 3.2, Appendix C, Figure 6."
+              },
+              {
+                "label": "Implication",
+                "value": "A truncated-proposal approach that avoids explicit correction is preferable."
+              }
+            ],
+            "refs": []
+          }
+        ]
+      },
+      {
+        "role": "gaps",
+        "heading": "Gaps",
+        "present": true,
+        "entries": [
+          {
+            "ent_id": "G1",
+            "inferred_id": false,
+            "ent_title": "No principled score-based approach for SBI existed",
+            "text": "- **Statement**: The use of conditional score-based diffusion models for simulation-based inference had not been systematically studied prior to this work.\n- **Caused by**: O1, O3\n- **Existing attempts**: Batzolis et al. (2021) applied conditional diffusion for image generation; Geffner et al. (2023) studied multiple-observation SBI in parallel.\n- **Why they fail**: These works either address different settings (known likelihood) or lack sequential variants that reduce simulation cost.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "The use of conditional score-based diffusion models for simulation-based inference had not been systematically studied prior to this work."
+              },
+              {
+                "label": "Caused By",
+                "value": "O1, O3"
+              },
+              {
+                "label": "Existing Attempts",
+                "value": "Batzolis et al. (2021) applied conditional diffusion for image generation; Geffner et al. (2023) studied multiple-observation SBI in parallel."
+              },
+              {
+                "label": "Why They Fail",
+                "value": "These works either address different settings (known likelihood) or lack sequential variants that reduce simulation cost."
+              }
+            ],
+            "refs": [
+              {
+                "raw": "O1",
+                "kind": "observation",
+                "target": null
+              },
+              {
+                "raw": "O3",
+                "kind": "observation",
+                "target": null
+              }
+            ]
+          },
+          {
+            "ent_id": "G2",
+            "inferred_id": false,
+            "ent_title": "Sequential SBI methods require correction mechanisms that degrade performance",
+            "text": "- **Statement**: Sequential variants of flow-based SBI require either post-hoc importance weighting (SNPE-A), weighted loss (SNPE-B), or complex score decompositions (SNPE-C), all of which introduce approximation errors or variance.\n- **Caused by**: O4, O5\n- **Existing attempts**: SNPE-A/B/C (Papamakarios & Murray, 2016; Lueckmann et al., 2017; Greenberg et al., 2019), TSNPE (Deistler et al., 2022a).\n- **Why they fail**: Importance weights are high-variance; the SNPE-C correction assumes known proposal structure; only TSNPE avoids correction but is restricted to normalizing flows.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "Sequential variants of flow-based SBI require either post-hoc importance weighting (SNPE-A), weighted loss (SNPE-B), or complex score decompositions (SNPE-C), all of which introduce approximation errors or variance."
+              },
+              {
+                "label": "Caused By",
+                "value": "O4, O5"
+              },
+              {
+                "label": "Existing Attempts",
+                "value": "SNPE-A/B/C (Papamakarios & Murray, 2016; Lueckmann et al., 2017; Greenberg et al., 2019), TSNPE (Deistler et al., 2022a)."
+              },
+              {
+                "label": "Why They Fail",
+                "value": "Importance weights are high-variance; the SNPE-C correction assumes known proposal structure; only TSNPE avoids correction but is restricted to normalizing flows."
+              }
+            ],
+            "refs": [
+              {
+                "raw": "O4",
+                "kind": "observation",
+                "target": null
+              },
+              {
+                "raw": "O5",
+                "kind": "observation",
+                "target": null
+              }
+            ]
+          },
+          {
+            "ent_id": "G3",
+            "inferred_id": false,
+            "ent_title": "Score-based SBI lacks sequential efficiency",
+            "text": "- **Statement**: NPSE in its amortised form does not guide simulations toward x_obs, requiring large simulation budgets for accurate inference at a specific observation.\n- **Caused by**: O4\n- **Existing attempts**: None prior to this work for diffusion-based SBI.\n- **Why they fail**: No sequential mechanism existed for score-based SBI.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "NPSE in its amortised form does not guide simulations toward x_obs, requiring large simulation budgets for accurate inference at a specific observation."
+              },
+              {
+                "label": "Caused By",
+                "value": "O4"
+              },
+              {
+                "label": "Existing Attempts",
+                "value": "None prior to this work for diffusion-based SBI."
+              },
+              {
+                "label": "Why They Fail",
+                "value": "No sequential mechanism existed for score-based SBI."
+              }
+            ],
+            "refs": [
+              {
+                "raw": "O4",
+                "kind": "observation",
+                "target": null
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "role": "insight",
+        "heading": "Key Insight",
+        "present": true,
+        "entries": [
+          {
+            "ent_id": null,
+            "inferred_id": true,
+            "ent_title": "Insight",
+            "text": "- **Insight**: The denoising posterior score matching (DSM) objective is minimised by the true posterior score even when the training distribution uses a proposal prior `˜p(θ)` that is proportional to the true prior `p(θ)` within the support of the posterior. Therefore, truncated priors as proposals require no correction.\n- **Derived from**: O4, O5, and Proposition 3.1 (Appendix C.1).\n- **Enables**: TSNPSE — a sequential algorithm that concentrates simulations near x_obs via truncated proposals without any importance weight correction, combining simulation efficiency with theoretical correctness.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Insight",
+                "value": "The denoising posterior score matching (DSM) objective is minimised by the true posterior score even when the training distribution uses a proposal prior `˜p(θ)` that is proportional to the true prior `p(θ)` within the support of the posterior. Therefore, truncated priors as proposals require no correction."
+              },
+              {
+                "label": "Derived From",
+                "value": "O4, O5, and Proposition 3.1 (Appendix C.1)."
+              },
+              {
+                "label": "Enables",
+                "value": "TSNPSE — a sequential algorithm that concentrates simulations near x_obs via truncated proposals without any importance weight correction, combining simulation efficiency with theoretical correctness."
+              }
+            ],
+            "refs": [
+              {
+                "raw": "O4",
+                "kind": "observation",
+                "target": null
+              },
+              {
+                "raw": "O5",
+                "kind": "observation",
+                "target": null
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "role": "assumptions",
+        "heading": "Assumptions",
+        "present": true,
+        "entries": [
+          {
+            "ent_id": "A1",
+            "inferred_id": false,
+            "ent_title": "",
+            "text": "The simulator is a well-defined stochastic function mapping parameters θ to data x.",
+            "unstructured": true,
+            "fields": [],
+            "refs": [
+              {
+                "raw": "A1",
+                "kind": "assumption",
+                "target": null
+              }
+            ]
+          },
+          {
+            "ent_id": "A2",
+            "inferred_id": false,
+            "ent_title": "",
+            "text": "The forward SDE admits a unique stationary distribution π (e.g., standard Gaussian) from which it is easy to sample.",
+            "unstructured": true,
+            "fields": [],
+            "refs": [
+              {
+                "raw": "A2",
+                "kind": "assumption",
+                "target": null
+              }
+            ]
+          },
+          {
+            "ent_id": "A3",
+            "inferred_id": false,
+            "ent_title": "",
+            "text": "The truncated region does not exclude any mass from the true posterior: Θ_obs ⊆ HPR_ε(p^s_ψ(θ|x_obs)) for all rounds s ≥ 1.",
+            "unstructured": true,
+            "fields": [],
+            "refs": [
+              {
+                "raw": "A3",
+                "kind": "assumption",
+                "target": null
+              }
+            ]
+          },
+          {
+            "ent_id": "A4",
+            "inferred_id": false,
+            "ent_title": "",
+            "text": "An L2 bound on the score approximation error holds (Assumption A1 / A1' in Appendix A.2).",
+            "unstructured": true,
+            "fields": [],
+            "refs": [
+              {
+                "raw": "A4",
+                "kind": "assumption",
+                "target": null
+              },
+              {
+                "raw": "A1",
+                "kind": "assumption",
+                "target": null
+              }
+            ]
+          },
+          {
+            "ent_id": "A5",
+            "inferred_id": false,
+            "ent_title": "",
+            "text": "The prior p(θ) is known in closed form or can be sampled.",
+            "unstructured": true,
+            "fields": [],
+            "refs": [
+              {
+                "raw": "A5",
+                "kind": "assumption",
+                "target": null
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "glossary": {
+    "title": "Concepts",
+    "groups": [],
+    "terms": [
+      {
+        "term_id": "G01",
+        "name": "Score Function",
+        "aliases": [],
+        "group": "",
+        "definition": "The gradient of the log-density of a probability distribution with respect to the variable of interest. For a posterior, this is `∇_θ log p(θ|x)`.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "`∇_θ log p(θ)` or `s(θ)`"
+          },
+          {
+            "label": "Boundary Conditions",
+            "value": "Requires the log-density to be differentiable. Does not require the normalising constant of p(θ|x) to be tractable."
+          }
+        ],
+        "refs": [],
+        "related": [
+          "G03",
+          "G02"
+        ]
+      },
+      {
+        "term_id": "G02",
+        "name": "Conditional Score Network",
+        "aliases": [],
+        "group": "",
+        "definition": "A neural network parameterised by ψ that approximates the score of the time-marginal posterior density `p_t(θ_t|x)` at noise level t, conditioned on observation x. Architecture: independent MLP embeddings for θ_t, x, and t (sinusoidal), concatenated and passed through a final MLP. Output dimension equals dim(θ).",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "`s_ψ(θ_t, x, t) ≈ ∇_θ log p_t(θ_t|x)`"
+          },
+          {
+            "label": "Boundary Conditions",
+            "value": "Approximation error decreases with training data size and network capacity. At t=0, approximates the posterior score; at t=T, approximates the reference distribution score."
+          }
+        ],
+        "refs": [],
+        "related": [
+          "G01",
+          "G03"
+        ]
+      },
+      {
+        "term_id": "G03",
+        "name": "Forward SDE (Noising Process)",
+        "aliases": [
+          "Noising Process"
+        ],
+        "group": "",
+        "definition": "A stochastic differential equation that gradually adds noise to samples from the posterior distribution, transforming them into samples from a tractable reference distribution π (e.g., standard Gaussian). The paper considers VE SDE and VP SDE variants.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "`dθ_t = f(θ_t, t)dt + g(t)dw_t`, with `θ_0 ~ p(·|x)`"
+          },
+          {
+            "label": "Boundary Conditions",
+            "value": "Coefficients f and g must be chosen so the process admits a unique stationary distribution π. Time horizon T must be large enough that p_T ≈ π."
+          }
+        ],
+        "refs": [],
+        "related": [
+          "G04",
+          "G05",
+          "G02"
+        ]
+      },
+      {
+        "term_id": "G04",
+        "name": "VE SDE (Variance-Exploding SDE)",
+        "aliases": [
+          "Variance-Exploding SDE"
+        ],
+        "group": "",
+        "definition": "A forward SDE with zero drift and a time-varying diffusion coefficient such that the variance grows without bound. Transition density: `p_{t|0}(θ_t|θ_0) = N(θ_0, σ²_min (σ_max/σ_min)^{2t} I)`. Parameters: σ_min ∈ {0.01, 0.05}, σ_max = maximum pairwise Euclidean distance in training data.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "`dθ_t = σ_min (σ_max/σ_min)^t √(2 log(σ_max/σ_min)) dw_t`, `t ∈ (0,1]`"
+          },
+          {
+            "label": "Boundary Conditions",
+            "value": "σ_min = 0.01 for 2D experiments (SIR, Two Moons); σ_min = 0.05 for all others. Recommended for low-dimensional problems."
+          }
+        ],
+        "refs": [],
+        "related": [
+          "G03",
+          "G05"
+        ]
+      },
+      {
+        "term_id": "G05",
+        "name": "VP SDE (Variance-Preserving SDE)",
+        "aliases": [
+          "Variance-Preserving SDE"
+        ],
+        "group": "",
+        "definition": "A forward SDE with linear drift and time-varying diffusion coefficient such that the variance remains bounded. Transition density: `p_{t|0}(θ_t|θ_0) = N(θ_0 exp(-∫β_s ds/2), I - I exp(-∫β_s ds))`. Parameters: β_min = 0.1, β_max = 11.0.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "`dθ_t = -½β_t θ_t dt + √β_t dw_t`, where `β_t = β_min + t(β_max - β_min)`, `t ∈ (0,1]`"
+          },
+          {
+            "label": "Boundary Conditions",
+            "value": "Recommended for high-dimensional problems. Used for the Pyloric neuroscience experiment."
+          }
+        ],
+        "refs": [],
+        "related": [
+          "G03",
+          "G04"
+        ]
+      },
+      {
+        "term_id": "G06",
+        "name": "Denoising Score Matching (DSM) Objective",
+        "aliases": [],
+        "group": "",
+        "definition": "A tractable surrogate for the weighted Fisher divergence between the score network and the true posterior score. Minimised when `s_ψ(θ_t,x,t) = ∇_θ log p_t(θ_t|x)` almost everywhere. The transition score `∇_{θ_t} log p_{t|0}(θ_t|θ_0)` is available in closed form for VE/VP SDEs.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "`J^{DSM}_{post}(ψ) = ∫₀ᵀ λ_t E_{p_{t|0}(θ_t|θ_0) p(x|θ_0) p(θ_0)} [||s_ψ(θ_t,x,t) - ∇_{θ_t} log p_{t|0}(θ_t|θ_0)||²] dt`"
+          },
+          {
+            "label": "Boundary Conditions",
+            "value": "Requires i.i.d. samples (θ_0, x) from the joint p(θ)p(x|θ) (or a proposal). Approximated via Monte Carlo in practice."
+          }
+        ],
+        "refs": [],
+        "related": [
+          "G01",
+          "G02",
+          "G08",
+          "G09"
+        ]
+      },
+      {
+        "term_id": "G07",
+        "name": "Probability Flow ODE",
+        "aliases": [],
+        "group": "",
+        "definition": "A deterministic ODE with the same marginal distributions as the forward SDE. Its time-reversal can be used to generate posterior samples deterministically (via numerical ODE solvers, e.g., RK45) and to evaluate densities via the instantaneous change-of-variables formula. This ODE is an instance of a continuous normalising flow (CNF).",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "`dθ_t/dt = f(θ_t,t) - ½g²(t)∇_θ log p_t(θ_t|x)`"
+          },
+          {
+            "label": "Boundary Conditions",
+            "value": "Density evaluation requires solving an augmented ODE (trace computation), which is computationally expensive. Density evaluation is needed for TSNPSE's HPR computation."
+          }
+        ],
+        "refs": [],
+        "related": [
+          "G03"
+        ]
+      },
+      {
+        "term_id": "G08",
+        "name": "NPSE (Neural Posterior Score Estimation)",
+        "aliases": [
+          "Neural Posterior Score Estimation"
+        ],
+        "group": "",
+        "definition": "Algorithm that (i) simulates (θ_0, x, θ_t) triples, (ii) trains the score network via the DSM objective, (iii) generates posterior samples by simulating the time-reversal of the probability flow ODE initialised at π with x = x_obs.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "Non-sequential (amortised) variant; trains `s_ψ(θ_t, x, t)` on samples from p(θ)p(x|θ)."
+          },
+          {
+            "label": "Boundary Conditions",
+            "value": "Amortised — same trained network can be queried for any x. Requires a large simulation budget to cover the prior predictive. Equivalent to FMPE when using the deterministic ODE."
+          }
+        ],
+        "refs": [],
+        "related": [
+          "G09",
+          "G07"
+        ]
+      },
+      {
+        "term_id": "G09",
+        "name": "TSNPSE (Truncated Sequential NPSE)",
+        "aliases": [
+          "Truncated Sequential NPSE"
+        ],
+        "group": "",
+        "definition": "Sequential variant of NPSE using truncated prior proposals. In round r, the proposal is `˜p^r(θ) ∝ p(θ) · I{θ ∈ HPR_ε(p^{r-1}_ψ(θ|x_obs))}`, averaged over previous rounds. No importance weight correction is needed because the proposal is proportional to the prior within the posterior support (Proposition 3.1). Uses R=10 rounds by default with equal simulation budget M=N/R per round.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "Algorithm 1 in the paper."
+          },
+          {
+            "label": "Boundary Conditions",
+            "value": "Requires that the true posterior support is contained within HPR_ε at each round (Assumption A3). Computationally more expensive than TSNPE because likelihood evaluation requires solving the ODE."
+          }
+        ],
+        "refs": [
+          {
+            "raw": "A3",
+            "kind": "assumption",
+            "target": null
+          }
+        ],
+        "related": [
+          "G08",
+          "G07"
+        ]
+      },
+      {
+        "term_id": "G10",
+        "name": "HPR (Highest Probability Region)",
+        "aliases": [
+          "Highest Probability Region"
+        ],
+        "group": "",
+        "definition": "Used in TSNPSE to define the truncated proposal. Estimated by: (1) drawing 20000 samples from the approximate posterior via the ODE, (2) computing their log-density via the instantaneous change-of-variables formula, (3) setting the truncation boundary κ as the ε=5×10⁻⁴ quantile.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "`HPR_ε(p(·|x_obs))` — the smallest region containing mass 1-ε of the posterior."
+          },
+          {
+            "label": "Boundary Conditions",
+            "value": "Requires density evaluation via the probability flow ODE — computationally expensive. An energy-based parameterisation of the score network (Appendix G) can reduce this cost to a single forward pass."
+          }
+        ],
+        "refs": [],
+        "related": [
+          "G09",
+          "G07"
+        ]
+      },
+      {
+        "term_id": "G11",
+        "name": "C2ST (Classification-Based Two-Sample Test)",
+        "aliases": [
+          "Classification-Based Two-Sample Test"
+        ],
+        "group": "",
+        "definition": "A metric for comparing two distributions by training a binary classifier to distinguish samples from the approximate posterior `q_ψ(·|x_obs)` and the true posterior `p(·|x_obs)`. A score of 0.5 indicates the classifier cannot distinguish the two (perfect approximation). 10000 samples from each distribution are used for evaluation.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "C2ST score ∈ [0.5, 1.0]; lower is better; 0.5 = perfect posterior approximation."
+          },
+          {
+            "label": "Boundary Conditions",
+            "value": "Only applicable when samples from the true posterior are available (as in sbibm). Implemented via the sbibm library (Lopez-Paz & Oquad, 2017)."
+          }
+        ],
+        "refs": [],
+        "related": [
+          "G08",
+          "G09"
+        ]
+      },
+      {
+        "term_id": "G12",
+        "name": "Simulation-Based Inference (SBI)",
+        "aliases": [
+          "SBI"
+        ],
+        "group": "",
+        "definition": "The problem of Bayesian inference `p(θ|x_obs) ∝ p(θ)p(x_obs|θ)` when the likelihood `p(x|θ)` is intractable but the simulator can generate samples `(θ, x) ~ p(θ)p(x|θ)`.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "Also called likelihood-free inference (LFI)."
+          },
+          {
+            "label": "Boundary Conditions",
+            "value": "Applies when the likelihood has no closed form but the simulator is available. Traditional ABC methods are sample-inefficient; neural SBI methods (SNPE, SNLE, SNRE, NPSE) are more efficient but require training."
+          }
+        ],
+        "refs": [],
+        "related": [
+          "G08",
+          "G09",
+          "G01"
+        ]
+      }
+    ],
+    "lexicon": {
+      "score function": "G01",
+      "conditional score network": "G02",
+      "forward sde": "G03",
+      "noising process": "G03",
+      "ve sde": "G04",
+      "variance-exploding sde": "G04",
+      "vp sde": "G05",
+      "variance-preserving sde": "G05",
+      "denoising score matchingobjective": "G06",
+      "probability flow ode": "G07",
+      "npse": "G08",
+      "neural posterior score estimation": "G08",
+      "tsnpse": "G09",
+      "truncated sequential npse": "G09",
+      "hpr": "G10",
+      "highest probability region": "G10",
+      "c2st": "G11",
+      "classification-based two-sample test": "G11",
+      "simulation-based inference": "G12",
+      "sbi": "G12"
+    }
+  },
+  "dependencies": {
+    "title": "Related Work / Dependencies",
+    "preamble": "# Related Work",
+    "legend": [],
+    "attribution": "",
+    "entries": [
+      {
+        "rw_id": "RW01",
+        "inferred_id": false,
+        "name": "Papamakarios & Murray, 2016 (SNPE-A)",
+        "relation_raw": "baseline",
+        "relation_norm": "baseline",
+        "delta": "What changed: NPSE replaces normalizing flow posterior estimator with conditional score-based diffusion model; TSNPSE analogises SNPE-A's post-hoc SIR correction as SNPSE-A.\nWhy: Avoid architectural restrictions of normalizing flows; do not require importance weight corrections.",
+        "adopted": "Sequential training concept; proposal prior idea; SIR correction (adapted as SNPSE-A).",
+        "grounding": [],
+        "claims": [
+          "C01",
+          "C02"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW02",
+        "inferred_id": false,
+        "name": "Lueckmann et al., 2017 (SNPE-B)",
+        "relation_raw": "baseline",
+        "relation_norm": "baseline",
+        "delta": "What changed: NPSE avoids the high-variance importance-weighted loss of SNPE-B; SNPSE-B is the score-based analogue.\nWhy: Importance weights in DSM loss are high-variance and lead to unstable training.",
+        "adopted": "Importance-weighted objective concept (adapted as SNPSE-B).",
+        "grounding": [],
+        "claims": [
+          "C03"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW03",
+        "inferred_id": false,
+        "name": "Greenberg et al., 2019 (SNPE-C / APT)",
+        "relation_raw": "baseline",
+        "relation_norm": "baseline",
+        "delta": "What changed: SNPSE-C is the score-based analogue of SNPE-C; TSNPSE avoids the score-space correction that SNPSE-C requires.\nWhy: Score-based correction requires additional approximations that degrade performance.",
+        "adopted": "Automatic posterior transformation concept (partially adapted as SNPSE-C).",
+        "grounding": [],
+        "claims": [
+          "C02",
+          "C03"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW04",
+        "inferred_id": false,
+        "name": "Deistler et al., 2022a (TSNPE)",
+        "relation_raw": "baseline",
+        "relation_norm": "baseline",
+        "delta": "What changed: TSNPSE replaces normalizing flow with conditional score network; retains the truncated proposal idea.\nWhy: Diffusion models are more flexible than discrete normalizing flows; CNFs may give more accurate inference on hard tasks.",
+        "adopted": "Truncated prior proposal; HPR estimation procedure; pre-rejection hypercube heuristic; Pyloric experimental setup.",
+        "grounding": [],
+        "claims": [
+          "C02",
+          "C04"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW05",
+        "inferred_id": false,
+        "name": "Song et al., 2021 (Score-Based Generative Modelling via SDEs)",
+        "relation_raw": "imports",
+        "relation_norm": "imports",
+        "delta": "What changed: Applied to the conditional posterior estimation problem in SBI rather than unconditional generation.\nWhy: Score-based diffusion provides a flexible, training-stable alternative to normalizing flows.",
+        "adopted": "SDE framework; VE/VP SDE definitions; probability flow ODE; denoising score matching; sinusoidal embeddings.",
+        "grounding": [
+          {
+            "raw": "arXiv:2011.13456)",
+            "kind": "arxiv",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C01",
+          "C02",
+          "C05"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW06",
+        "inferred_id": false,
+        "name": "Batzolis et al., 2021 (Conditional Score-Based Diffusion)",
+        "relation_raw": "imports",
+        "relation_norm": "imports",
+        "delta": "What changed: Applied conditional score diffusion to SBI where the likelihood is intractable.\nWhy: Standard conditional diffusion assumes known or tractable likelihood.",
+        "adopted": "Conditional DSM objective derivation; equivalence proof between J^SM_post and J^DSM_post.",
+        "grounding": [
+          {
+            "raw": "arXiv:2111.13606",
+            "kind": "arxiv",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C01"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW07",
+        "inferred_id": false,
+        "name": "Geffner et al., 2023 (Compositional Score Modeling for SBI)",
+        "relation_raw": "extends",
+        "relation_norm": "extends",
+        "delta": "What changed: Geffner et al. focus on multi-observation SBI using compositional scores; this paper introduces sequential variants.\nWhy: Different scope — sequential vs. multi-observation generalisation.",
+        "adopted": "Motivation for applying diffusion models to SBI; comparison basis.",
+        "grounding": [],
+        "claims": [
+          "C01"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW08",
+        "inferred_id": false,
+        "name": "Dax et al., 2023 (FMPE — Flow Matching)",
+        "relation_raw": "extends",
+        "relation_norm": "extends",
+        "delta": "What changed: NPSE using the deterministic probability flow ODE is a special case of FMPE; TSNPSE provides a sequential variant which FMPE lacks.\nWhy: FMPE is amortised only; sequential variant is needed for simulation efficiency.",
+        "adopted": "CNF perspective; comparison in Appendix F.",
+        "grounding": [],
+        "claims": [
+          "C01",
+          "C02"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW09",
+        "inferred_id": false,
+        "name": "Papamakarios et al., 2019 (SNLE)",
+        "relation_raw": "baseline",
+        "relation_norm": "baseline",
+        "delta": "What changed: NPSE targets the posterior score directly rather than learning an approximate likelihood for MCMC.\nWhy: SNLE requires MCMC for sampling, which is costly for complex posteriors.",
+        "adopted": "Sequential SBI framework; benchmark comparison.",
+        "grounding": [],
+        "claims": [
+          "C01"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW10",
+        "inferred_id": false,
+        "name": "Durkan et al., 2020 (SNRE)",
+        "relation_raw": "baseline",
+        "relation_norm": "baseline",
+        "delta": "What changed: NPSE does not require binary classification / ratio estimation.\nWhy: Ratio estimation is an indirect approach; direct score estimation is more principled.",
+        "adopted": "Sequential SBI framework.",
+        "grounding": [],
+        "claims": [
+          "C01"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW11",
+        "inferred_id": false,
+        "name": "Lueckmann et al., 2021 (sbibm benchmark)",
+        "relation_raw": "bounds",
+        "relation_norm": "bounds",
+        "delta": "What changed: Uses sbibm as evaluation framework; benchmark tasks and C2ST metric defined there.\nWhy: Standard evaluation protocol for fair comparison.",
+        "adopted": "8 benchmark tasks; C2ST metric; sbibm toolkit for baselines.",
+        "grounding": [],
+        "claims": [
+          "C01",
+          "C02",
+          "C03"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW12",
+        "inferred_id": false,
+        "name": "Benton et al., 2024 (Error Bounds for Flow Matching)",
+        "relation_raw": "imports",
+        "relation_norm": "imports",
+        "delta": "What changed: Theorem A.3 adapts Benton et al. Theorem 6 to the conditional posterior score estimation setting.\nWhy: Provides theoretical grounding for NPSE's approximation error.",
+        "adopted": "Wasserstein-2 error bound framework; assumptions A1–A4.",
+        "grounding": [
+          {
+            "raw": "A1",
+            "kind": "assumption",
+            "target": null
+          },
+          {
+            "raw": "A4",
+            "kind": "assumption",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C01"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW13",
+        "inferred_id": false,
+        "name": "Glöckler et al., 2022 (SNVI)",
+        "relation_raw": "baseline",
+        "relation_norm": "baseline",
+        "delta": "What changed: TSNPSE compared directly against SNVI on Pyloric problem.\nWhy: SNVI is a competitive recent method for the Pyloric neuroscience experiment.",
+        "adopted": "Pyloric experimental setup; comparison metric (% valid summary statistics).",
+        "grounding": [],
+        "claims": [
+          "C04"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW14",
+        "inferred_id": false,
+        "name": "Hyvarinen, 2005 (Score Matching)",
+        "relation_raw": "imports",
+        "relation_norm": "imports",
+        "delta": "What changed: Uses denoising score matching (Vincent 2011; Song et al., 2020) rather than explicit score matching.\nWhy: Denoising score matching is tractable without requiring density normalisation.",
+        "adopted": "Score matching principle as the foundation of the DSM objective.",
+        "grounding": [],
+        "claims": [
+          "C01"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      }
+    ],
+    "footprint": []
+  },
+  "recipes": {
+    "title": "Solution",
+    "files": [
+      {
+        "file": "algorithm.md",
+        "role": "algorithm",
+        "file_title": "Algorithm",
+        "sections": [
+          {
+            "sec_id": null,
+            "heading": "Mathematical Formulation",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "### Forward SDE (Noising Process)\n$$d\\theta_t = f(\\theta_t, t)\\,dt + g(t)\\,dw_t, \\quad \\theta_0 \\sim p(\\cdot|x)$$\n\n### Reverse-Time SDE\n$$d\\bar{\\theta}_t = \\left[-f(\\bar{\\theta}_t, T-t) + g^2(T-t)\\nabla_\\theta \\log p_{T-t}(\\bar{\\theta}_t|x)\\right]dt + g(T-t)\\,dw_t$$\n\n### Probability Flow ODE\n$$\\frac{d\\theta_t}{dt} = f(\\theta_t, t) - \\frac{1}{2}g^2(t)\\nabla_\\theta \\log p_t(\\theta_t|x)$$\n\n### Denoising Score Matching (DSM) Objective\n$$J^{\\text{DSM}}_{\\text{post}}(\\psi) = \\int_0^T \\lambda_t\\, \\mathbb{E}_{p_{t|0}(\\theta_t|\\theta_0)\\,p(x|\\theta_0)\\,p(\\theta_0)}\\!\\left[\\|s_\\psi(\\theta_t,x,t) - \\nabla_{\\theta_t}\\log p_{t|0}(\\theta_t|\\theta_0)\\|^2\\right]dt$$\n\nThis objective is minimised when $s_\\psi(\\theta_t, x, t) = \\nabla_\\theta \\log p_t(\\theta_t|x)$ almost everywhere.\n\n### TSNPSE Loss (r-th round)\n$$J^{\\text{TSNPSE-DSM}}_{\\text{post}}(\\psi) = \\int_0^T \\lambda_t\\, \\mathbb{E}_{p_{t|0}(\\theta_t|\\theta_0)\\,p(x|\\theta_0)\\,\\tilde{p}^r(\\theta_0)}\\!\\left[\\|s_\\psi(\\theta_t,x,t) - \\nabla_{\\theta_t}\\log p_{t|0}(\\theta_t|\\theta_0)\\|^2\\right]dt$$\n\nwhere $\\tilde{p}^r(\\theta) = \\frac{1}{r}\\sum_{s=0}^{r-1}\\bar{p}^s(\\theta)$ and $\\bar{p}^r(\\theta) \\propto p(\\theta)\\cdot\\mathbf{1}\\{\\theta \\in \\mathrm{HPR}_\\varepsilon(p^{r-1}_\\psi(\\theta|x_\\text{obs}))\\}$.",
+            "text": "### Forward SDE (Noising Process)\n$$d\\theta_t = f(\\theta_t, t)\\,dt + g(t)\\,dw_t, \\quad \\theta_0 \\sim p(\\cdot|x)$$\n\n### Reverse-Time SDE\n$$d\\bar{\\theta}_t = \\left[-f(\\bar{\\theta}_t, T-t) + g^2(T-t)\\nabla_\\theta \\log p_{T-t}(\\bar{\\theta}_t|x)\\right]dt + g(T-t)\\,dw_t$$\n\n### Probability Flow ODE\n$$\\frac{d\\theta_t}{dt} = f(\\theta_t, t) - \\frac{1}{2}g^2(t)\\nabla_\\theta \\log p_t(\\theta_t|x)$$\n\n### Denoising Score Matching (DSM) Objective\n$$J^{\\text{DSM}}_{\\text{post}}(\\psi) = \\int_0^T \\lambda_t\\, \\mathbb{E}_{p_{t|0}(\\theta_t|\\theta_0)\\,p(x|\\theta_0)\\,p(\\theta_0)}\\!\\left[\\|s_\\psi(\\theta_t,x,t) - \\nabla_{\\theta_t}\\log p_{t|0}(\\theta_t|\\theta_0)\\|^2\\right]dt$$\n\nThis objective is minimised when $s_\\psi(\\theta_t, x, t) = \\nabla_\\theta \\log p_t(\\theta_t|x)$ almost everywhere.\n\n### TSNPSE Loss (r-th round)\n$$J^{\\text{TSNPSE-DSM}}_{\\text{post}}(\\psi) = \\int_0^T \\lambda_t\\, \\mathbb{E}_{p_{t|0}(\\theta_t|\\theta_0)\\,p(x|\\theta_0)\\,\\tilde{p}^r(\\theta_0)}\\!\\left[\\|s_\\psi(\\theta_t,x,t) - \\nabla_{\\theta_t}\\log p_{t|0}(\\theta_t|\\theta_0)\\|^2\\right]dt$$\n\nwhere $\\tilde{p}^r(\\theta) = \\frac{1}{r}\\sum_{s=0}^{r-1}\\bar{p}^s(\\theta)$ and $\\bar{p}^r(\\theta) \\propto p(\\theta)\\cdot\\mathbf{1}\\{\\theta \\in \\mathrm{HPR}_\\varepsilon(p^{r-1}_\\psi(\\theta|x_\\text{obs}))\\}$.",
+            "warn": "",
+            "refs": [],
+            "kind": "math"
+          },
+          {
+            "sec_id": null,
+            "heading": "NPSE Pseudocode",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "Algorithm: NPSE\nInput: prior p(θ), simulator p(x|θ), budget N, observation x_obs, SDE type\nOutput: sampler for p_ψ(θ|x_obs)\n\n1. Sample {θ_i, x_i}_{i=1}^N ~ p(θ)p(x|θ)\n2. Standardise θ and x using empirical mean and std\n3. Train s_ψ(θ_t, x, t) by minimising MC estimate of J^DSM_post(ψ)\n   - Adam optimiser, lr=1e-4\n   - Batch size: 50 (N≤10k) or 500 (N=100k)\n   - Max 3000 iterations; early stopping patience=1000 on 15% val split\n4. Sample θ_0^{(j)} ~ N(0,I) for j=1,...,M\n5. Solve time-reversal of probability flow ODE (RK45) with score = s_ψ(·, x_obs, ·)\n6. Return samples {θ_T^{(j)}} ~ p_ψ(θ|x_obs)",
+            "text": "```\nAlgorithm: NPSE\nInput: prior p(θ), simulator p(x|θ), budget N, observation x_obs, SDE type\nOutput: sampler for p_ψ(θ|x_obs)\n\n1. Sample {θ_i, x_i}_{i=1}^N ~ p(θ)p(x|θ)\n2. Standardise θ and x using empirical mean and std\n3. Train s_ψ(θ_t, x, t) by minimising MC estimate of J^DSM_post(ψ)\n   - Adam optimiser, lr=1e-4\n   - Batch size: 50 (N≤10k) or 500 (N=100k)\n   - Max 3000 iterations; early stopping patience=1000 on 15% val split\n4. Sample θ_0^{(j)} ~ N(0,I) for j=1,...,M\n5. Solve time-reversal of probability flow ODE (RK45) with score = s_ψ(·, x_obs, ·)\n6. Return samples {θ_T^{(j)}} ~ p_ψ(θ|x_obs)\n```",
+            "warn": "",
+            "refs": [],
+            "kind": "code"
+          },
+          {
+            "sec_id": null,
+            "heading": "TSNPSE Pseudocode (Algorithm 1)",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "Algorithm: TSNPSE\nInput: x_obs, prior p(θ) =: p̄^0(θ), simulator p(x|θ), budget N, rounds R\n       (M = N/R simulations per round), dataset D = {}\nOutput: p_ψ(θ|x_obs) ≈ p(θ|x_obs)\n\nFor r = 1,...,R do:\n  For i = 1,...,M do:\n    Draw θ_i ~ p̄^{r-1}(θ), x_i ~ p(x|θ_i)\n    Add (θ_i, x_i) to D\n  End for\n  \n  Train s_ψ(θ_t, x, t) ≈ ∇_θ log p_t(θ_t|x) by minimising MC estimate of\n  J^TSNPSE-DSM_post(ψ) on dataset D\n  \n  Compute p̄^r(θ) [HPR estimation]:\n    1. Draw 20000 samples from p_ψ(·|x_obs) via ODE (RK45)\n    2. Evaluate log-densities via instantaneous change-of-variables (Eq. 5)\n    3. Compute κ = ε-th quantile of log-densities (ε = 5×10⁻⁴)\n    4. p̄^r(θ) ∝ p(θ) · I{log p_ψ(θ|x_obs) ≥ κ}\nEnd for\n\nReturn: p_ψ(θ|x_obs) sampler via time-reversal of probability flow ODE",
+            "text": "```\nAlgorithm: TSNPSE\nInput: x_obs, prior p(θ) =: p̄^0(θ), simulator p(x|θ), budget N, rounds R\n       (M = N/R simulations per round), dataset D = {}\nOutput: p_ψ(θ|x_obs) ≈ p(θ|x_obs)\n\nFor r = 1,...,R do:\n  For i = 1,...,M do:\n    Draw θ_i ~ p̄^{r-1}(θ), x_i ~ p(x|θ_i)\n    Add (θ_i, x_i) to D\n  End for\n  \n  Train s_ψ(θ_t, x, t) ≈ ∇_θ log p_t(θ_t|x) by minimising MC estimate of\n  J^TSNPSE-DSM_post(ψ) on dataset D\n  \n  Compute p̄^r(θ) [HPR estimation]:\n    1. Draw 20000 samples from p_ψ(·|x_obs) via ODE (RK45)\n    2. Evaluate log-densities via instantaneous change-of-variables (Eq. 5)\n    3. Compute κ = ε-th quantile of log-densities (ε = 5×10⁻⁴)\n    4. p̄^r(θ) ∝ p(θ) · I{log p_ψ(θ|x_obs) ≥ κ}\nEnd for\n\nReturn: p_ψ(θ|x_obs) sampler via time-reversal of probability flow ODE\n```",
+            "warn": "",
+            "refs": [],
+            "kind": "code"
+          },
+          {
+            "sec_id": null,
+            "heading": "Truncated Proposal Sampling (Rejection Sampling)",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "To sample θ ~ ˜p^r(θ):\nRepeat until M samples accepted:\n  1. Sample θ ~ p(θ)\n  2. [Cheap pre-rejection] Reject if θ not within empirical hypercube\n     of 20000 posterior samples (per-dimension [min, max])\n  3. [Expensive step] Compute log p_ψ(θ|x_obs) via ODE + change-of-variables\n  4. Accept if log p_ψ(θ|x_obs) ≥ κ, else reject",
+            "text": "```\nTo sample θ ~ ˜p^r(θ):\nRepeat until M samples accepted:\n  1. Sample θ ~ p(θ)\n  2. [Cheap pre-rejection] Reject if θ not within empirical hypercube\n     of 20000 posterior samples (per-dimension [min, max])\n  3. [Expensive step] Compute log p_ψ(θ|x_obs) via ODE + change-of-variables\n  4. Accept if log p_ψ(θ|x_obs) ≥ κ, else reject\n```",
+            "warn": "",
+            "refs": [],
+            "kind": "code"
+          },
+          {
+            "sec_id": null,
+            "heading": "VE SDE Specifics",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "$$g(t) = \\sigma_{\\min}\\left(\\frac{\\sigma_{\\max}}{\\sigma_{\\min}}\\right)^t\\sqrt{2\\log\\frac{\\sigma_{\\max}}{\\sigma_{\\min}}}, \\quad f(\\theta_t,t)=0$$\n\n$$p_{t|0}(\\theta_t|\\theta_0) = \\mathcal{N}\\!\\left(\\theta_0,\\; \\sigma^2_{\\min}\\left(\\frac{\\sigma_{\\max}}{\\sigma_{\\min}}\\right)^{2t}\\!I\\right)$$\n\n$$\\nabla_{\\theta_t}\\log p_{t|0}(\\theta_t|\\theta_0) = -\\frac{\\theta_t - \\theta_0}{\\sigma^2_{\\min}(\\sigma_{\\max}/\\sigma_{\\min})^{2t}}$$",
+            "text": "$$g(t) = \\sigma_{\\min}\\left(\\frac{\\sigma_{\\max}}{\\sigma_{\\min}}\\right)^t\\sqrt{2\\log\\frac{\\sigma_{\\max}}{\\sigma_{\\min}}}, \\quad f(\\theta_t,t)=0$$\n\n$$p_{t|0}(\\theta_t|\\theta_0) = \\mathcal{N}\\!\\left(\\theta_0,\\; \\sigma^2_{\\min}\\left(\\frac{\\sigma_{\\max}}{\\sigma_{\\min}}\\right)^{2t}\\!I\\right)$$\n\n$$\\nabla_{\\theta_t}\\log p_{t|0}(\\theta_t|\\theta_0) = -\\frac{\\theta_t - \\theta_0}{\\sigma^2_{\\min}(\\sigma_{\\max}/\\sigma_{\\min})^{2t}}$$",
+            "warn": "",
+            "refs": [],
+            "kind": "math"
+          },
+          {
+            "sec_id": null,
+            "heading": "VP SDE Specifics",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "$$f(\\theta_t,t) = -\\tfrac{1}{2}\\beta_t\\theta_t, \\quad g(t)=\\sqrt{\\beta_t}, \\quad \\beta_t = \\beta_{\\min}+t(\\beta_{\\max}-\\beta_{\\min})$$\n\nLet $\\alpha_t = \\exp\\!\\left(-\\frac{1}{2}\\int_0^t\\beta_s\\,ds\\right) = \\exp\\!\\left(-\\frac{t}{2}\\left(\\beta_{\\min} + \\frac{t(\\beta_{\\max}-\\beta_{\\min})}{2}\\right)\\right)$. Then:\n\n$$p_{t|0}(\\theta_t|\\theta_0) = \\mathcal{N}(\\alpha_t\\theta_0,\\; (1-\\alpha_t^2)I)$$\n\n$$\\nabla_{\\theta_t}\\log p_{t|0}(\\theta_t|\\theta_0) = -\\frac{\\theta_t - \\alpha_t\\theta_0}{1-\\alpha_t^2}$$",
+            "text": "$$f(\\theta_t,t) = -\\tfrac{1}{2}\\beta_t\\theta_t, \\quad g(t)=\\sqrt{\\beta_t}, \\quad \\beta_t = \\beta_{\\min}+t(\\beta_{\\max}-\\beta_{\\min})$$\n\nLet $\\alpha_t = \\exp\\!\\left(-\\frac{1}{2}\\int_0^t\\beta_s\\,ds\\right) = \\exp\\!\\left(-\\frac{t}{2}\\left(\\beta_{\\min} + \\frac{t(\\beta_{\\max}-\\beta_{\\min})}{2}\\right)\\right)$. Then:\n\n$$p_{t|0}(\\theta_t|\\theta_0) = \\mathcal{N}(\\alpha_t\\theta_0,\\; (1-\\alpha_t^2)I)$$\n\n$$\\nabla_{\\theta_t}\\log p_{t|0}(\\theta_t|\\theta_0) = -\\frac{\\theta_t - \\alpha_t\\theta_0}{1-\\alpha_t^2}$$",
+            "warn": "",
+            "refs": [],
+            "kind": "math"
+          },
+          {
+            "sec_id": null,
+            "heading": "Error Bounds (Theorem A.3)",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "Under assumptions A1'/B1, A2, A3, A4, the Wasserstein-2 distance between the approximate and true posterior satisfies:\n- VP ODE: $W_2(\\hat{\\pi}_1, \\tilde{\\pi}_1) \\leq \\varepsilon_1 \\cdot C_{\\text{VP}}$\n- VE ODE: $W_2(\\hat{\\pi}_1, \\tilde{\\pi}_1) \\leq \\varepsilon_1 \\cdot C_{\\text{VE}}$\n\nwhere $\\varepsilon_1 \\propto \\varepsilon_{\\text{obs}}$ (L2 score approximation error) and constants depend on the Lipschitz properties of the velocity field.",
+            "text": "Under assumptions A1'/B1, A2, A3, A4, the Wasserstein-2 distance between the approximate and true posterior satisfies:\n- VP ODE: $W_2(\\hat{\\pi}_1, \\tilde{\\pi}_1) \\leq \\varepsilon_1 \\cdot C_{\\text{VP}}$\n- VE ODE: $W_2(\\hat{\\pi}_1, \\tilde{\\pi}_1) \\leq \\varepsilon_1 \\cdot C_{\\text{VE}}$\n\nwhere $\\varepsilon_1 \\propto \\varepsilon_{\\text{obs}}$ (L2 score approximation error) and constants depend on the Lipschitz properties of the velocity field.",
+            "warn": "",
+            "refs": [
+              {
+                "raw": "A1",
+                "kind": "assumption",
+                "target": null
+              },
+              {
+                "raw": "A2",
+                "kind": "assumption",
+                "target": null
+              },
+              {
+                "raw": "A3",
+                "kind": "assumption",
+                "target": null
+              },
+              {
+                "raw": "A4",
+                "kind": "assumption",
+                "target": null
+              }
+            ],
+            "kind": "math"
+          },
+          {
+            "sec_id": null,
+            "heading": "Complexity",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Training",
+                "value": "O(N · T_iter) forward passes per round, where T_iter = min(3000, early_stop)."
+              },
+              {
+                "label": "Hpr Estimation",
+                "value": "O(20000) ODE solves + Jacobian traces per round (expensive; each requiring multiple network forward passes + gradient computations)."
+              },
+              {
+                "label": "Sampling",
+                "value": "O(M) ODE solves using RK45 (number of steps determined by solver tolerance)."
+              },
+              {
+                "label": "Density Evaluation",
+                "value": "O(1) ODE solve + augmented trace ODE; significantly more expensive than a single normalising flow forward pass."
+              }
+            ],
+            "code": "",
+            "text": "- **Training**: O(N · T_iter) forward passes per round, where T_iter = min(3000, early_stop).\n- **HPR estimation**: O(20000) ODE solves + Jacobian traces per round (expensive; each requiring multiple network forward passes + gradient computations).\n- **Sampling**: O(M) ODE solves using RK45 (number of steps determined by solver tolerance).\n- **Density evaluation**: O(1) ODE solve + augmented trace ODE; significantly more expensive than a single normalising flow forward pass.",
+            "warn": "",
+            "refs": [],
+            "kind": "kv"
+          }
+        ]
+      },
+      {
+        "file": "architecture.md",
+        "role": "architecture",
+        "file_title": "System Architecture",
+        "sections": [
+          {
+            "sec_id": null,
+            "heading": "Overview",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "",
+            "text": "NPSE/TSNPSE consists of four main components: (1) an SDE module that defines the forward noising process and computes transition scores, (2) a conditional score network with three independent embedding sub-networks, (3) a training pipeline that minimises the DSM objective, and (4) a sampling/density-evaluation pipeline based on the probability flow ODE.",
+            "warn": "",
+            "refs": [],
+            "kind": "prose"
+          },
+          {
+            "sec_id": null,
+            "heading": "Component Graph",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "[Simulator p(x|θ)] ──────────────────────────┐\n       │                                       │\n[Prior p(θ)] ──► [Proposal ˜p^r(θ)] ──────────►[Training Dataset D]\n                       ↑                       │\n          [HPR Estimation] ◄── [ODE Sampler]   │\n                   ↑                           ▼\n          [Density Evaluator] ◄── [Score Network s_ψ(θ_t, x, t)]\n                                         ▲\n                              [SDE: VE or VP] ──► [Transition Score ∇ log p_{t|0}]\n                              \n[Score Network] ──► [ODE Sampler (RK45)] ──► [Posterior Samples θ ~ p(θ|x_obs)]",
+            "text": "```\n[Simulator p(x|θ)] ──────────────────────────┐\n       │                                       │\n[Prior p(θ)] ──► [Proposal ˜p^r(θ)] ──────────►[Training Dataset D]\n                       ↑                       │\n          [HPR Estimation] ◄── [ODE Sampler]   │\n                   ↑                           ▼\n          [Density Evaluator] ◄── [Score Network s_ψ(θ_t, x, t)]\n                                         ▲\n                              [SDE: VE or VP] ──► [Transition Score ∇ log p_{t|0}]\n                              \n[Score Network] ──► [ODE Sampler (RK45)] ──► [Posterior Samples θ ~ p(θ|x_obs)]\n```",
+            "warn": "",
+            "refs": [],
+            "kind": "code"
+          },
+          {
+            "sec_id": null,
+            "heading": "Component Descriptions",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Purpose",
+                "value": "Define forward noising process; compute transition log-density and its gradient.\nEmbed the noised parameter vector θ_t into a fixed-size representation.\nEmbed the observation vector x into a fixed-size representation.\nEmbed the continuous time index t into a fixed-size representation.\nCombine embeddings and output the approximate posterior score.\nTrain score network by minimising Monte Carlo estimate of Eq. 7.\nGenerate approximate posterior samples by solving time-reversal of probability flow ODE.\nEvaluate log p_ψ(θ|x_obs) via Eq. 5 for HPR estimation and rejection sampling.\nDefine proposal prior ˜p^r(θ) for next round."
+              },
+              {
+                "label": "Inputs",
+                "value": "θ_0, t; SDE type (VE or VP); hyperparameters (σ_min, σ_max or β_min, β_max).\nθ_t ∈ R^d (standardised by subtracting empirical mean and dividing by std).\nx ∈ R^p (standardised by subtracting empirical mean and dividing by std).\nt ∈ (0, 1].\nConcatenation [θ_emb, x_emb, t_emb].\nDataset D = {(θ_0,i, x_i)}; SDE hyperparameters; λ_t weighting.\ns_ψ(·, x_obs, ·); initial samples from π = N(0,I); ODE solver (RK45).\nθ, s_ψ; ODE solution trace."
+              },
+              {
+                "label": "Outputs",
+                "value": "θ_t ~ p_{t|0}(·|θ_0); ∇_{θ_t} log p_{t|0}(θ_t|θ_0) in closed form.\nθ_emb ∈ R^{max(30, 4d)}.\nx_emb ∈ R^{max(30, 4p)}.\nt_emb ∈ R^64.\ns_ψ(θ_t, x, t) ∈ R^d (approximating ∇_θ log p_t(θ_t|x)).\nθ ~ p(θ|x_obs) approximately.\nlog p_ψ(θ|x_obs) (up to normalisation)."
+              },
+              {
+                "label": "Ve Sde",
+                "value": "f(θ_t,t)=0; g(t) = σ_min (σ_max/σ_min)^t √(2 log(σ_max/σ_min)); transition = N(θ_0, σ²_min (σ_max/σ_min)^{2t} I)."
+              },
+              {
+                "label": "Vp Sde",
+                "value": "f(θ_t,t) = -½β_t θ_t; g(t) = √β_t; β_t = β_min + t(β_max-β_min); transition = N(θ_0 exp(-∫β_s ds/2), I - I exp(-∫β_s ds)).\n### 2. θ_t Embedding Network"
+              },
+              {
+                "label": "Architecture",
+                "value": "3-layer fully-connected MLP, 256 hidden units per layer, SiLU activations.\n### 3. x Embedding Network\n3-layer fully-connected MLP, 256 hidden units per layer, SiLU activations.\n### 4. t Sinusoidal Embedding\n3-layer fully-connected MLP, 256 hidden units per layer, SiLU activations."
+              },
+              {
+                "label": "Formula",
+                "value": "`(t_emb)_i = sin(t / 10000^{(i-1)/31})` if i ≤ 32, else `cos(t / 10000^{((i-32)-1)/31})`.\n### 5. Score Network"
+              },
+              {
+                "label": "Key Design",
+                "value": "No normalisation constraint needed (does not need to be a normalising flow). No adversarial training.\n### 6. Training Pipeline (DSM Objective)"
+              },
+              {
+                "label": "Procedure",
+                "value": "For each mini-batch, sample t ~ U(0,T), draw θ_t ~ p_{t|0}(·|θ_0), compute ||s_ψ - ∇ log p_{t|0}||², backpropagate.\n(1) Draw 20000 samples from ODE sampler; (2) evaluate log-densities via change-of-variables; (3) compute κ = ε=5×10⁻⁴ quantile; (4) rejection sample from prior with initial hypercube pre-rejection, then likelihood threshold κ."
+              },
+              {
+                "label": "Interactions",
+                "value": "Feeds into Score Network; receives samples from SDE Module.\n### 7. ODE Sampler (Posterior Sampling)\nUses Score Network output; feeds into HPR Estimation.\n### 8. Density Evaluator (Instantaneous Change-of-Variables)\nFeeds into HPR Estimation.\n### 9. HPR Estimation and Truncated Proposal Sampler (TSNPSE only)\nUses Density Evaluator; feeds Proposal samples to Training Pipeline."
+              }
+            ],
+            "code": "",
+            "text": "### 1. SDE Module\n- **Purpose**: Define forward noising process; compute transition log-density and its gradient.\n- **Inputs**: θ_0, t; SDE type (VE or VP); hyperparameters (σ_min, σ_max or β_min, β_max).\n- **Outputs**: θ_t ~ p_{t|0}(·|θ_0); ∇_{θ_t} log p_{t|0}(θ_t|θ_0) in closed form.\n- **VE SDE**: f(θ_t,t)=0; g(t) = σ_min (σ_max/σ_min)^t √(2 log(σ_max/σ_min)); transition = N(θ_0, σ²_min (σ_max/σ_min)^{2t} I).\n- **VP SDE**: f(θ_t,t) = -½β_t θ_t; g(t) = √β_t; β_t = β_min + t(β_max-β_min); transition = N(θ_0 exp(-∫β_s ds/2), I - I exp(-∫β_s ds)).\n\n### 2. θ_t Embedding Network\n- **Purpose**: Embed the noised parameter vector θ_t into a fixed-size representation.\n- **Inputs**: θ_t ∈ R^d (standardised by subtracting empirical mean and dividing by std).\n- **Outputs**: θ_emb ∈ R^{max(30, 4d)}.\n- **Architecture**: 3-layer fully-connected MLP, 256 hidden units per layer, SiLU activations.\n\n### 3. x Embedding Network\n- **Purpose**: Embed the observation vector x into a fixed-size representation.\n- **Inputs**: x ∈ R^p (standardised by subtracting empirical mean and dividing by std).\n- **Outputs**: x_emb ∈ R^{max(30, 4p)}.\n- **Architecture**: 3-layer fully-connected MLP, 256 hidden units per layer, SiLU activations.\n\n### 4. t Sinusoidal Embedding\n- **Purpose**: Embed the continuous time index t into a fixed-size representation.\n- **Inputs**: t ∈ (0, 1].\n- **Outputs**: t_emb ∈ R^64.\n- **Formula**: `(t_emb)_i = sin(t / 10000^{(i-1)/31})` if i ≤ 32, else `cos(t / 10000^{((i-32)-1)/31})`.\n\n### 5. Score Network\n- **Purpose**: Combine embeddings and output the approximate posterior score.\n- **Inputs**: Concatenation [θ_emb, x_emb, t_emb].\n- **Outputs**: s_ψ(θ_t, x, t) ∈ R^d (approximating ∇_θ log p_t(θ_t|x)).\n- **Architecture**: 3-layer fully-connected MLP, 256 hidden units per layer, SiLU activations.\n- **Key design**: No normalisation constraint needed (does not need to be a normalising flow). No adversarial training.\n\n### 6. Training Pipeline (DSM Objective)\n- **Purpose**: Train score network by minimising Monte Carlo estimate of Eq. 7.\n- **Inputs**: Dataset D = {(θ_0,i, x_i)}; SDE hyperparameters; λ_t weighting.\n- **Procedure**: For each mini-batch, sample t ~ U(0,T), draw θ_t ~ p_{t|0}(·|θ_0), compute ||s_ψ - ∇ log p_{t|0}||², backpropagate.\n- **Interactions**: Feeds into Score Network; receives samples from SDE Module.\n\n### 7. ODE Sampler (Posterior Sampling)\n- **Purpose**: Generate approximate posterior samples by solving time-reversal of probability flow ODE.\n- **Inputs**: s_ψ(·, x_obs, ·); initial samples from π = N(0,I); ODE solver (RK45).\n- **Outputs**: θ ~ p(θ|x_obs) approximately.\n- **Interactions**: Uses Score Network output; feeds into HPR Estimation.\n\n### 8. Density Evaluator (Instantaneous Change-of-Variables)\n- **Purpose**: Evaluate log p_ψ(θ|x_obs) via Eq. 5 for HPR estimation and rejection sampling.\n- **Inputs**: θ, s_ψ; ODE solution trace.\n- **Outputs**: log p_ψ(θ|x_obs) (up to normalisation).\n- **Interactions**: Feeds into HPR Estimation.\n\n### 9. HPR Estimation and Truncated Proposal Sampler (TSNPSE only)\n- **Purpose**: Define proposal prior ˜p^r(θ) for next round.\n- **Procedure**: (1) Draw 20000 samples from ODE sampler; (2) evaluate log-densities via change-of-variables; (3) compute κ = ε=5×10⁻⁴ quantile; (4) rejection sample from prior with initial hypercube pre-rejection, then likelihood threshold κ.\n- **Interactions**: Uses Density Evaluator; feeds Proposal samples to Training Pipeline.",
+            "warn": "",
+            "refs": [],
+            "kind": "kv"
+          }
+        ]
+      },
+      {
+        "file": "constraints.md",
+        "role": "constraints",
+        "file_title": "Constraints and Limitations",
+        "sections": [
+          {
+            "sec_id": null,
+            "heading": "Boundary Conditions",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "",
+            "text": "### BC1: Truncation correctness requires support containment\nThe TSNPSE correctness guarantee (Proposition 3.1) holds only if the true posterior support Θ_obs is contained within HPR_ε(p^s_ψ(θ|x_obs)) for all rounds s ≥ 1. If the truncation region excludes posterior mass, the score network will learn a biased score function. In practice, this is mitigated by using a generous ε = 5×10⁻⁴.\n\n### BC2: Computational cost of density evaluation\nTSNPSE requires evaluating the posterior log-density via the instantaneous change-of-variables formula, which involves solving an augmented ODE (the trace of the Jacobian). This is significantly more expensive than a single forward pass of a normalising flow:\n- TSNPE (normalising flow): single backward pass for density evaluation\n- TSNPSE (CNF): multiple forward passes + gradient computation per density evaluation\nThis cost is mitigated by: (a) the initial hypercube pre-rejection step in sampling, (b) the energy-based parameterisation alternative (Appendix G), (c) faster ODE solvers (DPM-Solver, exponential integrators).\n\n### BC3: Amortisation scope\nNPSE (non-sequential) can in principle generate samples for any observation x, but performance degrades when x_obs is far from regions well-covered by the training data. TSNPSE is not amortised — a separate model must be trained per observation x_obs.\n\n### BC4: Applicable SDE types\nThe paper demonstrates NPSE/TSNPSE with VE SDE and VP SDE. The framework is general and supports any SDE for which the transition density p_{t|0}(θ_t|θ_0) and its score are available in closed form.\n\n### BC5: Sinusoidal embedding time range\nThe sinusoidal embedding formula in Eq. (138) is designed for t ∈ (0, 1]. Both VE and VP SDEs use this time interval in the paper's implementation.\n\n### BC6: Pyloric simulator — invalid outputs\nOver 99% of prior samples input to the Pyloric simulator result in ill-defined (NaN) summary statistics. Invalid statistics are replaced by values 2 standard deviations below the prior predictive of each statistic, following Deistler et al. (2022a).",
+            "warn": "",
+            "refs": [],
+            "kind": "prose"
+          },
+          {
+            "sec_id": null,
+            "heading": "Known Limitations",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "",
+            "text": "### L1: Sequential overhead vs. TSNPE\nTSNPSE is more computationally expensive than TSNPE per round because likelihood evaluation requires ODE solving. For simulators with fast evaluation, this overhead is significant; for expensive simulators, it is negligible.\n\n### L2: Fixed hyperparameters across tasks\nThe same network architecture and hyperparameters are used across all experiments without task-specific tuning. Performance may be improved with per-task hyperparameter search (unlike FMPE, which tunes per task).\n\n### L3: SNPSE-C requires additional approximations\nSNPSE-C requires estimating the proposal prior score ∇_θ log ˜p^r_t(θ_t), which introduces additional approximation errors and computational cost. Empirically, SNPSE-C fails to produce meaningful results (C2ST ≈ 1).\n\n### L4: Multiple observations require different approach\nNPSE as described handles single observations x_obs. Multi-observation inference p(θ|x¹_obs,...,xⁿ_obs) requires the compositional score approach of Geffner et al. (2023) or the alternative in Appendix D; naive concatenation is sample-inefficient.\n\n### L5: Architecture is relatively simple\nThe paper uses a relatively simple MLP-based architecture. More specialised architectures (e.g., attention, U-Net) used in other diffusion model applications may further improve performance.",
+            "warn": "",
+            "refs": [],
+            "kind": "prose"
+          }
+        ]
+      },
+      {
+        "file": "heuristics.md",
+        "role": "heuristics",
+        "file_title": "Heuristics",
+        "sections": [
+          {
+            "sec_id": "H01",
+            "heading": "H01: σ_max set to maximum pairwise Euclidean distance in training data",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "For the VE SDE, σ_max determines the noise level at t=1. Setting it to the maximum pairwise Euclidean distance in the training data (Technique 1 in Song & Ermon, 2020) ensures the forward process sufficiently noises the data so p_T ≈ N(0, σ²_max I) is a reasonable approximation to the reference distribution."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "high — if σ_max is too small, the reference distribution is not well-approximated; if too large, training is inefficient."
+              },
+              {
+                "label": "Bounds",
+                "value": "σ_max > diameter of the training data in parameter space. For sequential methods, use first-round training data to set σ_max."
+              },
+              {
+                "label": "Code Ref",
+                "value": "[src/execution/sde.py]"
+              },
+              {
+                "label": "Source",
+                "value": "Appendix E.3.1"
+              }
+            ],
+            "code": "",
+            "text": "- **Rationale**: For the VE SDE, σ_max determines the noise level at t=1. Setting it to the maximum pairwise Euclidean distance in the training data (Technique 1 in Song & Ermon, 2020) ensures the forward process sufficiently noises the data so p_T ≈ N(0, σ²_max I) is a reasonable approximation to the reference distribution.\n- **Sensitivity**: high — if σ_max is too small, the reference distribution is not well-approximated; if too large, training is inefficient.\n- **Bounds**: σ_max > diameter of the training data in parameter space. For sequential methods, use first-round training data to set σ_max.\n- **Code ref**: [src/execution/sde.py]\n- **Source**: Appendix E.3.1",
+            "warn": "",
+            "refs": [],
+            "kind": "kv"
+          },
+          {
+            "sec_id": "H02",
+            "heading": "H02: σ_min = 0.01 for 2D experiments; σ_min = 0.05 for higher-dimensional",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "The minimum noise level σ_min controls the resolution of the diffusion path. Lower-dimensional problems have tighter posterior distributions that require smaller minimum noise to avoid over-smoothing. Higher-dimensional problems are more tolerant of larger σ_min."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "medium"
+              },
+              {
+                "label": "Bounds",
+                "value": "σ_min ∈ {0.01, 0.05}; 2D tasks (SIR, Two Moons) use 0.01; all others use 0.05."
+              },
+              {
+                "label": "Code Ref",
+                "value": "[src/execution/sde.py]"
+              },
+              {
+                "label": "Source",
+                "value": "Appendix E.3.1"
+              }
+            ],
+            "code": "",
+            "text": "- **Rationale**: The minimum noise level σ_min controls the resolution of the diffusion path. Lower-dimensional problems have tighter posterior distributions that require smaller minimum noise to avoid over-smoothing. Higher-dimensional problems are more tolerant of larger σ_min.\n- **Sensitivity**: medium\n- **Bounds**: σ_min ∈ {0.01, 0.05}; 2D tasks (SIR, Two Moons) use 0.01; all others use 0.05.\n- **Code ref**: [src/execution/sde.py]\n- **Source**: Appendix E.3.1",
+            "warn": "",
+            "refs": [],
+            "kind": "kv"
+          },
+          {
+            "sec_id": "H03",
+            "heading": "H03: VP SDE parameters β_min=0.1, β_max=11.0",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "These values follow Song & Ermon (2020) and ensure the VP SDE noises the data to near-Gaussian in [0,1]. The linear schedule β_t = β_min + t(β_max - β_min) provides a smooth transition."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "medium — affects variance schedule and training dynamics."
+              },
+              {
+                "label": "Bounds",
+                "value": "β_min = 0.1, β_max = 11.0 (fixed)."
+              },
+              {
+                "label": "Code Ref",
+                "value": "[src/execution/sde.py]"
+              },
+              {
+                "label": "Source",
+                "value": "Appendix E.3.1"
+              }
+            ],
+            "code": "",
+            "text": "- **Rationale**: These values follow Song & Ermon (2020) and ensure the VP SDE noises the data to near-Gaussian in [0,1]. The linear schedule β_t = β_min + t(β_max - β_min) provides a smooth transition.\n- **Sensitivity**: medium — affects variance schedule and training dynamics.\n- **Bounds**: β_min = 0.1, β_max = 11.0 (fixed).\n- **Code ref**: [src/execution/sde.py]\n- **Source**: Appendix E.3.1",
+            "warn": "",
+            "refs": [],
+            "kind": "kv"
+          },
+          {
+            "sec_id": "H04",
+            "heading": "H04: Early stopping with patience=1000 steps on 15% validation split",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "Prevents overfitting with limited simulation budgets. Validation loss on held-out data provides a reliable stopping criterion. 15% is a standard fraction that balances training data size and validation reliability."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "medium — too short patience leads to underfitting; too long wastes compute."
+              },
+              {
+                "label": "Bounds",
+                "value": "patience = 1000 steps; validation split = 15%; maximum 3000 iterations."
+              },
+              {
+                "label": "Code Ref",
+                "value": "[src/execution/npse.py]"
+              },
+              {
+                "label": "Source",
+                "value": "Appendix E.3.2"
+              }
+            ],
+            "code": "",
+            "text": "- **Rationale**: Prevents overfitting with limited simulation budgets. Validation loss on held-out data provides a reliable stopping criterion. 15% is a standard fraction that balances training data size and validation reliability.\n- **Sensitivity**: medium — too short patience leads to underfitting; too long wastes compute.\n- **Bounds**: patience = 1000 steps; validation split = 15%; maximum 3000 iterations.\n- **Code ref**: [src/execution/npse.py]\n- **Source**: Appendix E.3.2",
+            "warn": "",
+            "refs": [],
+            "kind": "kv"
+          },
+          {
+            "sec_id": "H05",
+            "heading": "H05: Batch size 50 (non-seq, N≤10k), 200 (seq, N≤10k), 500 (N=100k)",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "Larger simulation budgets allow larger batches, improving gradient estimates. Sequential experiments have larger accumulated datasets, justifying larger batch sizes. Non-sequential with small budgets requires small batches to see the whole dataset during training."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "medium"
+              },
+              {
+                "label": "Bounds",
+                "value": "batch_size ∈ {50, 200, 500} depending on method and budget."
+              },
+              {
+                "label": "Code Ref",
+                "value": "[src/execution/npse.py]"
+              },
+              {
+                "label": "Source",
+                "value": "Appendix E.3.2"
+              }
+            ],
+            "code": "",
+            "text": "- **Rationale**: Larger simulation budgets allow larger batches, improving gradient estimates. Sequential experiments have larger accumulated datasets, justifying larger batch sizes. Non-sequential with small budgets requires small batches to see the whole dataset during training.\n- **Sensitivity**: medium\n- **Bounds**: batch_size ∈ {50, 200, 500} depending on method and budget.\n- **Code ref**: [src/execution/npse.py]\n- **Source**: Appendix E.3.2",
+            "warn": "",
+            "refs": [],
+            "kind": "kv"
+          },
+          {
+            "sec_id": "H06",
+            "heading": "H06: Truncation threshold ε = 5×10⁻⁴ for HPR estimation",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "Small ε ensures the truncated region contains almost all posterior mass (1 - 5×10⁻⁴ = 99.95%), making Proposition 3.1 approximately valid. Larger ε would be more aggressive but risks truncating posterior mass."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "medium — too large ε truncates posterior mass and introduces bias; too small ε reduces simulation efficiency."
+              },
+              {
+                "label": "Bounds",
+                "value": "ε = 5×10⁻⁴ (fixed across all experiments)."
+              },
+              {
+                "label": "Code Ref",
+                "value": "[src/execution/tsnpse.py]"
+              },
+              {
+                "label": "Source",
+                "value": "Appendix E.3.3"
+              }
+            ],
+            "code": "",
+            "text": "- **Rationale**: Small ε ensures the truncated region contains almost all posterior mass (1 - 5×10⁻⁴ = 99.95%), making Proposition 3.1 approximately valid. Larger ε would be more aggressive but risks truncating posterior mass.\n- **Sensitivity**: medium — too large ε truncates posterior mass and introduces bias; too small ε reduces simulation efficiency.\n- **Bounds**: ε = 5×10⁻⁴ (fixed across all experiments).\n- **Code ref**: [src/execution/tsnpse.py]\n- **Source**: Appendix E.3.3",
+            "warn": "",
+            "refs": [],
+            "kind": "kv"
+          },
+          {
+            "sec_id": "H07",
+            "heading": "H07: Pre-rejection hypercube step before expensive likelihood evaluation",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "Computing log-density via the probability flow ODE is expensive (multiple forward passes + trace). A cheap preliminary rejection step (checking if θ is within the bounding box of the posterior samples) filters most prior samples quickly before the expensive step."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "low — hypercube is a necessary but not sufficient condition; false positives are handled by the likelihood threshold."
+              },
+              {
+                "label": "Bounds",
+                "value": "Bounding box = [min, max] of posterior samples in each dimension."
+              },
+              {
+                "label": "Code Ref",
+                "value": "[src/execution/tsnpse.py]"
+              },
+              {
+                "label": "Source",
+                "value": "Appendix E.3.3"
+              }
+            ],
+            "code": "",
+            "text": "- **Rationale**: Computing log-density via the probability flow ODE is expensive (multiple forward passes + trace). A cheap preliminary rejection step (checking if θ is within the bounding box of the posterior samples) filters most prior samples quickly before the expensive step.\n- **Sensitivity**: low — hypercube is a necessary but not sufficient condition; false positives are handled by the likelihood threshold.\n- **Bounds**: Bounding box = [min, max] of posterior samples in each dimension.\n- **Code ref**: [src/execution/tsnpse.py]\n- **Source**: Appendix E.3.3",
+            "warn": "",
+            "refs": [],
+            "kind": "kv"
+          },
+          {
+            "sec_id": "H08",
+            "heading": "H08: 20000 samples for HPR estimation per round",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "A sufficiently large number of samples is needed for an accurate empirical estimate of the posterior's HPR. 20000 provides a reliable sample from the approximate posterior for computing the log-density quantile κ."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "medium — too few samples give noisy HPR estimates; too many are computationally expensive."
+              },
+              {
+                "label": "Bounds",
+                "value": "20000 samples (fixed across all TSNPSE experiments)."
+              },
+              {
+                "label": "Code Ref",
+                "value": "[src/execution/tsnpse.py]"
+              },
+              {
+                "label": "Source",
+                "value": "Appendix E.3.3"
+              }
+            ],
+            "code": "",
+            "text": "- **Rationale**: A sufficiently large number of samples is needed for an accurate empirical estimate of the posterior's HPR. 20000 provides a reliable sample from the approximate posterior for computing the log-density quantile κ.\n- **Sensitivity**: medium — too few samples give noisy HPR estimates; too many are computationally expensive.\n- **Bounds**: 20000 samples (fixed across all TSNPSE experiments).\n- **Code ref**: [src/execution/tsnpse.py]\n- **Source**: Appendix E.3.3",
+            "warn": "",
+            "refs": [],
+            "kind": "kv"
+          }
+        ]
+      }
+    ]
+  }
+}
+/* __ARA_DATA_END__ */
+</script>
+
+<script>
+"use strict";
+(function () {
+  const GLYPH = { question:"Q", experiment:"✦", decision:"→", dead_end:"✗", pivot:"↻", insight:"!", default:"•" };
+  const TYPES = ["question","experiment","decision","dead_end","pivot","insight"];
+
+  let DATA;
+  try {
+    // The payload sits between the BEGIN/END marker comments (kept in-file so the
+    // skill can re-inject). Strip ONLY those two named markers before parsing; the
+    // rest of textContent is pure JSON. (Marker text is not written literally here,
+    // so it stays a single injection site.)
+    var raw = document.getElementById("ara-data").textContent
+                .replace(/\/\*\s*__ARA_DATA_(?:BEGIN|END)__\s*\*\//g, "");
+    DATA = JSON.parse(raw);
+  } catch (e) {
+    document.getElementById("detail").innerHTML =
+      '<div class="none">Could not parse embedded ARA data: ' + String(e) + '</div>';
+    return;
+  }
+
+  const nodes = DATA.nodes || [];
+  const byId = new Map(nodes.map(n => [n.id, n]));
+  const kids = new Map();
+  nodes.forEach(n => kids.set(n.id, []));
+  let roots = [];
+  nodes.forEach(n => {
+    if (n.parent && byId.has(n.parent)) kids.get(n.parent).push(n.id);
+    else roots.push(n.id);
+  });
+  // Traversal order: explicit DATA.order if given, else DFS from roots.
+  let order = Array.isArray(DATA.order) && DATA.order.length ? DATA.order.filter(id => byId.has(id)) : [];
+  if (!order.length) { const seen=new Set(); const dfs=id=>{if(seen.has(id))return;seen.add(id);order.push(id);(kids.get(id)||[]).forEach(dfs)}; roots.forEach(dfs); }
+
+  const esc = s => String(s==null?"":s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  const glyph = t => GLYPH[t] || GLYPH.default;
+  const cls = t => TYPES.includes(t) ? t : "default";
+
+  // ---- header ----
+  const m = DATA.meta || {};
+  document.getElementById("h-title").textContent = m.title || "ARA Trajectory";
+  document.getElementById("h-sub").textContent =
+    [ (m.authors||[]).join(", "), m.venue, m.year ].filter(Boolean).join(" · ");
+  if (m.abstract) document.getElementById("h-abstract").textContent = m.abstract;
+  else document.getElementById("h-abstract-wrap").style.display = "none";
+
+  const ftype = document.getElementById("ftype");
+  const present = [...new Set(nodes.map(n => n.type))];
+  TYPES.concat(present.filter(t=>!TYPES.includes(t))).filter(t=>present.includes(t))
+    .forEach(t => { const o=document.createElement("option"); o.value=t; o.textContent=t; ftype.appendChild(o); });
+
+  // ---- minimal markdown-table renderer ----
+  function renderMd(md){
+    if(!md) return "";
+    const lines = String(md).split("\n");
+    let out=[], i=0;
+    while(i<lines.length){
+      if(/^\s*\|/.test(lines[i]) && i+1<lines.length && /^\s*\|?[\s:|-]+\|?\s*$/.test(lines[i+1])){
+        const row = l => l.replace(/^\s*\|/,"").replace(/\|\s*$/,"").split("|").map(c=>c.trim());
+        const head = row(lines[i]); i+=2; const body=[];
+        while(i<lines.length && /^\s*\|/.test(lines[i])){ body.push(row(lines[i])); i++; }
+        out.push('<table class="md"><thead><tr>'+head.map(h=>"<th>"+esc(h)+"</th>").join("")+
+          '</tr></thead><tbody>'+body.map(r=>"<tr>"+r.map(c=>"<td>"+esc(c)+"</td>").join("")+"</tr>").join("")+"</tbody></table>");
+      } else { if(lines[i].trim()) out.push("<div>"+esc(lines[i])+"</div>"); i++; }
+    }
+    return out.join("");
+  }
+
+  // ---- detail pane ----
+  function block(title, tag, inner, open, cls){
+    return '<details class="block'+(cls?" "+cls:"")+'"'+(open?" open":"")+'><summary>'+esc(title)+
+      (tag?'<span class="tag">'+esc(tag)+'</span>':'')+'</summary><div class="body">'+inner+'</div></details>';
+  }
+  function chips(arr, klass){ return arr&&arr.length ? '<div class="chips">'+arr.map(x=>'<span class="chip '+(klass||"")+'">'+esc(x)+'</span>').join("")+'</div>' : ""; }
+
+  function renderDetail(n){
+    const d = document.getElementById("detail");
+    let h = '<div class="dhead"><span class="badge '+cls(n.type)+'">'+esc(n.type)+'</span>'+
+      '<span class="did">'+esc(n.id)+'</span>'+
+      (n.support_level?'<span class="pill '+esc(n.support_level)+'">'+esc(n.support_level)+'</span>':'')+
+      (n.isolated?'<span class="pill iso">isolated</span>':'')+'</div>';
+    h += '<div class="dtitle">'+esc(n.title||"(untitled)")+'</div>';
+
+    // reasoning (primary, always open) — the agent's thinking IS the content of a step
+    let reason="";
+    if(n.thinking){
+      reason += '<div class="lead">'+esc(n.thinking)+'</div>';
+      if(n.body) reason += '<div class="didwhat">what it did</div><div>'+esc(n.body)+'</div>';
+    } else {
+      reason += n.body ? '<div class="lead">'+esc(n.body)+'</div>' : '<div class="empty">No description.</div>';
+    }
+    if(n.depends_on&&n.depends_on.length) reason += chips(n.depends_on.map(x=>"⇠ depends on "+x));
+    if(n.source_refs&&n.source_refs.length) reason += chips(n.source_refs, "ext");
+    if(n.built_on&&n.built_on.length) reason += chipRow("built on", n.built_on, "chip-built");
+    if(n.rejected_here&&n.rejected_here.length) reason += chipRow("rejected here", n.rejected_here, "chip-rej");
+    if(n.recipe_refs&&n.recipe_refs.length) reason += recipeChips(n.recipe_refs);
+    h += block(n.thinking?"reasoning":"what", n.type, reason, true, "reason");
+
+    // result (the grounded payload) — open
+    const r = n.result||{};
+    if((r.sources&&r.sources.length)||(r.figures&&r.figures.length)||(r.tables&&r.tables.length)||(r.data&&r.data.length)){
+      let s="";
+      (r.figures||[]).forEach(f=>{ s+='<figure><img src="'+esc(f.img)+'" alt="'+esc(f.caption||f.id)+'"/>'+
+        (f.caption?'<figcaption>'+esc(f.caption)+'</figcaption>':'')+'</figure>'; });
+      (r.tables||[]).forEach(t=>{ s+=(t.caption?'<div class="empty">'+esc(t.caption)+'</div>':'')+renderMd(t.markdown); });
+      (r.sources||[]).forEach(q=>{ s+='<div class="quote">'+esc(q.quote)+(q.ref?'<div class="ref">← '+esc(q.ref)+'</div>':'')+'</div>'; });
+      (r.data||[]).forEach(x=>{ s+='<div class="ptr">⛁ <span class="path">'+esc(x.path)+'</span>'+(x.note?' — '+esc(x.note):'')+'</div>'; });
+      h += block("result", "", s, true);
+    }
+
+    // why (claims) — supporting detail, collapsed
+    if(n.why&&n.why.length){
+      const w = n.why.map(c=>{
+        let s='<div class="claim"><h4>'+esc(c.id)+(c.title?' — '+esc(c.title):'')+'</h4>';
+        if(c.statement) s+='<div class="kv">'+esc(c.statement)+'</div>';
+        if(c.status) s+='<div class="kv"><b>status</b> <span class="status '+esc(String(c.status).toLowerCase())+'">'+esc(c.status)+'</span></div>';
+        if(c.conditions) s+='<div class="kv"><b>conditions</b> '+esc(c.conditions)+'</div>';
+        if(c.falsification) s+='<div class="kv"><b>falsified if</b> '+esc(c.falsification)+'</div>';
+        if(c.dependencies&&c.dependencies.length) s+='<div class="kv"><b>depends on</b> '+esc(c.dependencies.join(", "))+'</div>';
+        if(c.provenance) s+='<div class="kv"><span class="prov">provenance: '+esc(c.provenance)+'</span></div>';
+        return s+'</div>';
+      }).join("");
+      h += block("why", n.why.map(c=>c.id).join(" · "), w);
+    }
+
+    // how verified (experiments) — supporting detail, collapsed
+    if(n.verified_by&&n.verified_by.length){
+      const v = n.verified_by.map(e=>'<div class="claim"><h4>'+esc(e.id)+(e.title?' — '+esc(e.title):'')+'</h4>'+
+        (e.run?'<div class="kv"><b>run</b> <span class="path mono">'+esc(e.run)+'</span></div>':'')+
+        (e.setup?'<div class="kv"><b>setup</b> '+esc(e.setup)+'</div>':'')+
+        (e.metrics?'<div class="kv"><b>metrics</b> '+esc(e.metrics)+'</div>':'')+'</div>').join("");
+      h += block("how verified", n.verified_by.map(e=>e.id).join(" · "), v);
+    }
+
+    // artifact pointers (src/artifacts.md) — collapsed
+    if(n.artifact&&n.artifact.length){
+      const a = n.artifact.map(x=>'<div class="ptr">▸ <b>'+esc(x.name)+'</b> — <span class="path">'+esc(x.pointer)+'</span>'+
+        (x.what?'<div class="empty">'+esc(x.what)+'</div>':'')+'</div>').join("");
+      h += block("artifact", "pointer", a);
+    }
+
+    d.innerHTML = h;
+    if(typeof LEX!=="undefined" && LEX) linkifyConcepts(d);
+    d.scrollTop = 0;
+  }
+
+  // ---- map ----
+  let selected = null;
+  function selectNode(id){
+    if(!byId.has(id)) return;
+    selected = id;
+    document.querySelectorAll(".node").forEach(el=>el.classList.toggle("sel", el.dataset.id===id));
+    const el = document.querySelector('.node[data-id="'+CSS.escape(id)+'"]');
+    if(el) el.scrollIntoView({block:"nearest"});
+    renderDetail(byId.get(id));
+    rstat();
+  }
+
+  function nodeRow(n){
+    const row = document.createElement("div");
+    row.className = "node "+(n.type==="dead_end"?"dead":"");
+    row.dataset.id = n.id; row.dataset.type = n.type;
+    // calmer than before: one glyph + id + (quiet) cross-edge marker; the ⊕/⊘ count soup is gone.
+    row.innerHTML = '<span class="glyph '+cls(n.type)+'">'+glyph(n.type)+'</span>'+
+      '<span><span class="meta"><span class="nid">'+esc(n.id)+'</span>'+
+      (n.depends_on&&n.depends_on.length?'<span class="dep" title="depends on '+esc(n.depends_on.join(", "))+'">⇠ '+esc(n.depends_on.join(","))+'</span>':'')+
+      '</span><div class="ntitle">'+esc(n.title||n.body||"(untitled)")+'</div></span>';
+    row.addEventListener("click", ()=>selectNode(n.id));
+    // hover a node to highlight its cross-edge targets (gentler than always-on connectors)
+    if(n.depends_on&&n.depends_on.length){
+      row.addEventListener("mouseenter", ()=>n.depends_on.forEach(t=>{ const el=document.querySelector('.node[data-id="'+CSS.escape(t)+'"]'); if(el) el.classList.add("deptarget"); }));
+      row.addEventListener("mouseleave", ()=>document.querySelectorAll(".node.deptarget").forEach(el=>el.classList.remove("deptarget")));
+    }
+    return row;
+  }
+  function renderSubtree(id, container){
+    const n = byId.get(id); if(!n) return;
+    container.appendChild(nodeRow(n));
+    const cs = kids.get(id)||[];
+    if(cs.length){ const wrap=document.createElement("div"); wrap.className="kid"; cs.forEach(c=>renderSubtree(c,wrap)); container.appendChild(wrap); }
+  }
+  function renderMap(){
+    const map = document.getElementById("map"); map.innerHTML="";
+    const normalRoots = roots.filter(id=>!byId.get(id).isolated);
+    const isoRoots = roots.filter(id=>byId.get(id).isolated);
+    normalRoots.forEach(id=>renderSubtree(id, map));
+    if(isoRoots.length){
+      const box=document.createElement("div"); box.className="isobox";
+      const hdr=document.createElement("div"); hdr.className="isohdr"; hdr.textContent="isolated subtree"; box.appendChild(hdr);
+      isoRoots.forEach(id=>renderSubtree(id, box)); map.appendChild(box);
+    }
+  }
+
+  // ---- filter / search ----
+  function applyFilters(){
+    const q = document.getElementById("q").value.trim().toLowerCase();
+    const ty = document.getElementById("ftype").value;
+    const deadOnly = document.getElementById("fdead").checked;
+    let shown=0;
+    document.querySelectorAll(".node").forEach(el=>{
+      const n = byId.get(el.dataset.id);
+      const text = (n.id+" "+(n.title||"")+" "+(n.body||"")).toLowerCase();
+      const ok = (!q||text.includes(q)) && (!ty||n.type===ty) && (!deadOnly||n.type==="dead_end");
+      el.classList.toggle("dim", !ok);
+      if(ok) shown++;
+    });
+    document.getElementById("rstat").textContent = shown+" / "+nodes.length+" steps";
+  }
+  function rstat(){
+    const i = selected?order.indexOf(selected):-1;
+    document.getElementById("rstat").textContent = (i>=0?("step "+(i+1)+" / "+order.length):(nodes.length+" steps"));
+  }
+
+  // ---- replay ----
+  let timer=null;
+  function step(delta){
+    let i = selected?order.indexOf(selected):-1;
+    i = Math.max(0, Math.min(order.length-1, i+delta));
+    selectNode(order[i]);
+  }
+  function play(){
+    if(timer){ stop(); return; }
+    if(!selected) selectNode(order[0]);
+    document.getElementById("rplay").textContent="⏸ Pause";
+    timer = setInterval(()=>{
+      const i = selected?order.indexOf(selected):-1;
+      if(i>=order.length-1){ stop(); return; }
+      step(1);
+    }, 1300);
+  }
+  function stop(){ if(timer){clearInterval(timer);timer=null;} document.getElementById("rplay").textContent="▶ Replay"; }
+
+  // ======================= v1.1 enrichment layers (all inert unless present) =======================
+  const CTX = DATA.context, GLO = DATA.glossary, DEP = DATA.dependencies, REC = DATA.recipes;
+  const LAYERS = { context:CTX, glossary:GLO, dependencies:DEP, recipes:REC };
+
+  // ---- indexes (built once) ----
+  const claimToNodes = new Map();
+  nodes.forEach(n => (n.why||[]).forEach(c => { if(c&&c.id){ if(!claimToNodes.has(c.id)) claimToNodes.set(c.id,[]); claimToNodes.get(c.id).push(n.id); } }));
+  const firstNodeForClaim = id => (claimToNodes.get(id)||[])[0] || null;
+  const rwById   = new Map(((DEP&&DEP.entries)||[]).map(e => [e.rw_id, e]));
+  const termById = new Map(((GLO&&GLO.terms)||[]).map(t => [t.term_id, t]));
+  // concept "used by" (inferred) from each node's name-matched concepts[]
+  if(GLO){
+    const nameToTerm = new Map();
+    (GLO.terms||[]).forEach(t => { if(t.name) nameToTerm.set(String(t.name).toLowerCase(), t); (t.aliases||[]).forEach(a=>nameToTerm.set(String(a).toLowerCase(), t)); });
+    nodes.forEach(n => (n.concepts||[]).forEach(cn => { const t=nameToTerm.get(String(cn).toLowerCase()); if(t){ (t._used=t._used||[]).push(n.id); } }));
+  }
+
+  // ---- tiny inline-math fallback (no CDN; operates on already-escaped text, adds only safe tags) ----
+  const GK={alpha:"α",beta:"β",gamma:"γ",delta:"δ",epsilon:"ε",eta:"η",theta:"θ",kappa:"κ",lambda:"λ",mu:"μ",nu:"ν",pi:"π",rho:"ρ",sigma:"σ",tau:"τ",phi:"φ",chi:"χ",psi:"ψ",omega:"ω",Delta:"Δ",Sigma:"Σ",Omega:"Ω",Phi:"Φ",Theta:"Θ",Lambda:"Λ",Gamma:"Γ",nabla:"∇",partial:"∂",times:"×",cdot:"·",infty:"∞",approx:"≈",leq:"≤",geq:"≥",neq:"≠",to:"→",in:"∈",sum:"Σ",prod:"Π",sqrt:"√",mathbb:"",mathcal:"",mathbf:"",mathrm:"",left:"",right:""};
+  function texInner(s){
+    s=s.replace(/\\(?:mathbb|mathcal|mathbf|mathrm)\{([^{}]*)\}/g,"$1");
+    s=s.replace(/\\frac\{([^{}]*)\}\{([^{}]*)\}/g,"($1)/($2)");
+    s=s.replace(/\\([A-Za-z]+)/g,(m,w)=>GK[w]!==undefined?GK[w]:m);
+    s=s.replace(/\^\{([^{}]*)\}/g,"<sup>$1</sup>").replace(/\^([\w()+\-])/g,"<sup>$1</sup>");
+    s=s.replace(/_\{([^{}]*)\}/g,"<sub>$1</sub>").replace(/_([\w()+\-])/g,"<sub>$1</sub>");
+    return s;
+  }
+  function mathPass(escaped){
+    if(escaped.indexOf("$")<0) return escaped;
+    return escaped.replace(/\$\$([^$]+)\$\$/g,(m,x)=>'<span class="math">'+texInner(x)+'</span>')
+                  .replace(/\$([^$]+)\$/g,(m,x)=>'<span class="math">'+texInner(x)+'</span>');
+  }
+  function mtext(v){ const e=esc(v); try{ return mathPass(e); }catch(_){ return e; } }
+
+  // ---- typed-ref rendering (off-ARA pointers stay inert; in-ARA targets become jump chips) ----
+  function refUrl(rf){
+    const raw=rf.raw||"";
+    if(rf.kind==="url"){ const m=raw.match(/https?:\/\/\S+/); return m?m[0]:""; }
+    if(rf.kind==="arxiv"){ const m=raw.match(/(\d{4}\.\d{4,5})/); return m?("https://arxiv.org/abs/"+m[1]):""; }
+    if(rf.kind==="doi"){ const m=raw.match(/(10\.\d{4,}\/\S+)/); return m?("https://doi.org/"+m[1]):""; }
+    return "";
+  }
+  function refChip(rf){
+    const raw=esc(rf.raw||""), url=refUrl(rf);
+    if(url) return '<a class="chip ext" href="'+esc(url)+'" target="_blank" rel="noopener">'+raw+'</a>';
+    if(rf.target){
+      if(rf.kind==="claim")        return '<span class="chip jump" data-jump-claim="'+esc(rf.target)+'">'+raw+'</span>';
+      if(rf.kind==="node")         return '<span class="chip jump" data-jump-node="'+esc(rf.target)+'">'+raw+'</span>';
+      if(rf.kind==="concept")      return '<span class="chip jump" data-open-term="'+esc(rf.target)+'">'+raw+'</span>';
+      if(rf.kind==="related_work") return '<span class="chip jump" data-open-panel="dependencies" data-anchor="ov-'+esc(rf.target)+'">'+raw+'</span>';
+      return '<span class="chip jump" data-scroll="ov-'+esc(rf.target)+'">'+raw+'</span>';
+    }
+    const dangle=(rf.kind==="claim"||rf.kind==="related_work"||rf.kind==="concept");
+    return '<span class="chip '+(dangle?'dangle" title="referenced but not found in this ARA':'ext')+'">'+raw+'</span>';
+  }
+  function refRow(refs){ return refs&&refs.length ? '<div class="chips">'+refs.map(refChip).join("")+'</div>' : ""; }
+
+  // ---- per-node provenance chips (consumed by renderDetail) ----
+  function chipRow(label, arr, klass){
+    const cs=arr.map(x=>{
+      const txt=[x.rw_id,x.name].filter(Boolean).join(" · ")||"?";
+      const tip=x.relation_raw?(' title="'+esc(x.relation_raw)+'"'):'';
+      const op =x.rw_id?(' data-open-panel="dependencies" data-anchor="ov-'+esc(x.rw_id)+'"'):'';
+      return '<span class="chip '+klass+(x.rw_id?' jump':'')+'"'+tip+op+'>'+esc(txt)+'</span>';
+    }).join("");
+    return '<div class="chiplabel">'+esc(label)+'</div><div class="chips">'+cs+'</div>';
+  }
+  function recipeChips(arr){
+    const cs=arr.map(x=>{
+      const anchor="ov-sec-"+(x.file||"")+"-"+(x.sec_id||"");
+      return '<span class="chip chip-recipe jump" data-open-panel="recipes" data-anchor="'+esc(anchor)+'" title="'+esc((x.file||"")+(x.role?(" · "+x.role):""))+'">▦ '+esc(x.heading||x.file||"recipe")+'</span>';
+    }).join("");
+    return '<div class="chiplabel">recipe</div><div class="chips">'+cs+'</div>';
+  }
+
+  // ---- the four overlay renderers (reuse block/chips/renderMd) ----
+  function renderContext(){
+    let h=""; if(CTX.summary) h+='<div class="ribbon">'+esc(CTX.summary)+'</div>';
+    (CTX.sections||[]).forEach(sec=>{
+      let inner="";
+      if(sec.present===false){ inner='<div class="muted grey">(not specified in this ARA)</div>'; }
+      else (sec.entries||[]).forEach(en=>{
+        let c='<div class="card" id="ov-'+esc(en.ent_id||"")+'"><h4>'+(en.ent_id?'<span class="did">'+esc(en.ent_id)+'</span> ':'')+esc(en.ent_title||"")+(en.inferred_id?' <span class="sub">(pos.)</span>':'')+'</h4>';
+        if(!en.unstructured && en.fields && en.fields.length) en.fields.forEach(f=>c+='<div class="kv"><b>'+esc(f.label)+'</b> '+mtext(f.value)+'</div>');
+        else if(en.text) c+='<div class="kv">'+mtext(en.text)+'</div>';
+        if(en.unstructured) c+='<div class="sub">unstructured</div>';
+        c+=refRow(en.refs)+'</div>'; inner+=c;
+      });
+      h+=block(sec.heading||sec.role||"section", sec.role||"", inner, sec.role==="insight");
+    });
+    return h || '<div class="muted">No problem context.</div>';
+  }
+  function renderGlossary(filter){
+    const f=(filter||"").trim().toLowerCase();
+    const match=t=>!f||((t.name||"")+" "+(t.aliases||[]).join(" ")+" "+(t.definition||"")).toLowerCase().includes(f);
+    function card(t){
+      let c='<div class="card" id="ov-'+esc(t.term_id)+'"><h4>'+esc(t.name)+(t.group?' <span class="sub">'+esc(t.group)+'</span>':'')+'</h4>';
+      if(t.aliases&&t.aliases.length) c+='<div class="chips">'+t.aliases.map(a=>'<span class="chip">'+esc(a)+'</span>').join("")+'</div>';
+      if(t.definition) c+='<div class="kv">'+mtext(t.definition)+'</div>';
+      (t.fields||[]).forEach(fl=>c+='<div class="kv"><b>'+esc(fl.label)+'</b> '+mtext(fl.value)+'</div>');
+      if(t.related&&t.related.length) c+='<div class="kv"><b>related</b> '+t.related.map(r=>{const rt=termById.get(r);return '<span class="chip jump" data-open-term="'+esc(r)+'">'+esc(rt?rt.name:r)+'</span>';}).join(" ")+'</div>';
+      if(t._used&&t._used.length) c+='<div class="kv"><b>mentions</b> '+[...new Set(t._used)].map(nid=>'<span class="chip jump" data-jump-node="'+esc(nid)+'">'+esc(nid)+'</span>').join(" ")+' <span class="sub">(inferred)</span></div>';
+      return c+refRow(t.refs)+'</div>';
+    }
+    const groups=GLO.groups&&GLO.groups.length?GLO.groups:null; let h="";
+    if(groups){
+      const grouped=new Set();
+      groups.forEach(g=>{ (g.term_ids||[]).forEach(id=>grouped.add(id)); const ts=(g.term_ids||[]).map(id=>termById.get(id)).filter(Boolean).filter(match); if(ts.length) h+=block(g.name||"group", String(ts.length), ts.map(card).join(""), true); });
+      const rest=(GLO.terms||[]).filter(t=>!grouped.has(t.term_id)).filter(match);
+      if(rest.length) h+=block("other", String(rest.length), rest.map(card).join(""), true);
+    } else { const ts=(GLO.terms||[]).filter(match); h=ts.map(card).join(""); }
+    return h || '<div class="muted">No matching terms.</div>';
+  }
+  function renderDeps(filter){
+    const f=(filter||"").trim().toLowerCase(); let h="";
+    if(DEP.preamble) h+='<div class="muted">'+esc(DEP.preamble)+'</div>';
+    if(DEP.attribution) h+='<div class="ribbon">'+esc(DEP.attribution)+'</div>';
+    const ents=(DEP.entries||[]).filter(e=>!e.is_footprint).filter(e=>!f||(((e.rw_id||"")+" "+(e.name||"")+" "+(e.relation_raw||"")+" "+(e.delta||"")).toLowerCase().includes(f)));
+    ents.forEach(e=>{
+      const rn=e.relation_norm, relc=["baseline","imports","extends","bounds","refutes"].includes(rn)?rn:"neutral";
+      let c='<div class="card" id="ov-'+esc(e.rw_id||"")+'"><h4>'+(e.rw_id?'<span class="did">'+esc(e.rw_id)+'</span> ':'')+esc(e.name||"")+'</h4>';
+      c+='<div class="chips"><span class="rel '+relc+'">'+esc(e.relation_raw||rn||"related")+'</span>'+(e.cross_agent?'<span class="chip" title="other-agent provenance">↔ other-agent</span>':'')+'</div>';
+      if(e.delta) c+='<div class="kv">'+mtext(e.delta)+'</div>';
+      if(e.adopted) c+='<div class="kv"><b>adopted</b> '+esc(e.adopted)+'</div>';
+      let prov=(e.grounding||[]).map(refChip).join("");
+      (e.claims||[]).filter(id=>claimToNodes.has(id)).forEach(id=>prov+='<span class="chip jump" data-jump-claim="'+esc(id)+'">'+esc(id)+'</span>');
+      c+= prov?('<div class="kv"><b>grounding</b> '+prov+'</div>'):'<div class="muted">ungrounded</div>';
+      h+=c+'</div>';
+    });
+    if(!ents.length) h+='<div class="muted">No matching dependencies.</div>';
+    const fp=DEP.footprint||[];
+    if(fp.length) h+=block("Citation footprint", String(fp.length), fp.map(x=>'<div class="ptr"><span class="muted">'+esc(x.ref_id||"")+'</span> '+esc(x.citation||"")+'</div>').join(""), false);
+    return h;
+  }
+  function renderRecipes(){
+    let h="";
+    (REC.files||[]).forEach(file=>{
+      let inner="";
+      (file.sections||[]).forEach(sec=>{
+        let c='<div class="card" id="ov-sec-'+esc((file.file||"")+"-"+(sec.sec_id||""))+'"><h4>'+(sec.sec_id?'<span class="did">'+esc(sec.sec_id)+'</span> ':'')+esc(sec.heading||"")+'</h4>';
+        if(sec.kind==="table"&&sec.markdown) c+=renderMd(sec.markdown);
+        else if(sec.kind==="steps"&&sec.steps&&sec.steps.length) c+='<ol>'+sec.steps.map(s=>'<li>'+mtext(String(s).replace(/^\s*\d+\.\s*/,""))+'</li>').join("")+'</ol>';
+        else if(sec.kind==="kv"&&sec.fields&&sec.fields.length) sec.fields.forEach(fl=>c+='<div class="kv"><b>'+esc(fl.label)+'</b> '+mtext(fl.value)+'</div>');
+        else if(sec.kind==="code"&&sec.code) c+='<pre class="snip">'+esc(sec.code)+'</pre>';
+        else if(sec.kind==="math"&&sec.code) c+='<div class="kv math">'+mtext(sec.code)+'</div>';
+        else if(sec.text) c+='<div class="kv">'+mtext(sec.text)+'</div>';
+        if(sec.warn) c+='<div class="warn">'+esc(sec.warn)+'</div>';
+        inner+=c+refRow(sec.refs)+'</div>';
+      });
+      h+=block((file.file_title||file.file||"recipe")+(file.role?("  ·  "+file.role):""), String((file.sections||[]).length), inner, true);
+    });
+    return h || '<div class="muted">No recipe content.</div>';
+  }
+
+  // ---- overlay open/close + layerbar wiring ----
+  const ov=document.getElementById("overlay");
+  let lastTrigger=null;
+  const PANEL_RENDER={ context:renderContext, glossary:()=>renderGlossary(""), dependencies:()=>renderDeps(""), recipes:renderRecipes };
+  function hasContent(name){ const L=LAYERS[name]; if(!L) return false;
+    if(name==="context") return (L.sections||[]).length>0;
+    if(name==="glossary") return (L.terms||[]).length>0;
+    if(name==="dependencies") return (L.entries||[]).length>0||(L.footprint||[]).length>0;
+    if(name==="recipes") return (L.files||[]).length>0; return false; }
+  function panelTitle(name){ const L=LAYERS[name]||{}; return L.title || ({context:"Context",glossary:"Concepts",dependencies:"Dependencies",recipes:"Solution"}[name]); }
+  function panelCount(name){ const L=LAYERS[name]||{};
+    if(name==="glossary") return (L.terms||[]).length;
+    if(name==="dependencies") return (L.entries||[]).length;
+    if(name==="recipes") return (L.files||[]).reduce((a,f)=>a+(f.sections||[]).length,0); return 0; }
+  function openPanel(name, anchor){
+    if(!hasContent(name)) return;
+    stop(); lastTrigger=document.activeElement;
+    document.getElementById("ov-title").textContent=panelTitle(name);
+    const body=document.getElementById("ov-body"); body.innerHTML=PANEL_RENDER[name]();
+    if(LEX) linkifyConcepts(body);
+    const q=document.getElementById("ov-q");
+    if(name==="glossary"||name==="dependencies"){ q.hidden=false; q.value=""; q.dataset.panel=name; } else { q.hidden=true; }
+    ov.hidden=false;
+    if(anchor){ const el=document.getElementById(anchor); if(el) el.scrollIntoView({block:"center"}); } else body.scrollTop=0;
+    (q.hidden?document.getElementById("ov-close"):q).focus();
+  }
+  function closePanel(){ ov.hidden=true; if(lastTrigger&&lastTrigger.focus) lastTrigger.focus(); }
+  document.querySelectorAll(".lbtn").forEach(b=>{ const name=b.dataset.panel;
+    if(hasContent(name)){ b.hidden=false; const c=b.querySelector(".cnt"); if(c){ const n=panelCount(name); if(n) c.textContent=n; } b.addEventListener("click",()=>openPanel(name)); } });
+  document.getElementById("ov-q").addEventListener("input", e=>{ const p=e.target.dataset.panel, body=document.getElementById("ov-body");
+    body.innerHTML = p==="glossary"?renderGlossary(e.target.value):renderDeps(e.target.value); if(LEX) linkifyConcepts(body); });
+
+  // ---- glossary lexicon + popover ----
+  const LEX=(GLO&&GLO.lexicon&&Object.keys(GLO.lexicon).length)?(function(){
+    const surf=Object.keys(GLO.lexicon).filter(s=>s.length>=3).sort((a,b)=>b.length-a.length);
+    if(!surf.length) return null;
+    const re=s=>s.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+    return { re:new RegExp("\\b("+surf.map(re).join("|")+")\\b","i"), map:GLO.lexicon };
+  })():null;
+  const SKIP_TAGS={A:1,CODE:1,PRE:1,BUTTON:1,SCRIPT:1,STYLE:1,H4:1,H5:1,SUMMARY:1};
+  function linkifyConcepts(root){
+    if(!LEX) return;
+    const walker=document.createTreeWalker(root, NodeFilter.SHOW_TEXT, { acceptNode(t){
+      if(!t.nodeValue||!t.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+      let p=t.parentNode; while(p&&p!==root){ if(p.classList&&p.classList.contains("gterm")) return NodeFilter.FILTER_REJECT; if(SKIP_TAGS[p.tagName]) return NodeFilter.FILTER_REJECT; p=p.parentNode; }
+      return NodeFilter.FILTER_ACCEPT; } });
+    const seen=new Set(), hits=[]; let t;
+    while((t=walker.nextNode())){ const m=LEX.re.exec(t.nodeValue); if(!m) continue; const tid=LEX.map[m[1].toLowerCase()]; if(!tid||seen.has(tid)) continue; seen.add(tid); hits.push({node:t,index:m.index,len:m[1].length,tid}); }
+    hits.forEach(hp=>{ const tn=hp.node, txt=tn.nodeValue, par=tn.parentNode; if(!par) return;
+      const span=document.createElement("span"); span.className="gterm"; span.dataset.term=hp.tid; span.tabIndex=0; span.textContent=txt.slice(hp.index,hp.index+hp.len);
+      const after=document.createTextNode(txt.slice(hp.index+hp.len));
+      par.replaceChild(after,tn); par.insertBefore(span,after); par.insertBefore(document.createTextNode(txt.slice(0,hp.index)),span); });
+  }
+  const gpop=document.getElementById("gpop");
+  function gpopShow(span){ const t=termById.get(span.dataset.term); if(!t) return;
+    const def=t.definition||""; gpop.innerHTML='<h5>'+esc(t.name)+'</h5><div>'+mtext(def.slice(0,240))+(def.length>240?'…':'')+'</div><span class="gp-open" data-open-term="'+esc(t.term_id)+'">open in glossary →</span>';
+    gpop.style.display="block"; const r=span.getBoundingClientRect();
+    gpop.style.left=Math.max(6,Math.min(r.left, window.innerWidth-372))+"px"; gpop.style.top=(r.bottom+6)+"px"; }
+  function gpopHide(){ gpop.style.display="none"; }
+
+  // ---- delegated interactions for the new layers ----
+  document.addEventListener("click", e=>{
+    const el=e.target.closest&&e.target.closest("[data-close],[data-jump-node],[data-jump-claim],[data-open-panel],[data-open-term],[data-scroll]");
+    if(!el) return;
+    if(el.hasAttribute("data-close")){ closePanel(); return; }
+    if(el.dataset.jumpNode){ closePanel(); selectNode(el.dataset.jumpNode); return; }
+    if(el.dataset.jumpClaim){ const nid=firstNodeForClaim(el.dataset.jumpClaim); if(nid){ closePanel(); selectNode(nid); } return; }
+    if(el.dataset.openTerm){ openPanel("glossary","ov-"+el.dataset.openTerm); return; }
+    if(el.hasAttribute("data-open-panel")){ openPanel(el.dataset.openPanel, el.dataset.anchor||null); return; }
+    if(el.dataset.scroll){ const t=document.getElementById(el.dataset.scroll); if(t) t.scrollIntoView({block:"center"}); return; }
+  });
+  document.addEventListener("mouseover", e=>{ const g=e.target.closest&&e.target.closest(".gterm"); if(g) gpopShow(g); });
+  document.addEventListener("mouseout",  e=>{ const g=e.target.closest&&e.target.closest(".gterm"); if(g) gpopHide(); });
+  document.addEventListener("focusin",   e=>{ const g=e.target.closest&&e.target.closest(".gterm"); if(g) gpopShow(g); });
+  document.addEventListener("focusout",  e=>{ const g=e.target.closest&&e.target.closest(".gterm"); if(g) gpopHide(); });
+  window.addEventListener("scroll", gpopHide, true);
+
+  document.getElementById("q").addEventListener("input", applyFilters);
+  document.getElementById("ftype").addEventListener("change", applyFilters);
+  document.getElementById("fdead").addEventListener("change", applyFilters);
+  document.getElementById("rplay").addEventListener("click", play);
+  document.getElementById("rprev").addEventListener("click", ()=>{stop();step(-1);});
+  document.getElementById("rnext").addEventListener("click", ()=>{stop();step(1);});
+  document.addEventListener("keydown", e=>{
+    if(e.key==="Escape"){ if(!ov.hidden){ closePanel(); return; } gpopHide(); }
+    if(e.target.tagName==="INPUT"||e.target.tagName==="SELECT") return;
+    if(e.key==="ArrowLeft"){stop();step(-1);} else if(e.key==="ArrowRight"){stop();step(1);}
+    else if(e.key==="c"||e.key==="g"||e.key==="d"||e.key==="r"){ const p={c:"context",g:"glossary",d:"dependencies",r:"recipes"}[e.key]; if(hasContent(p)) openPanel(p); }
+  });
+
+  renderMap();
+  rstat();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,741 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ARA Trajectory</title>
+<!--
+  ARA Trajectory Viewer — canonical self-contained scaffold for the `research-visualizer` skill.
+
+  HOW THE SKILL USES THIS FILE
+  ----------------------------
+  The rendering logic below is FIXED. The agent does NOT rewrite it. The agent only:
+    1. Parses the ARA into one ARA_DATA object (schema in references/binding.md).
+    2. base64-inlines every referenced figure .png into node.result.figures[].img.
+    3. Replaces ONLY the JSON between the BEGIN/END markers in the <script id="ara-data"> block.
+    4. Writes the result to <ara>/trajectory.html (or --output).
+  Everything is inline (no CDN, no fetch, no server) so the output is one portable file.
+
+  INJECTION CONTRACT
+  ------------------
+  - Replace exactly the lines between  __ARA_DATA_BEGIN__  and  __ARA_DATA_END__.
+  - The payload MUST be valid JSON (it is read with JSON.parse).
+  - JSON must not contain the literal substring "</script>"; escape any "<" in inlined
+    markdown/text as "<" to be safe.
+  - The demo payload shipped here renders a 3-node sample so the bare template opens and
+    shows every node state (experiment, dead_end, isolated). The skill overwrites it.
+-->
+<style>
+  /* Research Visualizer — "field notebook of a machine scientist".
+     Cool archival vellum + ink; monospace is the machine-readout voice for
+     structure / IDs / data, a humanist serif carries the reasoning prose. The
+     signature is a traced trajectory spine that forks at branches and is struck
+     through at dead ends. Type is read from glyph + label; colour is reserved
+     for true epistemic status (teal = chrome, green = supported, amber =
+     tentative, clay-red = dead end) — never decoration. */
+  :root{
+    /* paper & ink — deliberately cool vellum, NOT warm cream */
+    --bg:#e9ece4; --panel:#f4f6f0; --panel2:#e3e7dd; --line:#ccd3c7; --ink:#1b2420;
+    --muted:#67726a; --faint:#8a948b; --accent:#0e6b62; --accent-ink:#0a4f48; --chip:#e6eae0;
+    --ok:#3a6a39; --warn:#a6402c; --tentative:#8a6310; --glyph-bg:#e0e5da; --glyph-ink:#4a544c;
+    --sel-bg:#e3ede7; --code-bg:#eaeee6; --reason-bg:#f4f6f0;
+    --iso-line:#b7c0ae; --iso-bg:#e5eadf; --iso-ink:#5f6b58;
+    --scrim:rgba(20,28,24,.42); --shadow:rgba(20,28,24,.16);
+    --add-bg:#e0ebdb; --add-ink:#2f5a2e; --del-bg:#f1e0da; --del-ink:#8c3623; --hunk:#67726a;
+    --spine:#c3ccbd; --grid:rgba(27,36,32,.05);
+    /* legacy type vars retained so any leftover hooks resolve */
+    --q:var(--glyph-bg); --exp:var(--glyph-bg); --dec:var(--glyph-bg); --piv:var(--glyph-bg); --ins:var(--glyph-bg); --def:var(--glyph-bg); --dead:var(--warn);
+    /* type roles: a serif reads the prose, monospace reads the machine */
+    --serif:ui-serif,"New York","Iowan Old Style",Palatino,Georgia,serif;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--bg);color:var(--ink);font:14px/1.65 var(--sans);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  code,pre,.mono{font-family:var(--mono)}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+
+  /* ---- masthead ---- */
+  header{padding:20px 24px 14px;border-bottom:1px solid var(--line);background:var(--panel)}
+  header .title{font-family:var(--serif);font-size:23px;font-weight:600;margin:0;letter-spacing:-.012em}
+  header .sub{font-family:var(--mono);color:var(--muted);font-size:11.5px;margin-top:5px;letter-spacing:.01em}
+  header details{margin-top:10px;color:var(--ink)}
+  header summary{cursor:pointer;color:var(--accent-ink);font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em}
+  .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:16px}
+  .toolbar input[type=search],.toolbar select{background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:6px 10px;font-size:13px;font-family:var(--sans)}
+  .toolbar input[type=search]{min-width:230px}
+  .toolbar input[type=search]:focus,.toolbar select:focus{border-color:var(--accent);outline:none}
+  .toolbar label{color:var(--muted);font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.06em;display:flex;gap:6px;align-items:center}
+  .btn{background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:6px 11px;font-size:12.5px;font-family:var(--mono);cursor:pointer;transition:border-color .12s,color .12s,background .12s}
+  .btn:hover{border-color:var(--accent);color:var(--accent-ink)}
+  .btn.primary{border-color:var(--accent);color:#fff;background:var(--accent)}
+  .btn.primary:hover{background:var(--accent-ink)}
+  .spacer{flex:1}
+  .count{color:var(--muted);font-family:var(--mono);font-size:11px;letter-spacing:.04em;padding-left:10px;border-left:1px solid var(--line)}
+
+  main{display:grid;grid-template-columns:minmax(300px,36%) 1fr;height:calc(100% - 0px);min-height:0}
+  #map{overflow:auto;border-right:1px solid var(--line);padding:18px 12px 56px;background:var(--bg);
+    background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+    background-size:24px 24px;background-position:-1px -1px}
+  #detail{overflow:auto;padding:26px 32px 80px;background:var(--bg)}
+
+  /* ---- process map: the trajectory spine is the signature ---- */
+  .node{position:relative;display:flex;gap:10px;align-items:flex-start;padding:7px 9px;border-radius:6px;cursor:pointer;border:1px solid transparent}
+  .node:hover{background:var(--panel2)}
+  .node.sel{background:var(--sel-bg);border-color:var(--accent)}
+  .node.deptarget{background:var(--sel-bg);outline:1px dashed var(--accent);outline-offset:-1px}
+  .node.dim{opacity:.32}
+  .node .glyph{flex:none;width:20px;height:20px;border-radius:5px;display:grid;place-items:center;font-family:var(--mono);font-size:11px;font-weight:700;color:var(--glyph-ink);background:var(--glyph-bg);border:1px solid var(--line);margin-top:1px}
+  .node.sel .glyph{border-color:var(--accent);color:var(--accent-ink)}
+  .node .nid{color:var(--muted);font-size:10.5px;font-family:var(--mono);letter-spacing:.02em}
+  .node .ntitle{font-size:13px;line-height:1.45}
+  .node.dead .ntitle{color:var(--warn);text-decoration:line-through;text-decoration-color:rgba(166,64,44,.45)}
+  .node .meta{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  /* the spine + branch connectors: nested steps trace back to their parent */
+  .kid{margin-left:19px;border-left:2px solid var(--spine);padding-left:14px}
+  .kid>.node::before{content:"";position:absolute;left:-14px;top:14px;width:10px;height:2px;background:var(--spine)}
+  .kid>.node.sel::before{background:var(--accent)}
+  .isobox{border:1px dashed var(--iso-line);border-radius:8px;margin:12px 2px;padding:6px 4px;background:var(--iso-bg)}
+  .isobox .isohdr{color:var(--iso-ink);font-family:var(--mono);font-size:10px;padding:3px 8px 7px;text-transform:uppercase;letter-spacing:.1em}
+  .dep{color:var(--muted);font-size:10px;font-family:var(--mono);border:1px solid var(--line);border-radius:4px;padding:0 5px}
+
+  .glyph.dead_end{background:var(--warn);color:#fff;border-color:var(--warn)}
+
+  /* ---- detail pane ---- */
+  .dhead{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-bottom:2px}
+  .badge{font-family:var(--mono);font-size:10px;font-weight:700;border-radius:4px;padding:3px 9px;color:var(--glyph-ink);background:var(--glyph-bg);border:1px solid var(--line);text-transform:uppercase;letter-spacing:.08em}
+  .badge.dead_end{background:var(--warn);color:#fff;border-color:var(--warn)}
+  .pill{font-family:var(--mono);font-size:10px;border:1px solid var(--line);border-radius:20px;padding:2px 9px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+  .pill.explicit{border-color:var(--ok);color:var(--ok)} .pill.inferred{border-color:var(--tentative);color:var(--tentative)}
+  .pill.iso{border-color:var(--iso-line);color:var(--iso-ink)}
+  .dtitle{font-family:var(--serif);font-size:25px;font-weight:600;margin:12px 0 6px;letter-spacing:-.012em;line-height:1.28}
+  .did{color:var(--muted);font-family:var(--mono);font-size:11.5px}
+
+  .block{border:1px solid var(--line);border-radius:7px;margin:15px 0;background:var(--panel)}
+  .block>summary{cursor:pointer;padding:11px 15px;font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);list-style:none;display:flex;align-items:center;gap:8px}
+  .block>summary::-webkit-details-marker{display:none}
+  .block>summary:hover{color:var(--accent-ink)}
+  .block>summary .tag{margin-left:auto;color:var(--faint);font-size:10.5px;font-weight:400;font-family:var(--mono);text-transform:none;letter-spacing:0}
+  .block .body{padding:4px 16px 16px}
+  /* the primary reasoning block: the agent's thinking, set as typeset prose */
+  .block.reason{border-left:3px solid var(--accent);background:var(--reason-bg)}
+  .block.reason>summary{color:var(--accent-ink)}
+  .block.reason .lead{font-family:var(--serif);font-size:17px;line-height:1.7;color:var(--ink)}
+  .didwhat{color:var(--muted);font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.09em;margin:16px 0 4px}
+  .lead{font-family:var(--serif);color:#2a322c;font-size:16px;line-height:1.7}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:11px}
+  .chip{background:var(--chip);border:1px solid var(--line);border-radius:4px;padding:2px 8px;font-size:11px;color:#46504a;font-family:var(--mono)}
+  .chip.ext{color:var(--muted)}
+
+  .claim{border:1px solid var(--line);border-left:2px solid var(--accent);border-radius:0 6px 6px 0;padding:11px 13px;margin:11px 0;background:var(--panel2)}
+  .claim h4{margin:0 0 6px;font-family:var(--mono);font-size:12px}
+  .claim .kv{font-size:13px;line-height:1.6;margin:4px 0;color:#3a423c}
+  .claim .kv b{color:var(--muted);font-weight:600;font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em}
+  .status{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.05em;border-radius:4px;padding:1px 7px;border:1px solid var(--line)}
+  .status.supported{color:var(--ok);border-color:var(--ok)}
+  .status.refuted{color:var(--warn);border-color:var(--warn)}
+  .status.hypothesis{color:var(--tentative);border-color:var(--tentative)}
+  .prov{font-size:11px;color:var(--iso-ink);font-family:var(--mono)}
+
+  .quote{border-left:3px solid var(--accent);background:var(--panel);border-radius:0 6px 6px 0;padding:9px 13px;margin:9px 0;font-size:13.5px;line-height:1.6;color:#2a322c}
+  .quote .ref{color:var(--muted);font-size:10.5px;font-family:var(--mono);margin-top:5px}
+  figure{margin:14px 0}
+  figure img{max-width:100%;border:1px solid var(--line);border-radius:5px;background:#fff;padding:6px}
+  figcaption{color:var(--muted);font-family:var(--mono);font-size:11px;margin-top:7px}
+
+  table.md{border-collapse:collapse;width:100%;font-family:var(--mono);font-size:12px;margin:10px 0}
+  table.md th,table.md td{border:1px solid var(--line);padding:5px 9px;text-align:left}
+  table.md th{background:var(--panel2);color:var(--ink);font-weight:700;text-transform:uppercase;font-size:10.5px;letter-spacing:.04em}
+  pre.snip{background:var(--code-bg);border:1px solid var(--line);border-radius:6px;padding:10px 12px;overflow:auto;font-size:12px;color:var(--ink);white-space:pre-wrap}
+
+  .ptr{font-size:13px;margin:7px 0}
+  .ptr .path{font-family:var(--mono);color:#46504a}
+  .truncated{color:var(--muted);font-size:11.5px;font-style:italic}
+  .empty{color:var(--muted);font-size:13px}
+  .none{color:var(--muted);padding:40px 24px;text-align:center;font-family:var(--mono);font-size:12px;letter-spacing:.02em}
+  kbd{background:var(--panel2);border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 5px;font-family:var(--mono);font-size:11px}
+
+  /* ---- enrichment layers (all inert unless the data is present) ---- */
+  .layerbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+  .lbtn .cnt{color:var(--muted);font-size:10.5px}
+  .chiplabel{color:var(--muted);font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.08em;margin:12px 0 3px}
+  .chip.jump{cursor:pointer}
+  .chip.jump:hover{border-color:var(--accent);color:var(--accent-ink)}
+  .chip.dangle{color:#9aa49b;text-decoration:line-through;cursor:not-allowed}
+  .chip.infer{border-style:dashed}
+  .chip-built{border-color:var(--ok);color:var(--ok)}
+  .chip-rej{border-color:var(--warn);color:var(--warn)}
+  .chip-recipe{border-color:var(--accent);color:var(--accent-ink)}
+  .nmark{color:var(--muted);font-size:10px;margin-left:5px;font-family:var(--mono)}
+  .rel{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.05em;border-radius:4px;padding:2px 8px;color:var(--glyph-ink);background:var(--glyph-bg);font-weight:700}
+  .rel.bounds,.rel.refutes{background:var(--warn);color:#fff}
+  .rel.neutral{background:var(--chip);color:var(--ink);border:1px solid var(--line);font-weight:400}
+  .ribbon{border-left:3px solid var(--accent);background:var(--panel2);border-radius:0 6px 6px 0;padding:9px 13px;margin:9px 0;color:#3a423c;font-size:13px;line-height:1.6}
+  .warn{border-left:3px solid var(--warn);background:var(--del-bg);border-radius:0 6px 6px 0;padding:9px 13px;margin:9px 0;font-size:13px;line-height:1.6}
+  .muted{color:var(--muted);font-size:11.5px}
+  .math{font-family:var(--serif);font-style:italic}
+  .gterm{border-bottom:1px dashed var(--accent);cursor:help}
+  #gpop{position:fixed;max-width:360px;background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:11px 13px;z-index:60;box-shadow:0 8px 28px var(--shadow);font-size:13px;line-height:1.55;display:none}
+  #gpop h5{margin:0 0 5px;font-family:var(--mono);font-size:12px;text-transform:uppercase;letter-spacing:.05em}
+  #gpop .gp-open{color:var(--accent);cursor:pointer;font-family:var(--mono);font-size:11px;margin-top:7px;display:inline-block}
+  .ov{position:fixed;inset:0;z-index:50}
+  .ov[hidden]{display:none}
+  .ov-scrim{position:absolute;inset:0;background:var(--scrim)}
+  .ov-sheet{position:relative;margin:5vh auto;max-width:920px;max-height:86vh;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 16px 48px var(--shadow)}
+  .ov-head{position:sticky;top:0;display:flex;gap:10px;align-items:center;padding:13px 17px;border-bottom:1px solid var(--line);background:var(--panel);z-index:1}
+  .ov-head #ov-title{font-family:var(--mono);font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.09em;color:var(--accent-ink)}
+  .ov-head input[type=search]{flex:1;max-width:260px;background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:5px 10px;font-size:13px}
+  .ov-body{padding:10px 17px 26px}
+  .ov-body .spacer{flex:1}
+  .card{border:1px solid var(--line);border-radius:6px;padding:11px 13px;margin:11px 0;background:var(--panel2)}
+  .card h4{margin:0 0 6px;font-family:var(--mono);font-size:12px}
+  .card .sub{color:var(--muted);font-family:var(--mono);font-size:10.5px}
+  .grey{opacity:.5}
+
+  /* responsive: stack the two panes on a narrow screen */
+  @media (max-width:720px){
+    main{grid-template-columns:1fr;grid-template-rows:42vh 1fr}
+    #map{border-right:none;border-bottom:1px solid var(--line)}
+    #detail{padding:20px 18px 64px}
+    .dtitle{font-size:21px}
+  }
+  /* honour reduced-motion */
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<header>
+  <h1 class="title" id="h-title">ARA Trajectory</h1>
+  <div class="sub" id="h-sub"></div>
+  <details id="h-abstract-wrap"><summary>Abstract</summary><div class="lead" id="h-abstract"></div></details>
+  <div class="toolbar">
+    <input type="search" id="q" placeholder="search steps…" autocomplete="off" />
+    <label>type
+      <select id="ftype"><option value="">all</option></select>
+    </label>
+    <label><input type="checkbox" id="fdead" /> dead ends only</label>
+    <span class="spacer"></span>
+    <button class="btn" id="rprev" title="previous (←)">‹</button>
+    <button class="btn primary" id="rplay">▶ Replay</button>
+    <button class="btn" id="rnext" title="next (→)">›</button>
+    <span class="count" id="rstat"></span>
+  </div>
+  <div class="layerbar" id="layerbar">
+    <button class="btn lbtn" data-panel="context" hidden>◧ Context</button>
+    <button class="btn lbtn" data-panel="glossary" hidden>▤ Glossary <span class="cnt"></span></button>
+    <button class="btn lbtn" data-panel="dependencies" hidden>⇄ Dependencies <span class="cnt"></span></button>
+    <button class="btn lbtn" data-panel="recipes" hidden>▦ Recipes <span class="cnt"></span></button>
+  </div>
+</header>
+
+<main>
+  <aside id="map"></aside>
+  <section id="detail"><div class="none">Select a step on the left, or press <kbd>▶ Replay</kbd>.</div></section>
+</main>
+
+<!-- v1.1: one shared modal overlay for the Context/Glossary/Dependencies/Recipes panels, + a glossary popover. Both inert unless their data is present. -->
+<div id="overlay" class="ov" hidden role="dialog" aria-modal="true">
+  <div class="ov-scrim" data-close></div>
+  <div class="ov-sheet">
+    <div class="ov-head"><span id="ov-title"></span>
+      <input type="search" id="ov-q" placeholder="filter…" hidden autocomplete="off" />
+      <span class="spacer"></span>
+      <button class="btn" id="ov-close" data-close>✕ <kbd>Esc</kbd></button>
+    </div>
+    <div class="ov-body" id="ov-body"></div>
+  </div>
+</div>
+<div id="gpop"></div>
+
+<!-- The skill replaces ONLY the JSON between the two markers below. -->
+<script id="ara-data" type="application/json">
+/* __ARA_DATA_BEGIN__ */
+{"meta": {"title": "RICE: Breaking Through the Training Bottlenecks of Reinforcement Learning with Explanation", "authors": ["Zelei Cheng", "Xian Wu", "Jiahao Yu", "Sabrina Yang", "Gang Wang", "Xinyu Xing"], "year": "2024", "venue": "Proceedings of the 41st International Conference on Machine Learning (ICML)", "ara_dir": "rice", "abstract": "Deep reinforcement learning (DRL) is playing an increasingly important role in real-world applications. However, obtaining an optimally performing DRL agent for complex tasks, especially with sparse rewards, remains a significant challenge. The training of a DRL agent can be often trapped in a bottleneck without further progress. In this paper, we propose RICE, an innovative refining scheme for reinforcement learning that incorporates explanation methods to break through the training bottlenecks. The high-level idea of RICE is to construct a new initial state distribution that combines both the default initial states and critical states identified through explanation methods, thereby encouraging the agent to explore from the mixed initial states. Through careful design, we can theoretically guarantee that our refining scheme has a tighter sub-optimality bound. We evaluate RICE in various popular RL environments and real-world applications. The results demonstrate that RICE significantly outperforms existing refining schemes in enhancing agent performance."}, "order": ["N01", "N02", "N03", "N04", "N05", "N06", "N07", "N08", "N09", "N10", "N11", "N12"], "nodes": [{"id": "N01", "type": "question", "parent": null, "title": "How to break through DRL training bottlenecks without re-training from scratch?", "body": "Pre-trained DRL agents plateau at sub-optimal performance (local optima, sparse rewards). Re-training is prohibitively expensive (millions of dollars for complex tasks). How can we refine a pre-trained agent efficiently while providing theoretical guarantees?", "thinking": "This project starts from a practical pain point in deep reinforcement learning: once a pretrained agent's training plateaus, either from getting stuck in a local optimum or from sparse rewards, there is no cheap way to push it further. Restarting training from scratch is not realistic for complex tasks; it can take over a month on TPUs and cost millions of dollars, so any fix has to reuse the existing pretrained policy. The team frames the core question as: can a pretrained agent be refined efficiently, with some theoretical guarantee that the refinement will actually help, rather than just retraining and hoping for the best?", "concepts": []}, {"id": "N02", "type": "experiment", "parent": "N01", "title": "Evaluate existing refining methods: PPO fine-tuning, StateMask-R, JSRL", "body": "PPO fine-tuning: marginal gains (trapped in local optima). StateMask-R: sometimes degrades performance due to overfitting. JSRL: poor performance due to random frontier selection.", "thinking": "Before proposing anything new, the team first checked what the existing refining approaches could do. Three methods were tried on the pretrained agent: continuing training with plain PPO fine-tuning, StateMask-R (which resets to explanation-identified critical states only), and JSRL (which uses a random curriculum of exploration frontiers). None worked well: PPO fine-tuning only made marginal gains because the agent stays trapped in the same local optimum; StateMask-R sometimes made things worse by overfitting; and JSRL performed poorly because its frontier selection was random rather than targeted. This negative result set up the two dead ends explored next and motivated the search for a better refining strategy.", "why": [{"id": "C02", "title": "RICE Outperforms All Baseline Refining Methods Across All 8 Environments", "statement": "RICE (using optimized StateMask + mixed distribution + RND) achieves higher final reward than PPO fine-tuning, StateMask-R, and JSRL in all 8 benchmark environments (Hopper, Walker2d, Reacher, HalfCheetah, Selfish Mining, CAGE Challenge 2, Autonomous Driving, Malware Mutation).", "status": "supported", "falsification": "Any environment where RICE does not achieve the highest final reward (mean) among all refining methods.", "dependencies": ["C01"]}], "verified_by": [{"id": "E02", "title": "Effectiveness of RICE Refining vs Baseline Refining Methods (Dense Reward Environments)", "setup": "Model: Pre-trained PPO policy for each of 8 environments; PPO refining agent. Hardware: 8 NVIDIA A100 GPUs. Dataset: 8 environments (Hopper-v3, Walker2d-v3, Reacher-v2, HalfCheetah-v3, Selfish Mining, CAGE Challenge 2, MetaDrive Macro-v1, MalConv Malware). System: Default hyperparameters from Table 3; all methods use the same RICE explanation for critical state identification (fair comparison).", "metrics": "Final episode reward (mean ± std over 3 seeds); higher is better except CAGE Challenge 2 (less negative is better) and Reacher (less negative is better). Expected: RICE achieves the highest final reward for each environment; PPO fine-tuning shows only marginal improvements; StateMask-R sometimes degrades performance; JSRL underperforms RICE substantially."}], "result": {"tables": [{"id": "Table 1", "caption": "Table 1: Agent Refining Performance (Table 1, Section 4.3) — \"Agent Refining Performance—'No Refine' indicates the target agent's performance before refining. For the first group of experiments (left), we fixed the explanation method to our method (mask network) and varied the refining methods. For the second group of experiments (right), we fixed the refining method to our method and varied the explanation methods. We report the mean value (standard deviations) of the final reward after refining. A higher value is better.\"", "markdown": "**Note**: For CAGE Challenge 2, the reward is negative (less negative = better). For Reacher, values are negative (less negative = better). Malware Mutation reports evasion probability (%).\n\n## Group 1: Fix Explanation (Ours); Vary Refining Methods\n\n| Task | No Refine | PPO | JSRL | StateMask-R | Ours |\n|------|-----------|-----|------|-------------|------|\n| Hopper | 3559.44 (19.15) | 3638.75 (16.67) | 3635.08 (9.82) | 3652.06 (8.63) | 3663.91 (20.98) |\n| Walker2d | 3768.79 (18.68) | 3965.63 (9.46) | 3963.57 (6.73) | 3966.96 (3.39) | 3982.79 (3.15) |\n| Reacher | -5.79 (0.73) | -3.04 (0.04) | -3.23 (0.26) | -3.45 (0.32) | -2.66 (0.03) |\n| HalfCheetah | 2024.09 (28.34) | 2133.31 (4.11) | 2128.04 (0.91) | 2085.28 (1.92) | 2138.89 (3.22) |\n| Selfish Mining | 14.36 (0.24) | 14.93 (0.45) | 14.88 (0.51) | 14.53 (0.33) | 16.56 (0.63) |\n| Cage Challenge 2 | -23.64 (0.27) | -23.58 (0.37) | -22.97 (0.57) | -26.98 (0.84) | -20.02 (0.32) |\n| Auto Driving | 10.30 (2.25) | 13.37 (3.10) | 11.26 (3.66) | 7.62 (1.77) | 17.03 (1.65) |\n| Malware Mutation | 42.20 (6.86) | 49.33 (8.59) | 43.10 (7.24) | 50.13 (8.14) | 57.53 (8.71) |\n\n## Group 2: Fix Refining Method (Ours); Vary Explanation Methods\n\n| Task | Random | StateMask | Ours |\n|------|--------|-----------|------|\n| Hopper | 3648.98 (39.06) | 3661.86 (19.95) | 3663.91 (20.98) |\n| Walker2d | 3969.64 (6.38) | 3982.67 (5.55) | 3982.79 (3.15) |\n| Reacher | -3.11 (0.42) | -2.69 (0.28) | -2.66 (0.03) |\n| HalfCheetah | 2132.01 (0.76) | 2136.23 (0.49) | 2138.89 (3.22) |\n| Selfish Mining | 15.09 (0.28) | 16.49 (0.46) | 16.56 (0.63) |\n| Cage Challenge 2 | -25.94 (2.34) | -20.07 (1.33) | -20.02 (0.32) |\n| Auto Driving | 11.72 (1.77) | 16.28 (2.33) | 17.03 (1.65) |\n| Malware Mutation | 48.60 (7.60) | 57.16 (8.51) | 57.53 (8.71) |\n"}, {"id": "Table 1 (alternate transcription)", "caption": "Table 1: Agent Refining Performance — alternate transcription of the same Table 1 (Section 4.3), evidence/tables/table1_refining_performance.md.", "markdown": "**Conditions**: All refining runs use per-environment hyperparameters from Table 3; 3 random seeds per condition.\n\n## Group 1: Fix Explanation (RICE's Optimized StateMask); Vary Refine Methods\n\n| Task | No Refine | PPO | JSRL | StateMask-R | Ours (RICE) |\n|------|-----------|-----|------|-------------|-------------|\n| Hopper | 3559.44 (19.15) | 3638.75 (16.67) | 3635.08 (9.82) | 3652.06 (8.63) | 3663.91 (20.98) |\n| Walker2d | 3768.79 (18.68) | 3965.63 (9.46) | 3963.57 (6.73) | 3966.96 (3.39) | 3982.79 (3.15) |\n| Reacher | -5.79 (0.73) | -3.04 (0.04) | -3.23 (0.26) | -3.45 (0.32) | -2.66 (0.03) |\n| HalfCheetah | 2024.09 (28.34) | 2133.31 (4.11) | 2128.04 (0.91) | 2085.28 (1.92) | 2138.89 (3.22) |\n| Selfish Mining | 14.36 (0.24) | 14.93 (0.45) | 14.88 (0.51) | 14.53 (0.33) | 16.56 (0.63) |\n| Cage Challenge 2 | -23.64 (0.27) | -23.58 (0.37) | -22.97 (0.57) | -26.98 (0.84) | -20.02 (0.32) |\n| Auto Driving | 10.30 (2.25) | 13.37 (3.10) | 11.26 (3.66) | 7.62 (1.77) | 17.03 (1.65) |\n| Malware Mutation | 42.20 (6.86) | 49.33 (8.59) | 43.10 (7.24) | 50.13 (8.14) | 57.53 (8.71) |\n\n## Group 2: Fix Refine (RICE); Vary Explanation Methods\n\n| Task | Random | StateMask | Ours (RICE) |\n|------|--------|-----------|-------------|\n| Hopper | 3648.98 (39.06) | 3661.86 (19.95) | 3663.91 (20.98) |\n| Walker2d | 3969.64 (6.38) | 3982.67 (5.55) | 3982.79 (3.15) |\n| Reacher | -3.11 (0.42) | -2.69 (0.28) | -2.66 (0.03) |\n| HalfCheetah | 2132.01 (0.76) | 2136.23 (0.49) | 2138.89 (3.22) |\n| Selfish Mining | 15.09 (0.28) | 16.49 (0.46) | 16.56 (0.63) |\n| Cage Challenge 2 | -25.94 (2.34) | -20.07 (1.33) | -20.02 (0.32) |\n| Auto Driving | 11.72 (1.77) | 16.28 (2.33) | 17.03 (1.65) |\n| Malware Mutation | 48.60 (7.60) | 57.16 (8.51) | 57.53 (8.71) |\n"}]}, "concepts": ["StateMask", "Optimized StateMask"], "built_on": [{"rw_id": "RW01", "name": "Cheng et al., 2023 (StateMask)", "relation_raw": "extends"}, {"rw_id": "RW02", "name": "Uchendu et al., 2023 (JSRL)", "relation_raw": "baseline"}, {"rw_id": "RW04", "name": "Burda et al., 2018 (RND)", "relation_raw": "imports"}, {"rw_id": "RW05", "name": "Schulman et al., 2017 (PPO)", "relation_raw": "imports"}, {"rw_id": "RW06", "name": "Chang et al., 2023 (PPO++)", "relation_raw": "baseline"}, {"rw_id": "RW08", "name": "Ecoffet et al., 2019/2021 (Go-Explore)", "relation_raw": "imports"}], "rejected_here": []}, {"id": "N03", "type": "dead_end", "parent": "N02", "title": "StateMask-R: fine-tuning exclusively from critical states", "body": "Hypothesis: Starting refining from explanation-identified critical states should help the agent learn correct behavior from those states. Failure mode: Overfitting: agent achieves 50.8% evasion from critical states but only 36.2% from default initial states (vs 33.8% baseline). Distribution shift between training and test initial state distributions. Lesson: Critical-state-only initialization causes distribution mismatch. Need to mix critical states with default initial states. Led to the mixed initial state distribution idea (N05).", "thinking": "The first idea tried was StateMask-R: reset training exclusively to the states an explanation method flags as 'critical', on the theory that starting from those decisive moments would teach the agent the right behavior fastest. It backfired. On the malware mutation task, the refined agent reached 50.8% evasion when tested from those same critical states, but only 36.2% when tested from the normal starting states, actually below what plain PPO fine-tuning achieved and barely above the 33.8% no-refine baseline. The agent had specialized narrowly for the critical-state distribution and lost generality. The lesson drawn was that critical states cannot be the only source of initial states; they need to be mixed with the normal initial-state distribution, which is exactly the idea picked up next (N05).", "concepts": ["StateMask", "Critical State"]}, {"id": "N04", "type": "dead_end", "parent": "N02", "title": "JSRL: random curriculum frontier selection", "body": "Hypothesis: Using a pre-trained policy as a guide with random exploration frontiers should enable the agent to explore from diverse states. Failure mode: Random frontiers do not guarantee positive returns or informative starting points. Cannot guarantee the frontier states are the ones where errors occur. Empirically performs poorly across all 8 environments. Lesson: Frontier selection must be guided by understanding which states matter most for the agent's reward. Led to using explanation methods for frontier selection (N06).", "thinking": "The second idea tried was JSRL, which sets exploration 'frontiers' by randomly picking points along a trajectory and lets the agent explore outward from there. This also failed: because the frontiers are chosen at random, there is no guarantee they land on states with positive returns or that they are actually informative, and empirically the approach underperformed across every one of the 8 test environments. The takeaway was that frontier selection needs to be guided by which states genuinely matter to the agent's reward, rather than left to chance, pointing the team toward using an explanation method to choose frontiers instead (N06).", "concepts": []}, {"id": "N05", "type": "decision", "parent": "N02", "title": "Adopt mixed initial state distribution to prevent overfitting", "body": "µ(s) = p·d^ˆπ_ρ(s) + (1-p)·ρ(s) where p ∈ [0.25, 0.5] is optimal. alternatives: p=1 (all critical states): StateMask-R — causes overfitting; p=0 (all default states): vanilla PPO fine-tuning — cannot escape local optima", "thinking": "Having seen both extremes fail (all critical states overfits, random states underperforms), the team settled on a middle ground: mix the default initial-state distribution with the critical-state distribution, controlled by a probability p. Setting p to a value strictly between 0 and 1, with the empirical sweet spot at 0.25 to 0.5, avoids the overfitting problem of pure critical-state resets (p=1) while still giving the agent more useful starting points than vanilla fine-tuning (p=0). The malware case study backs this: mixing achieves 58.4% evasion versus 36.2% when critical-state-only resets are evaluated from default states, and a full sweep of p in Figure 7 confirms the mixed setting wins.", "result": {"tables": [{"id": "Table 7", "caption": "Table 7: Malware Mutation Case Study (Table 7, Appendix D.1) — \"We evaluate the evasion probability of the agent under different settings and count the corresponding action frequencies.\"", "markdown": "**Metric**: Evasion probability (%) over 500 test runs; Action Frequency counts top actions taken.\n\n| Refine Setting | Test Setting | Action Frequency | Evasion |\n|----------------|-------------|-----------------|---------|\n| Original agent w/o refinement | From default initial S | {A4: 4914, A9: 5} | 33.8% |\n| Continue training (PPO fine-tuning) | From default initial S | {A4: 2590, A7: 55, A1: 99, A9: 95} | 38.8% |\n| Refine from critical states (StateMask-R) | From critical states | {A12: 2546, A5: 138, A4: 32, A9: 8} | 50.8% |\n| Refine from critical states (StateMask-R) | From default initial S | {A12: 4728, A5: 62} | 36.2% |\n| Refine from mixed initial state dist. | From default initial S | {A4: 1563, A12: 1135, A5: 332, A6: 12} | 58.4% |\n| Refine from mixed initial state dist. + exploration | From default initial S | {A5: 2448, A7: 165, A12: 138, A4: 6} | 68.2% |\n\n**Action Key (from Table 2, Appendix):**\n- A1: \"modify machine type\"\n- A4: \"add bytes to section cave\"\n- A5: \"add section strings\"\n- A6: \"add section benign data\"\n- A7: \"add strings to overlay\"\n- A9: \"add imports\"\n- A12: \"modify timestamp\"\n\n**Additional Result (Appendix D.2 — Fixed Reward Design):**\n- Evasion probability with FIXED reward design (Markovian + ×3 scaling): 72.0%\n- (vs. 42.2% with original buggy reward design under same conditions)\n- Original pre-trained agent performance (Table 1): 42.20% (matches paper)\n"}, {"id": "Table 2", "caption": "Table 2: Action Set of the MalConv Gym Environment (Table 2, Appendix C.2). Companion reference table for Table 7 (Malware Mutation Case Study) — defines the action indices A0–A15 used there.", "markdown": "**Conditions**: 16 possible mutation actions for PE malware files; reward of 10 for successful evasion; maximum 10 steps per episode.\n\n| Action Index | Action Meaning |\n|-------------|----------------|\n| 0 | \"modify machine type\" |\n| 1 | \"pad overlay\" |\n| 2 | \"append benign data overlay\" |\n| 3 | \"append benign binary overlay\" |\n| 4 | \"add bytes to section cave\" |\n| 5 | \"add section strings\" |\n| 6 | \"add section benign data\" |\n| 7 | \"add strings to overlay\" |\n| 8 | \"add imports\" |\n| 9 | \"rename section\" |\n| 10 | \"remove debug\" |\n| 11 | \"modify optional header\" |\n| 12 | \"modify timestamp\" |\n| 13 | \"break optional header checksum\" |\n| 14 | \"upx unpack\" |\n| 15 | \"upx pack\" |\n"}, {"id": "Figure 7", "caption": "Figure 7: Sensitivity of Hyperparameter p Across All Applications (Figure 7, Appendix C.3) — \"We vary the hyper-parameter p from {0, 0.25, 0.5, 0.75, 1} under different λ, and record the performance of the agent after refining.\" Data-only transcription; values marked ≈ are best-effort estimates.", "markdown": "**Axes**: X = p value ∈ {0, 0.25, 0.5, 0.75, 1.0}; Y = Performance (final reward); separate curves for λ ∈ {0.1, 0.01, 0.001}\n\n## Hopper (Y-axis range ≈ 3645–3665)\n| p | λ=0.1 | λ=0.01 | λ=0.001 |\n|---|-------|--------|---------|\n| 0.00 | ≈3645 | ≈3648 | ≈3646 |\n| 0.25 | ≈3661 | ≈3663 | ≈3660 |\n| 0.50 | ≈3658 | ≈3660 | ≈3659 |\n| 0.75 | ≈3650 | ≈3655 | ≈3653 |\n| 1.00 | ≈3647 | ≈3652 | ≈3650 |\n\n## Walker2d (Y-axis range ≈ 3965–3980)\n| p | λ=0.1 | λ=0.01 | λ=0.001 |\n|---|-------|--------|---------|\n| 0.00 | ≈3966 | ≈3967 | ≈3966 |\n| 0.25 | ≈3979 | ≈3980 | ≈3978 |\n| 0.50 | ≈3978 | ≈3979 | ≈3977 |\n| 0.75 | ≈3973 | ≈3975 | ≈3972 |\n| 1.00 | ≈3967 | ≈3970 | ≈3968 |\n\n## Reacher (Y-axis range ≈ -4.0 to -3.0)\n| p | λ=0.1 | λ=0.01 | λ=0.001 |\n|---|-------|--------|---------|\n| 0.00 | ≈-3.5 | ≈-3.4 | ≈-3.5 |\n| 0.25 | ≈-3.1 | ≈-2.9 | ≈-3.0 |\n| 0.50 | ≈-2.8 | ≈-2.7 | ≈-2.8 |\n| 0.75 | ≈-3.0 | ≈-2.9 | ≈-3.0 |\n| 1.00 | ≈-3.4 | ≈-3.3 | ≈-3.4 |\n\n## HalfCheetah (Y-axis scale similar to Table 1)\n| p | All λ values (low sensitivity) |\n|---|-------------------------------|\n| 0.00 | ≈2132 |\n| 0.25 | ≈2136 |\n| 0.50 | ≈2138 |\n| 0.75 | ≈2136 |\n| 1.00 | ≈2133 |\n\n## Selfish Mining (Y-axis range ≈ 14.5–16.5)\n| p | λ=0.1 | λ=0.01 | λ=0.001 |\n|---|-------|--------|---------|\n| 0.00 | ≈14.6 | ≈14.7 | ≈14.6 |\n| 0.25 | ≈16.3 | ≈16.4 | ≈16.5 |\n| 0.50 | ≈15.8 | ≈16.0 | ≈16.1 |\n| 0.75 | ≈15.2 | ≈15.4 | ≈15.3 |\n| 1.00 | ≈14.7 | ≈14.8 | ≈14.7 |\n\n## Cage Challenge 2 (less negative = better)\n| p | All λ values (approximate) |\n|---|---------------------------|\n| 0.00 | ≈-24.5 |\n| 0.25 | ≈-21.5 |\n| 0.50 | ≈-20.2 |\n| 0.75 | ≈-21.0 |\n| 1.00 | ≈-25.0 |\n\n## Safe Driving (Autonomous Driving)\n| p | All λ values (approximate) |\n|---|---------------------------|\n| 0.00 | ≈12.0 |\n| 0.25 | ≈17.0 |\n| 0.50 | ≈16.5 |\n| 0.75 | ≈14.0 |\n| 1.00 | ≈8.0 |\n\n## Malware Mutation (Y-axis range ≈ 47.5–57.5)\n| p | λ=0.1 | λ=0.01 | λ=0.001 |\n|---|-------|--------|---------|\n| 0.00 | ≈48.0 | ≈48.5 | ≈48.0 |\n| 0.25 | ≈55.0 | ≈57.0 | ≈56.0 |\n| 0.50 | ≈56.5 | ≈57.5 | ≈57.0 |\n| 0.75 | ≈53.0 | ≈54.0 | ≈53.5 |\n| 1.00 | ≈49.0 | ≈50.0 | ≈49.5 |\n"}]}, "concepts": ["Mixed Initial State Distribution", "StateMask", "Critical State"], "artifact": [{"name": "training.md", "pointer": "src/configs/training.md", "what": "Documents the per-environment p (reset probability / mixing ratio) hyperparameter values this decision introduces."}]}, {"id": "N06", "type": "decision", "parent": "N05", "title": "Use explanation method to select informative exploration frontiers", "body": "StateMask-based critical state identification: select state with highest P(a^m=0|s). alternatives: Random visited state selection (PPO++): no theoretical guarantee on frontier quality; Return-based archive (Go-Explore): does not identify why the policy fails; Human feedback (Guan et al., 2021): does not scale to large action spaces", "thinking": "With a mixed-distribution strategy chosen, the next question was how to pick the 'critical' states to mix in. The team adopted StateMask-style explanation: identify the state where the mask network assigns the highest probability of preserving (not randomizing) the agent's action. This was chosen over randomly picking from visited states (as in PPO++), which offers no guarantee the states are meaningful; a return-based archive like Go-Explore, which doesn't explain why the policy fails; and relying on human feedback, which doesn't scale to large action spaces. The right half of Table 1 shows this explanation-guided selection beating random selection across all 8 environments, and the underlying theory (referred to in the paper as Claim 1) argues that a better explanation directly tightens the refining method's theoretical guarantee.", "result": {"tables": [{"id": "Table 1", "caption": "Table 1: Agent Refining Performance (Table 1, Section 4.3) — \"Agent Refining Performance—'No Refine' indicates the target agent's performance before refining. For the first group of experiments (left), we fixed the explanation method to our method (mask network) and varied the refining methods. For the second group of experiments (right), we fixed the refining method to our method and varied the explanation methods. We report the mean value (standard deviations) of the final reward after refining. A higher value is better.\"", "markdown": "**Note**: For CAGE Challenge 2, the reward is negative (less negative = better). For Reacher, values are negative (less negative = better). Malware Mutation reports evasion probability (%).\n\n## Group 1: Fix Explanation (Ours); Vary Refining Methods\n\n| Task | No Refine | PPO | JSRL | StateMask-R | Ours |\n|------|-----------|-----|------|-------------|------|\n| Hopper | 3559.44 (19.15) | 3638.75 (16.67) | 3635.08 (9.82) | 3652.06 (8.63) | 3663.91 (20.98) |\n| Walker2d | 3768.79 (18.68) | 3965.63 (9.46) | 3963.57 (6.73) | 3966.96 (3.39) | 3982.79 (3.15) |\n| Reacher | -5.79 (0.73) | -3.04 (0.04) | -3.23 (0.26) | -3.45 (0.32) | -2.66 (0.03) |\n| HalfCheetah | 2024.09 (28.34) | 2133.31 (4.11) | 2128.04 (0.91) | 2085.28 (1.92) | 2138.89 (3.22) |\n| Selfish Mining | 14.36 (0.24) | 14.93 (0.45) | 14.88 (0.51) | 14.53 (0.33) | 16.56 (0.63) |\n| Cage Challenge 2 | -23.64 (0.27) | -23.58 (0.37) | -22.97 (0.57) | -26.98 (0.84) | -20.02 (0.32) |\n| Auto Driving | 10.30 (2.25) | 13.37 (3.10) | 11.26 (3.66) | 7.62 (1.77) | 17.03 (1.65) |\n| Malware Mutation | 42.20 (6.86) | 49.33 (8.59) | 43.10 (7.24) | 50.13 (8.14) | 57.53 (8.71) |\n\n## Group 2: Fix Refining Method (Ours); Vary Explanation Methods\n\n| Task | Random | StateMask | Ours |\n|------|--------|-----------|------|\n| Hopper | 3648.98 (39.06) | 3661.86 (19.95) | 3663.91 (20.98) |\n| Walker2d | 3969.64 (6.38) | 3982.67 (5.55) | 3982.79 (3.15) |\n| Reacher | -3.11 (0.42) | -2.69 (0.28) | -2.66 (0.03) |\n| HalfCheetah | 2132.01 (0.76) | 2136.23 (0.49) | 2138.89 (3.22) |\n| Selfish Mining | 15.09 (0.28) | 16.49 (0.46) | 16.56 (0.63) |\n| Cage Challenge 2 | -25.94 (2.34) | -20.07 (1.33) | -20.02 (0.32) |\n| Auto Driving | 11.72 (1.77) | 16.28 (2.33) | 17.03 (1.65) |\n| Malware Mutation | 48.60 (7.60) | 57.16 (8.51) | 57.53 (8.71) |\n"}, {"id": "Table 1 (alternate transcription)", "caption": "Table 1: Agent Refining Performance — alternate transcription of the same Table 1 (Section 4.3), evidence/tables/table1_refining_performance.md.", "markdown": "**Conditions**: All refining runs use per-environment hyperparameters from Table 3; 3 random seeds per condition.\n\n## Group 1: Fix Explanation (RICE's Optimized StateMask); Vary Refine Methods\n\n| Task | No Refine | PPO | JSRL | StateMask-R | Ours (RICE) |\n|------|-----------|-----|------|-------------|-------------|\n| Hopper | 3559.44 (19.15) | 3638.75 (16.67) | 3635.08 (9.82) | 3652.06 (8.63) | 3663.91 (20.98) |\n| Walker2d | 3768.79 (18.68) | 3965.63 (9.46) | 3963.57 (6.73) | 3966.96 (3.39) | 3982.79 (3.15) |\n| Reacher | -5.79 (0.73) | -3.04 (0.04) | -3.23 (0.26) | -3.45 (0.32) | -2.66 (0.03) |\n| HalfCheetah | 2024.09 (28.34) | 2133.31 (4.11) | 2128.04 (0.91) | 2085.28 (1.92) | 2138.89 (3.22) |\n| Selfish Mining | 14.36 (0.24) | 14.93 (0.45) | 14.88 (0.51) | 14.53 (0.33) | 16.56 (0.63) |\n| Cage Challenge 2 | -23.64 (0.27) | -23.58 (0.37) | -22.97 (0.57) | -26.98 (0.84) | -20.02 (0.32) |\n| Auto Driving | 10.30 (2.25) | 13.37 (3.10) | 11.26 (3.66) | 7.62 (1.77) | 17.03 (1.65) |\n| Malware Mutation | 42.20 (6.86) | 49.33 (8.59) | 43.10 (7.24) | 50.13 (8.14) | 57.53 (8.71) |\n\n## Group 2: Fix Refine (RICE); Vary Explanation Methods\n\n| Task | Random | StateMask | Ours (RICE) |\n|------|--------|-----------|-------------|\n| Hopper | 3648.98 (39.06) | 3661.86 (19.95) | 3663.91 (20.98) |\n| Walker2d | 3969.64 (6.38) | 3982.67 (5.55) | 3982.79 (3.15) |\n| Reacher | -3.11 (0.42) | -2.69 (0.28) | -2.66 (0.03) |\n| HalfCheetah | 2132.01 (0.76) | 2136.23 (0.49) | 2138.89 (3.22) |\n| Selfish Mining | 15.09 (0.28) | 16.49 (0.46) | 16.56 (0.63) |\n| Cage Challenge 2 | -25.94 (2.34) | -20.07 (1.33) | -20.02 (0.32) |\n| Auto Driving | 11.72 (1.77) | 16.28 (2.33) | 17.03 (1.65) |\n| Malware Mutation | 48.60 (7.60) | 57.16 (8.51) | 57.53 (8.71) |\n"}]}, "concepts": ["StateMask", "Critical State"]}, {"id": "N07", "type": "experiment", "parent": "N06", "title": "Can original StateMask objective be simplified for faster training?", "body": "Theorem 3.3: η(π̄) ≤ η(π) under Assumption 3.1. So J(θ) = min|η(π)-η(π̄)| simplifies to J(θ) = max η(π̄), enabling vanilla PPO training. 16.8% average speedup (Table 4).", "thinking": "The original StateMask explanation method is expensive to train because it needs primal-dual optimization to estimate returns under both the real and the perturbed policy. The team asked whether this objective could be simplified. They proved (Theorem 3.3) that under the assumption the pretrained policy beats a random one, the perturbed policy's return can never exceed the original policy's return, which means the original min-difference objective collapses to simply maximizing the perturbed policy's return, something vanilla PPO can optimize directly. This simplification cuts training time by 16.8% on average across the 8 environments without needing the expensive dual estimation.", "why": [{"id": "C03", "title": "Optimized StateMask Has Comparable Fidelity to Original StateMask with ~16.8% Faster Training", "statement": "The simplified mask network (J(θ) = max η(π̄) + blinding bonus R′ = R + α·am_t, trained with vanilla PPO) achieves fidelity scores statistically comparable to original StateMask across all 8 environments and K ∈ {10%, 20%, 30%, 40%}, while reducing average mask network training time by 16.8%.", "status": "supported", "falsification": "If fidelity scores differ significantly between the two methods, or if no time reduction is observed.", "dependencies": []}], "verified_by": [{"id": "E01", "title": "Fidelity and Efficiency of Optimized StateMask vs Original StateMask", "setup": "Model: Pre-trained PPO policy for each of the 8 environments. Hardware: 8 NVIDIA A100 GPUs. Dataset: 500 trajectories per environment, 3 random seeds. System: Fixed number of training samples per environment (see Table 4: 3×10^5 for MuJoCo games, 1.5×10^6 for Selfish Mining, 1×10^7 for CAGE, 2,443,260 for Auto Driving, 32,349 for Malware).", "metrics": "Fidelity score (higher = better); training time in seconds for fixed sample budget. Expected: optimized StateMask fidelity comparable to original StateMask, both outperform Random; optimized StateMask trains noticeably faster across all environments."}], "result": {"tables": [{"id": "Table 4", "caption": "Table 4: Efficiency Comparison When Training the Mask Network (Table 4, Appendix C.3) — \"Efficiency comparison when training the mask network. We report the number of seconds when training the mask using a fixed number of samples.\"", "markdown": "| Method | Hopper | Walker2d | Reacher | HalfCheetah | Selfish | Cage | Auto | Malware |\n|--------|--------|----------|---------|-------------|---------|------|------|---------|\n| Num. of samples | 3×10^5 | 3×10^5 | 3×10^5 | 3×10^5 | 1.5×10^6 | 1×10^7 | 2443260 | 32349 |\n| StateMask (seconds) | 15393 | 2240 | 8571 | 1579 | 9520 | 79382 | 109802 | 50775 |\n| Ours (seconds) | 12426 | 1899 | 7033 | 1317 | 8360 | 65400 | 88761 | 41340 |\n\n**Derived Statistic**: Average time reduction = 16.8% (computed across all 8 environments, reported in §4.3)\n\n**Individual speedups:**\n- Hopper: (15393-12426)/15393 = 19.3%\n- Walker2d: (2240-1899)/2240 = 15.2%\n- Reacher: (8571-7033)/8571 = 17.9%\n- HalfCheetah: (1579-1317)/1579 = 16.6%\n- Selfish Mining: (9520-8360)/9520 = 12.2%\n- Cage Challenge 2: (79382-65400)/79382 = 17.6%\n- Auto Driving: (109802-88761)/109802 = 19.2%\n- Malware Mutation: (50775-41340)/50775 = 18.6%\n"}]}, "concepts": ["StateMask"], "built_on": [{"rw_id": "RW01", "name": "Cheng et al., 2023 (StateMask)", "relation_raw": "extends"}, {"rw_id": "RW05", "name": "Schulman et al., 2017 (PPO)", "relation_raw": "imports"}], "rejected_here": [], "artifact": [{"name": "mask_network.py", "pointer": "src/execution/mask_network.py", "what": "MaskNet training (Algorithm 1): implements the simplified J(θ) = max η(π̄) objective and modified reward R' = R + α·a^m_t trained with vanilla PPO, replacing the original primal-dual optimization."}]}, {"id": "N08", "type": "dead_end", "parent": "N07", "title": "Naive max η(π̄) leads to trivial solution (never blind)", "body": "Hypothesis: Simply maximizing η(π̄) via PPO would learn to identify critical steps. Failure mode: The optimal solution to max η(π̄) without constraints is to never blind the agent (always output a^m=0), since blinding can only decrease reward. Mask network degenerates to identity. Lesson: Need explicit incentive to blind. Solution: add bonus reward +α·a^m_t when mask outputs 1. Led to the modified reward formulation (N09).", "thinking": "Naively maximizing the perturbed policy's return, as the simplified objective now called for, has an obvious failure mode: since blinding the agent (randomizing its action) can only ever hurt the perturbed policy's return, the optimizer's easiest path is to never blind at all, i.e. always keep a^m=0. The mask network degenerates into the identity function and stops identifying anything as non-critical. The fix needed was an explicit incentive for the network to blind sometimes, which led directly to adding a small blinding bonus to the reward (N09).", "concepts": []}, {"id": "N09", "type": "decision", "parent": "N07", "title": "Add blinding bonus α·a^m to prevent trivial solution", "body": "R'(s,a) = R(s,a) + α·a^m_t where α=0.0001 (all environments). alternatives: Constraint-based approach: enforce minimum blinding rate — more complex to implement; Entropy regularization: add entropy bonus to mask distribution", "thinking": "To stop the mask network from collapsing to 'never blind', the team added a small bonus reward, α times the blinding action, so that outputting a^m=1 (blind) is no longer strictly penalized. They compared this to two alternatives: a hard constraint enforcing a minimum blinding rate, which is more complex to implement, and an entropy bonus over the mask distribution. The simple additive bonus was adopted, with α set to a conservative 0.0001 for every environment. Figure 9 confirms the resulting fidelity scores barely change across α values of 0.01, 0.001, and 0.0001, so the exact value doesn't matter much, and Table 4 shows the approach still delivers the 16.8% training speedup.", "result": {"tables": [{"id": "Figure 9", "caption": "Figure 9: Sensitivity of Hyperparameter α (Fidelity Scores) (Figure 9, Appendix C.3) — \"We vary the hyper-parameter α from {0.01, 0.001, 0.0001} and record the fidelity scores of the mask network trained under different settings of α.\" Data-only transcription; values marked ≈ are best-effort estimates.", "markdown": "**Axes**: X = Top-K percentage ∈ {Top10, Top20, Top30, Top40}; Y = Fidelity score; separate bars/lines for α ∈ {0.01, 0.001, 0.0001}\n**Note**: All three α values yield similar fidelity scores, demonstrating low sensitivity.\n\n## Hopper\n| Top-K | α=0.01 | α=0.001 | α=0.0001 |\n|-------|--------|---------|----------|\n| Top10 | ≈0.8 | ≈0.75 | ≈0.78 |\n| Top20 | ≈0.6 | ≈0.58 | ≈0.61 |\n| Top30 | ≈0.45 | ≈0.43 | ≈0.45 |\n| Top40 | ≈0.30 | ≈0.28 | ≈0.30 |\n\n## Walker2d\n| Top-K | α=0.01 | α=0.001 | α=0.0001 |\n|-------|--------|---------|----------|\n| Top10 | ≈0.85 | ≈0.83 | ≈0.85 |\n| Top20 | ≈0.62 | ≈0.60 | ≈0.63 |\n| Top30 | ≈0.48 | ≈0.46 | ≈0.48 |\n| Top40 | ≈0.32 | ≈0.31 | ≈0.33 |\n\n## Reacher\n| Top-K | α=0.01 | α=0.001 | α=0.0001 |\n|-------|--------|---------|----------|\n| Top10 | ≈0.65 | ≈0.63 | ≈0.65 |\n| Top20 | ≈0.50 | ≈0.48 | ≈0.50 |\n| Top30 | ≈0.38 | ≈0.36 | ≈0.38 |\n| Top40 | ≈0.25 | ≈0.24 | ≈0.25 |\n\n## HalfCheetah\n| Top-K | α=0.01 | α=0.001 | α=0.0001 |\n|-------|--------|---------|----------|\n| Top10 | ≈0.90 | ≈0.88 | ≈0.90 |\n| Top20 | ≈0.70 | ≈0.68 | ≈0.70 |\n| Top30 | ≈0.52 | ≈0.50 | ≈0.52 |\n| Top40 | ≈0.38 | ≈0.36 | ≈0.38 |\n\n## Selfish Mining\n| Top-K | α=0.01 | α=0.001 | α=0.0001 |\n|-------|--------|---------|----------|\n| Top10 | ≈1.80 | ≈1.75 | ≈1.80 |\n| Top20 | ≈1.40 | ≈1.38 | ≈1.40 |\n| Top30 | ≈1.10 | ≈1.08 | ≈1.10 |\n| Top40 | ≈0.85 | ≈0.83 | ≈0.85 |\n\n## Cage Challenge 2\n| Top-K | α=0.01 | α=0.001 | α=0.0001 |\n|-------|--------|---------|----------|\n| Top10 | ≈2.20 | ≈2.15 | ≈2.20 |\n| Top20 | ≈1.80 | ≈1.75 | ≈1.80 |\n| Top30 | ≈1.50 | ≈1.48 | ≈1.50 |\n| Top40 | ≈1.20 | ≈1.18 | ≈1.20 |\n\n## Autonomous Driving\n| Top-K | α=0.01 | α=0.001 | α=0.0001 |\n|-------|--------|---------|----------|\n| Top10 | ≈1.30 | ≈1.28 | ≈1.30 |\n| Top20 | ≈1.00 | ≈0.98 | ≈1.00 |\n| Top30 | ≈0.78 | ≈0.76 | ≈0.78 |\n| Top40 | ≈0.58 | ≈0.56 | ≈0.58 |\n\n## Malware Mutation\n| Top-K | α=0.01 | α=0.001 | α=0.0001 |\n|-------|--------|---------|----------|\n| Top10 | ≈0.92 | ≈0.90 | ≈0.92 |\n| Top20 | ≈0.72 | ≈0.70 | ≈0.72 |\n| Top30 | ≈0.55 | ≈0.53 | ≈0.55 |\n| Top40 | ≈0.40 | ≈0.38 | ≈0.40 |\n"}, {"id": "Table 4", "caption": "Table 4: Efficiency Comparison When Training the Mask Network (Table 4, Appendix C.3) — \"Efficiency comparison when training the mask network. We report the number of seconds when training the mask using a fixed number of samples.\"", "markdown": "| Method | Hopper | Walker2d | Reacher | HalfCheetah | Selfish | Cage | Auto | Malware |\n|--------|--------|----------|---------|-------------|---------|------|------|---------|\n| Num. of samples | 3×10^5 | 3×10^5 | 3×10^5 | 3×10^5 | 1.5×10^6 | 1×10^7 | 2443260 | 32349 |\n| StateMask (seconds) | 15393 | 2240 | 8571 | 1579 | 9520 | 79382 | 109802 | 50775 |\n| Ours (seconds) | 12426 | 1899 | 7033 | 1317 | 8360 | 65400 | 88761 | 41340 |\n\n**Derived Statistic**: Average time reduction = 16.8% (computed across all 8 environments, reported in §4.3)\n\n**Individual speedups:**\n- Hopper: (15393-12426)/15393 = 19.3%\n- Walker2d: (2240-1899)/2240 = 15.2%\n- Reacher: (8571-7033)/8571 = 17.9%\n- HalfCheetah: (1579-1317)/1579 = 16.6%\n- Selfish Mining: (9520-8360)/9520 = 12.2%\n- Cage Challenge 2: (79382-65400)/79382 = 17.6%\n- Auto Driving: (109802-88761)/109802 = 19.2%\n- Malware Mutation: (50775-41340)/50775 = 18.6%\n"}]}, "concepts": [], "artifact": [{"name": "mask_network.py", "pointer": "src/execution/mask_network.py", "what": "compute_mask_reward() implements the modified reward R'(s,a) = R(s,a) + α·a^m_t with the blinding bonus α described in this decision."}, {"name": "training.md", "pointer": "src/configs/training.md", "what": "Documents the α (mask network blinding bonus) hyperparameter, fixed at 0.0001 for all environments."}]}, {"id": "N10", "type": "experiment", "parent": "N09", "depends_on": ["N06"], "title": "Verify Lemma 3.5: MaskNet sampling ≡ sampling from better policy ˆπ", "body": "Proved: d^ˆπ_ρ(s,a) = d^π_ρ(s,a)·w(s,a) where w(s,a) ∝ Q^π(s,a). This reweighting corresponds to a policy ˆπ with η(ˆπ) ≥ η(π). Combined with Assumption 3.4, proves the distribution mismatch coefficient ||d^π*/d^ˆπ_ρ||∞ &lt; ||d^π*/d^π_ρ||∞.", "thinking": "This step supplies the theoretical backbone connecting the mask network to the refining guarantee. The team proved that sampling states weighted by the mask network's importance scores is mathematically equivalent to sampling from the state distribution of a strictly better policy π̂ than the original, because the reweighting factor is proportional to the policy's own advantage/Q-values. Combined with the assumption that a better policy has a smaller distribution-mismatch coefficient, this shows that mixing in mask-selected critical states tightens the sub-optimality bound more than mixing in randomly chosen states would. This result depends on the earlier choice to use explanation-guided state selection (N06), which is why it is explicitly cross-linked to that decision.", "why": [{"id": "C01", "title": "RICE Achieves a Tighter Sub-Optimality Bound via Explanation-Guided Mixed Distribution", "statement": "The RICE refining method, using MaskNet-identified critical states in a mixed initial distribution µ(s) = β·dˆπρ(s) + (1−β)ρ(s), achieves a tighter upper bound on the sub-optimality gap V^π*(ρ) − V^π′(ρ) than random-explanation-based mixed distribution.", "status": "supported", "falsification": "If the distribution mismatch coefficient ||dπ*/dˆπρ||∞ is not smaller than ||dπ*/dπρ||∞, or if RICE's performance improvement over the random baseline is not statistically significant.", "dependencies": []}], "verified_by": [{"id": "E01", "title": "Fidelity and Efficiency of Optimized StateMask vs Original StateMask", "setup": "Model: Pre-trained PPO policy for each of the 8 environments. Hardware: 8 NVIDIA A100 GPUs. Dataset: 500 trajectories per environment, 3 random seeds. System: Fixed number of training samples per environment (see Table 4: 3×10^5 for MuJoCo games, 1.5×10^6 for Selfish Mining, 1×10^7 for CAGE, 2,443,260 for Auto Driving, 32,349 for Malware).", "metrics": "Fidelity score (higher = better); training time in seconds for fixed sample budget. Expected: optimized StateMask fidelity comparable to original StateMask, both outperform Random; optimized StateMask trains noticeably faster across all environments."}, {"id": "E03", "title": "Impact of Explanation Quality on Refining Performance", "setup": "Model: Same as E02, fixed refining method = RICE/Ours. Hardware: 8 NVIDIA A100 GPUs. Dataset: All 8 environments. System: Fixed refining method (RICE Algorithm 2) with hyperparameters from Table 3; vary explanation method (Random, original StateMask, optimized StateMask/Ours).", "metrics": "Final episode reward (mean ± std); same as E02. Expected: refining with Ours explanation achieves the highest final reward; original StateMask explanation is close to Ours; Random explanation significantly underperforms both, validating Claim 1 (better explanation → smaller mismatch coefficient → better refining)."}], "concepts": ["Distribution Mismatch Coefficient", "Critical State", "Sub-Optimality Gap"], "built_on": [{"rw_id": "RW01", "name": "Cheng et al., 2023 (StateMask)", "relation_raw": "extends"}, {"rw_id": "RW03", "name": "Kakade & Langford, 2002", "relation_raw": "imports"}, {"rw_id": "RW06", "name": "Chang et al., 2023 (PPO++)", "relation_raw": "baseline"}], "rejected_here": [{"rw_id": "RW07", "name": "Agarwal et al., 2022 (Reincarnating RL)", "relation_raw": "bounds"}]}, {"id": "N11", "type": "decision", "parent": "N10", "title": "Add RND exploration from mixed initial states", "body": "R'(s,a) = R(s,a) + λ·|f(s')-f̂(s')|² with λ=0.01 as default. alternatives: Goal-conditional RL exploration (Ren et al., 2019): requires goal specification; Count-based exploration: impractical in large/continuous state spaces; No exploration (fine-tuning only): insufficient for escaping local optima", "thinking": "Mixing in critical states solves the overfitting problem but doesn't by itself give the agent new places to explore beyond what it already knows. To add genuine exploration, the team layered a Random Network Distillation bonus on top of the mixed-distribution refining, rewarding the agent extra for visiting states its predictor network cannot yet predict well, using λ=0.01 as the default weight. This was chosen over goal-conditioned exploration, which needs explicit goals to be specified, and count-based exploration, which is impractical once the state space is large or continuous. Figure 8 shows any λ greater than zero helps, and on the malware task, adding this exploration bonus on top of the mixed distribution takes evasion from 58.4% to 68.2%.", "result": {"tables": [{"id": "Figure 8", "caption": "Figure 8: Sensitivity of Hyperparameter λ Across All Applications (Figure 8, Appendix C.3) — \"We vary the hyper-parameter λ from {0.1, 0.01, 0.001} and record the performance of the agent after refining. A smaller choice of λ means a smaller reward bonus for exploration.\" Data-only transcription; values marked ≈ are best-effort estimates.", "markdown": "**Axes**: X = p value ∈ {0, 0.25, 0.5, 0.75, 1.0}; Y = Performance; separate curves for p ∈ {0, 0.25, 0.5, 0.75, 1.0}\n**Note**: The figure shows performance as a function of p for each value of λ. Key observation: any λ > 0 provides improvement; λ=0.01 generally best (except Selfish Mining).\n\n## Hopper (Y-axis range ≈ 3650–3665)\n| λ | p=0 | p=0.25 | p=0.5 | p=0.75 | p=1.0 |\n|---|-----|--------|-------|--------|-------|\n| 0.1 | ≈3645 | ≈3661 | ≈3658 | ≈3650 | ≈3647 |\n| 0.01 | ≈3648 | ≈3663 | ≈3660 | ≈3655 | ≈3652 |\n| 0.001 | ≈3646 | ≈3660 | ≈3659 | ≈3653 | ≈3650 |\n\n## Walker2d (Y-axis range ≈ 3965–3980)\n| λ | p=0.25 (best) |\n|---|---------------|\n| 0.1 | ≈3979 |\n| 0.01 | ≈3980 |\n| 0.001 | ≈3978 |\n\n## Reacher (Y-axis range ≈ -4.0 to -2.5)\n| λ | p=0.5 (best) |\n|---|--------------|\n| 0.1 | ≈-2.8 |\n| 0.01 | ≈-2.7 |\n| 0.001 | ≈-2.8 |\n\n## HalfCheetah (Y-axis range ≈ 2110–2140)\n| λ | p=0.5 (best) |\n|---|--------------|\n| 0.1 | ≈2135 |\n| 0.01 | ≈2138 |\n| 0.001 | ≈2134 |\n\n## Selfish Mining (Y-axis range ≈ 15.0–16.5)\n| λ | p=0.25 (best) |\n|---|---------------|\n| 0.1 | ≈16.1 |\n| 0.01 | ≈16.4 |\n| 0.001 | ≈16.5 |\n\n## Cage Challenge 2 (less negative = better)\n| λ | p=0.5 (best) |\n|---|--------------|\n| 0.1 | ≈-21.0 |\n| 0.01 | ≈-20.2 |\n| 0.001 | ≈-20.5 |\n\n## Safe Driving (Autonomous Driving)\n| λ | p=0.25 (best) |\n|---|---------------|\n| 0.1 | ≈16.5 |\n| 0.01 | ≈17.0 |\n| 0.001 | ≈16.8 |\n\n## Malware Mutation (Y-axis range ≈ 47.5–57.5)\n| λ | p=0.5 (best) |\n|---|--------------|\n| 0.1 | ≈56.0 |\n| 0.01 | ≈57.5 |\n| 0.001 | ≈57.0 |\n"}, {"id": "Table 7", "caption": "Table 7: Malware Mutation Case Study (Table 7, Appendix D.1) — \"We evaluate the evasion probability of the agent under different settings and count the corresponding action frequencies.\"", "markdown": "**Metric**: Evasion probability (%) over 500 test runs; Action Frequency counts top actions taken.\n\n| Refine Setting | Test Setting | Action Frequency | Evasion |\n|----------------|-------------|-----------------|---------|\n| Original agent w/o refinement | From default initial S | {A4: 4914, A9: 5} | 33.8% |\n| Continue training (PPO fine-tuning) | From default initial S | {A4: 2590, A7: 55, A1: 99, A9: 95} | 38.8% |\n| Refine from critical states (StateMask-R) | From critical states | {A12: 2546, A5: 138, A4: 32, A9: 8} | 50.8% |\n| Refine from critical states (StateMask-R) | From default initial S | {A12: 4728, A5: 62} | 36.2% |\n| Refine from mixed initial state dist. | From default initial S | {A4: 1563, A12: 1135, A5: 332, A6: 12} | 58.4% |\n| Refine from mixed initial state dist. + exploration | From default initial S | {A5: 2448, A7: 165, A12: 138, A4: 6} | 68.2% |\n\n**Action Key (from Table 2, Appendix):**\n- A1: \"modify machine type\"\n- A4: \"add bytes to section cave\"\n- A5: \"add section strings\"\n- A6: \"add section benign data\"\n- A7: \"add strings to overlay\"\n- A9: \"add imports\"\n- A12: \"modify timestamp\"\n\n**Additional Result (Appendix D.2 — Fixed Reward Design):**\n- Evasion probability with FIXED reward design (Markovian + ×3 scaling): 72.0%\n- (vs. 42.2% with original buggy reward design under same conditions)\n- Original pre-trained agent performance (Table 1): 42.20% (matches paper)\n"}, {"id": "Table 2", "caption": "Table 2: Action Set of the MalConv Gym Environment (Table 2, Appendix C.2). Companion reference table for Table 7 (Malware Mutation Case Study) — defines the action indices A0–A15 used there.", "markdown": "**Conditions**: 16 possible mutation actions for PE malware files; reward of 10 for successful evasion; maximum 10 steps per episode.\n\n| Action Index | Action Meaning |\n|-------------|----------------|\n| 0 | \"modify machine type\" |\n| 1 | \"pad overlay\" |\n| 2 | \"append benign data overlay\" |\n| 3 | \"append benign binary overlay\" |\n| 4 | \"add bytes to section cave\" |\n| 5 | \"add section strings\" |\n| 6 | \"add section benign data\" |\n| 7 | \"add strings to overlay\" |\n| 8 | \"add imports\" |\n| 9 | \"rename section\" |\n| 10 | \"remove debug\" |\n| 11 | \"modify optional header\" |\n| 12 | \"modify timestamp\" |\n| 13 | \"break optional header checksum\" |\n| 14 | \"upx unpack\" |\n| 15 | \"upx pack\" |\n"}]}, "concepts": [], "artifact": [{"name": "rice_refine.py", "pointer": "src/execution/rice_refine.py", "what": "RNDModule class and rice_refining_step(): implements the RND exploration bonus R'(s,a) = R(s,a) + λ·|f(s')-f̂(s')|² added on top of the mixed-distribution refining loop (Algorithm 2)."}, {"name": "rnd_model.py", "pointer": "src/execution/rnd_model.py", "what": "RNDModel: target/predictor network pair and running-mean-std normalization implementing the RND intrinsic reward used by this decision."}, {"name": "rnd.py", "pointer": "src/execution/rnd.py", "what": "Alternate RND module implementation (RNDTargetNetwork/RNDPredictorNetwork) with running-statistics normalization for the same exploration bonus."}, {"name": "training.md", "pointer": "src/configs/training.md", "what": "Documents the per-environment λ (RND exploration bonus weight) hyperparameter values this decision introduces."}]}, {"id": "N12", "type": "experiment", "parent": "N11", "title": "Validate RICE generalizes to non-PPO pretrained agents (Experiment IV)", "body": "SAC pre-trained Hopper agent refined via GAIL+RICE outperforms SAC fine-tuning, PPO fine-tuning, JSRL, StateMask-R. Switching to PPO-based refining also helps escape bottleneck even without RICE.", "thinking": "The final step tested whether the whole RICE pipeline still works when the pretrained agent was not trained with PPO in the first place. Starting from a SAC-pretrained Hopper agent, the team used GAIL (imitation learning) to distill it into a PPO-compatible policy, then applied the same RICE refining loop. The refined agent beat SAC fine-tuning, PPO fine-tuning, JSRL, and StateMask-R alike. Interestingly, even without RICE's own contributions, just switching from continuing SAC training to PPO-based refining already helped escape the training bottleneck, showing that RICE's benefits are not tied to any specific pretraining algorithm.", "why": [{"id": "C06", "title": "RICE Generalizes to Non-PPO Pretrained Agents via GAIL Transfer", "statement": "RICE can refine a pre-trained SAC agent (after GAIL imitation learning to obtain a PPO-compatible policy) and achieves higher reward than PPO fine-tuning, JSRL, StateMask-R, and SAC fine-tuning baselines in the Hopper environment.", "status": "supported", "falsification": "RICE fails to outperform SAC fine-tuning or the other PPO-based baselines when applied to a GAIL-imitated SAC policy.", "dependencies": ["C02"]}], "verified_by": [{"id": "E04", "title": "Generalization to Non-PPO Pretrained Agents (SAC + GAIL)", "setup": "Model: SAC agent pre-trained on Hopper-v3; GAIL policy network approximating the SAC agent. Hardware: 8 NVIDIA A100 GPUs. Dataset: MuJoCo Hopper-v3 (dense reward). System: Pre-train SAC for 1M steps; apply GAIL to obtain PPO-compatible policy; refine for 1M steps.", "metrics": "Episode reward (mean) throughout refining; final reward at 1M refining steps. Expected: RICE achieves the highest reward among all refining methods by the end of refining; PPO fine-tuning outperforms SAC fine-tuning; SAC fine-tuning also shows training bottleneck behavior."}], "result": {"tables": [{"id": "Figure 3", "caption": "Figure 3: SAC Agent Refining Performance in Hopper Game (Figure 3, Section 4.3) — \"In the left part, we show the training curve of obtaining a pre-trained policy through the SAC algorithm. In the right part, we show the refining curves of different methods.\" Data-only transcription; values marked ≈ are best-effort estimates.", "markdown": "**Axes**: X = Training Step (1e6), Y = Reward; Left part: 0–1M steps (pre-training); Right part: 0–1M steps (refining)\n\n## Pre-training Phase (Left — SAC, 0 to 1M steps)\n| Training Step | SAC Agent Reward |\n|---------------|-----------------|\n| 0 | ≈0 |\n| 200K | ≈1000 |\n| 500K | ≈2500 |\n| 750K | ≈3200 |\n| 1M | ≈3300 (plateau/bottleneck) |\n\n## Refining Phase (Right — 0 to 1M additional steps)\n| Method | ~0 steps | ~250K steps | ~500K steps | ~1M steps (final) |\n|--------|----------|-------------|-------------|-------------------|\n| Ours (RICE) | ≈3300 | ≈3500 | ≈3700 | ≈3900 |\n| PPO fine-tuning | ≈3300 | ≈3450 | ≈3550 | ≈3650 |\n| StateMask-R | ≈3300 | ≈3400 | ≈3450 | ≈3500 |\n| JSRL | ≈3300 | ≈3350 | ≈3400 | ≈3450 |\n| SAC fine-tuning | ≈3300 | ≈3250 | ≈3200 | ≈3200 (bottleneck) |\n"}, {"id": "Figure 3 (alternate transcription)", "caption": "Figure 3: SAC Agent Refining Performance in Hopper Game — alternate, more detailed transcription of the same Figure 3 (Section 4.3), evidence/figures/figure3_sac_refining.md.", "markdown": "**Axis labels**: X: Training Step (1e6 units, total 2M steps shown: 1M pretrain + 1M refine); Y: Reward\n**Conditions**: Hopper-v3 dense reward; SAC pre-trained for 1M steps; refining for 1M steps; 3 seeds\n\n## Left Panel: SAC Pre-training (0 to 1M steps)\n| Checkpoint | Approx. Reward |\n|-----------|----------------|\n| 0 steps | ≈0 |\n| 500K steps | ≈2000 |\n| 1M steps | ≈3200-3500 (reaches bottleneck) |\n\n## Right Panel: Refining (1M to 2M steps)\n| Method | Approx. Final Reward (at 2M steps) | Qualitative description |\n|--------|-------------------------------------|------------------------|\n| Ours (RICE) | ≈3800-4000 | Highest final reward; breaks through SAC bottleneck |\n| PPO fine-tuning | ≈3500-3700 | Moderate improvement; better than SAC fine-tuning |\n| StateMask-R | ≈3300-3500 | Limited improvement; near pre-training level |\n| JSRL | ≈3400-3600 | Moderate improvement |\n| SAC fine-tuning | ≈3200-3400 | Stays at bottleneck; minimal improvement |\n\n**Note**: All values are approximate visual readings from Figure 3 (line plot). Exact values not given in paper. Paper states: \"RICE achieves higher rewards than the other refining methods when refining a pretrained SAC agent\"; \"fine-tuning the DRL agent with the SAC algorithm still suffers from the training bottleneck while switching to the PPO algorithm provides an opportunity to break through the bottleneck.\" Mark all as ≈.\n"}]}, "concepts": ["StateMask"], "built_on": [{"rw_id": "RW09", "name": "Ho & Ermon, 2016 (GAIL)", "relation_raw": "imports"}], "rejected_here": [], "artifact": [{"name": "rice_refine.py", "pointer": "src/execution/rice_refine.py", "what": "RICE refining loop (Algorithm 2), reused unchanged to refine the GAIL-imitated PPO-compatible policy in this generalization experiment."}]}], "context": {"title": "Problem", "summary": "Selecting critical states via StateMask is equivalent to sampling from a better policy ˆπ (Lemma 3.5).", "sections": [{"role": "setting", "present": false}, {"role": "observations", "heading": "Observations", "present": true, "entries": [{"ent_id": "O1", "inferred_id": false, "ent_title": "DRL Agents Converge to Training Bottlenecks", "text": "DRL agents frequently become locally optimal and cease to improve further, making systematic errors or failing to complete final goals.", "unstructured": false, "fields": [{"label": "Statement", "value": "DRL agents frequently become locally optimal and cease to improve further, making systematic errors or failing to complete final goals."}, {"label": "Evidence", "value": "Motivating observation throughout §1; empirically demonstrated by pre-trained agents achieving plateaued rewards (Table 1, \"No Refine\" column)."}, {"label": "Implication", "value": "A refining strategy is needed — re-training from scratch is too costly for complex tasks."}], "refs": [{"raw": "Table 1", "kind": "figure", "target": null}]}, {"ent_id": "O2", "inferred_id": false, "ent_title": "Re-training from Scratch Is Prohibitively Expensive", "text": "For complex DRL tasks (e.g., AlphaStar/StarCraft), re-training exceeds one month with TPUs and can cost millions of dollars.", "unstructured": false, "fields": [{"label": "Statement", "value": "For complex DRL tasks (e.g., AlphaStar/StarCraft), re-training exceeds one month with TPUs and can cost millions of dollars."}, {"label": "Evidence", "value": "Cited in §1 (Vinyals et al., 2019; Agarwal et al., 2022)."}, {"label": "Implication", "value": "Any practical refining method must reuse the pre-trained policy rather than discard it."}], "refs": []}, {"ent_id": "O3", "inferred_id": false, "ent_title": "Fine-tuning Only from Critical States Causes Overfitting", "text": "Initializing refining exclusively from critical states (StateMask-R) degrades performance on default initial states due to distribution shift.", "unstructured": false, "fields": [{"label": "Statement", "value": "Initializing refining exclusively from critical states (StateMask-R) degrades performance on default initial states due to distribution shift."}, {"label": "Evidence", "value": "Table 7 (Malware Mutation case study): StateMask-R achieves 50.8% evasion from critical states but only 36.2% from default initial states (vs. 33.8% no-refine baseline). Appendix D."}, {"label": "Implication", "value": "Diversity in initial state distribution is necessary to prevent overfitting."}], "refs": [{"raw": "Table 7", "kind": "figure", "target": null}]}, {"ent_id": "O4", "inferred_id": false, "ent_title": "Random Exploration Frontiers Are Ineffective", "text": "JSRL's random selection of exploration frontiers does not guarantee frontiers with positive returns, leading to poor performance on complex tasks.", "unstructured": false, "fields": [{"label": "Statement", "value": "JSRL's random selection of exploration frontiers does not guarantee frontiers with positive returns, leading to poor performance on complex tasks."}, {"label": "Evidence", "value": "Table 1: JSRL underperforms RICE across all 8 environments; Figure 2 shows JSRL diverges or stagnates in sparse MuJoCo tasks."}, {"label": "Implication", "value": "Explanation-guided frontier selection is necessary for effective refining."}], "refs": [{"raw": "Table 1", "kind": "figure", "target": null}, {"raw": "Figure 2", "kind": "figure", "target": null}]}, {"ent_id": "O5", "inferred_id": false, "ent_title": "StateMask's Primal-Dual Optimization Is Computationally Costly", "text": "The original StateMask requires estimating discounted accumulated rewards under both the perturbed and original policies, incurring extra computation.", "unstructured": false, "fields": [{"label": "Statement", "value": "The original StateMask requires estimating discounted accumulated rewards under both the perturbed and original policies, incurring extra computation."}, {"label": "Evidence", "value": "Table 4: StateMask takes 15,393 sec vs. 12,426 sec for Ours on Hopper; 16.8% average time reduction."}, {"label": "Implication", "value": "The objective can be simplified (via Theorem 3.3) without sacrificing guarantees."}], "refs": [{"raw": "Table 4", "kind": "figure", "target": null}]}]}, {"role": "gaps", "heading": "Gaps", "present": true, "entries": [{"ent_id": "G1", "inferred_id": false, "ent_title": "No Principled Refining Strategy with Theoretical Guarantees", "text": "Existing refining strategies (PPO fine-tuning, StateMask-R, JSRL) lack formal sub-optimality bounds.", "unstructured": false, "fields": [{"label": "Statement", "value": "Existing refining strategies (PPO fine-tuning, StateMask-R, JSRL) lack formal sub-optimality bounds."}, {"label": "Caused by", "value": "O1, O2, O4"}, {"label": "Existing attempts", "value": "StateMask-R (critical state reset), JSRL (guided policy curriculum), PPO fine-tuning."}, {"label": "Why they fail", "value": "StateMask-R overfits (O3); JSRL uses random frontiers (O4); PPO fine-tuning trapped in local optima (Table 1)."}], "refs": [{"raw": "O1", "kind": "observation", "target": null}, {"raw": "O2", "kind": "observation", "target": null}, {"raw": "O4", "kind": "observation", "target": null}, {"raw": "O3", "kind": "observation", "target": null}, {"raw": "Table 1", "kind": "figure", "target": null}]}, {"ent_id": "G2", "inferred_id": false, "ent_title": "No Integration of Explanation Quality into Initial State Distribution", "text": "PPO++ (Chang et al., 2023) mixes default and visited states but treats all visited states equally — not all are informative.", "unstructured": false, "fields": [{"label": "Statement", "value": "PPO++ (Chang et al., 2023) mixes default and visited states but treats all visited states equally — not all are informative."}, {"label": "Caused by", "value": "O4"}, {"label": "Existing attempts", "value": "PPO++ constructs mixed distribution with random visited states."}, {"label": "Why they fail", "value": "Random states provide no guarantee of reducing distribution mismatch coefficient."}], "refs": [{"raw": "O4", "kind": "observation", "target": null}]}]}, {"role": "insight", "heading": "Key Insight", "present": true, "entries": [{"ent_id": "1", "inferred_id": true, "ent_title": "Selecting critical states via StateMask is equivalent to sampling from a better policy ˆπ", "text": "Selecting critical states via StateMask is equivalent to sampling from a better policy ˆπ (Lemma 3.5). Mixing these states with default initial states reduces the state distribution mismatch coefficient ||dπ*/dˆπρ||∞, which directly tightens the sub-optimality upper bound (Theorem 3.6). Combined with RND exploration from these frontiers, the agent escapes local optima.", "unstructured": false, "fields": [{"label": "Insight", "value": "Selecting critical states via StateMask is equivalent to sampling from a better policy ˆπ (Lemma 3.5). Mixing these states with default initial states reduces the state distribution mismatch coefficient ||dπ*/dˆπρ||∞, which directly tightens the sub-optimality upper bound (Theorem 3.6). Combined with RND exploration from these frontiers, the agent escapes local optima."}, {"label": "Derived from", "value": "O1, O3, O4"}, {"label": "Enables", "value": "A theoretically grounded mixed initial distribution that prevents overfitting while providing better exploration frontiers."}], "refs": [{"raw": "O1", "kind": "observation", "target": null}, {"raw": "O3", "kind": "observation", "target": null}, {"raw": "O4", "kind": "observation", "target": null}]}]}, {"role": "assumptions", "heading": "Assumptions", "present": true, "entries": [{"ent_id": "A1", "inferred_id": false, "ent_title": "Pre-trained policy strictly better than random", "text": "The pre-trained policy π performs strictly better than a random policy (Assumption 3.1: E_{a~πr}[Aπ(s,a)] ≤ 0, ∀s).", "unstructured": true, "fields": [], "refs": []}, {"ent_id": "A2", "inferred_id": false, "ent_title": "Warm-start state coverage", "text": "The pre-trained policy π covers all states visited by the optimal policy π* (Assumption 3.2: ||dπ*/dπρ||∞ ≤ C — warm-start assumption).", "unstructured": true, "fields": [], "refs": []}, {"ent_id": "A3", "inferred_id": false, "ent_title": "Superior policy has smaller mismatch coefficient", "text": "A superior policy ˆπ (η(ˆπ) ≥ η(π)) has a smaller distribution mismatch coefficient (Assumption 3.4: ||dπ*/dˆπ||∞ ≤ ||dπ*/dπ||∞).", "unstructured": true, "fields": [], "refs": []}, {"ent_id": "A4", "inferred_id": false, "ent_title": "Simulator-based environment", "text": "The environment is simulator-based (enabling state reset to arbitrary critical states).", "unstructured": true, "fields": [], "refs": []}]}]}, "glossary": {"title": "Concepts", "groups": [], "terms": [{"term_id": "G01", "name": "Markov Decision Process", "aliases": ["MDP"], "definition": "A tuple where $\\mathcal{S}$ is the state set, $\\mathcal{A}$ the action set, $P: \\mathcal{S} \\times \\mathcal{A} \\rightarrow \\Delta(\\mathcal{S})$ the transition function, $\\rho$ the initial state distribution, $R: \\mathcal{S} \\times \\mathcal{A} \\rightarrow \\mathbb{R}$ the reward function, and $\\gamma \\in (0,1)$ the discount factor.", "fields": [{"label": "Notation", "value": "$\\langle \\mathcal{S}, \\mathcal{A}, P, \\rho, R, \\gamma \\rangle$"}, {"label": "Boundary conditions", "value": "Assumes Markovian rewards and transitions. Non-Markovian reward designs (identified as a flaw in the Malware Mutation environment, Appendix D) violate this."}], "related": ["G02", "G03", "G04"]}, {"term_id": "G02", "name": "State Occupancy Distribution", "aliases": [], "definition": "The (1-γ)-discounted visitation frequency of state s under policy π starting from initial distribution ρ.", "fields": [{"label": "Notation", "value": "$d^\\pi_\\rho(s) = (1 - \\gamma) \\sum_{t=0}^{\\infty} \\gamma^t \\Pr^\\pi(s_t = s \\mid s_0 \\sim \\rho)$"}, {"label": "Boundary conditions", "value": "Defined for γ ∈ (0,1). In the limit γ→1 this approaches the stationary distribution."}], "related": ["G01", "G05"]}, {"term_id": "G03", "name": "Advantage Function", "aliases": [], "definition": "The advantage of taking action a at state s over following policy π, where $Q^\\pi(s,a) = \\mathbb{E}_\\pi[\\sum_{t=0}^\\infty \\gamma^t R(s_t,a_t) | s_0=s, a_0=a]$ and $V^\\pi(s) = \\mathbb{E}_\\pi[\\sum_{t=0}^\\infty \\gamma^t R(s_t,a_t) | s_0=s]$.", "fields": [{"label": "Notation", "value": "$A^\\pi(s, a) = Q^\\pi(s, a) - V^\\pi(s)$"}, {"label": "Boundary conditions", "value": "$\\mathbb{E}_{a \\sim \\pi(\\cdot|s)}[A^\\pi(s,a)] = 0$ by definition."}], "related": ["G04", "G02"]}, {"term_id": "G04", "name": "Sub-Optimality Gap", "aliases": [], "definition": "The difference in expected discounted return between the optimal policy π* and the refined policy π', both evaluated from the default initial distribution ρ.", "fields": [{"label": "Notation", "value": "$\\text{SubOpt} := V^{\\pi^*}(\\rho) - V^{\\pi'}(\\rho)$"}, {"label": "Boundary conditions", "value": "Upper-bounded in Theorem 3.6 as $O\\left(\\frac{\\varepsilon}{(1-\\gamma)^2} \\left\\| \\frac{d^{\\pi^*}}{d^{\\hat\\pi}_\\rho} \\right\\|_\\infty\\right)$ where ε bounds the one-step improvement $\\mathbb{E}_{s \\sim d^{\\pi'}}[\\max_a A^{\\pi'}(s,a)] &lt; \\varepsilon$."}], "related": ["G05", "G03"]}, {"term_id": "G05", "name": "Distribution Mismatch Coefficient", "aliases": [], "definition": "The worst-case ratio between the optimal policy's state visitation and that of policy π, measuring how well π covers the states important for π*.", "fields": [{"label": "Notation", "value": "$\\left\\| \\frac{d^{\\pi^*}}{d^\\pi_\\rho} \\right\\|_\\infty = \\sup_s \\frac{d^{\\pi^*}_\\rho(s)}{d^\\pi_\\rho(s)}$"}, {"label": "Boundary conditions", "value": "Requires $d^\\pi_\\rho(s) > 0$ whenever $d^{\\pi^*}_\\rho(s) > 0$ (Assumption 3.2, warm-start). Unbounded if the pre-trained policy has zero coverage of good states."}], "related": ["G04", "G02"]}, {"term_id": "G06", "name": "StateMask", "aliases": ["Original"], "definition": "A neural network policy that \"blinds\" the target agent at non-critical steps by replacing its action with a random action. The perturbed policy is $\\bar\\pi(a|s) = \\tilde\\pi(a^m=0|s)\\pi(a|s) + \\tilde\\pi(a^m=1|s)\\pi_r(a|s)$. Original objective: $J(\\theta) = \\min |\\eta(\\pi) - \\eta(\\bar\\pi)|$, optimized with primal-dual methods.", "fields": [{"label": "Notation", "value": "$\\tilde\\pi_\\theta$, mask network with binary action $a^m_t \\in \\{0, 1\\}$"}, {"label": "Boundary conditions", "value": "Assumes Assumption 3.1 (pre-trained policy better than random). A step with $a^m_t=0$ is critical (mask outputs 0 → action preserved); $a^m_t=1$ is non-critical (action randomized)."}], "related": ["G07", "G08", "G01"]}, {"term_id": "G07", "name": "Optimized StateMask", "aliases": ["RICE's Explanation Module"], "definition": "Simplified StateMask using objective $J(\\theta) = \\max \\eta(\\bar\\pi)$ (valid by Theorem 3.3 since $\\eta(\\bar\\pi) \\leq \\eta(\\pi)$ under Assumption 3.1). Adds blinding bonus α·am_t to prevent trivial solution (always outputting 0). Trained with vanilla PPO.", "fields": [{"label": "Notation", "value": "$\\tilde\\pi_\\theta$, trained with PPO; modified reward $R'(s_t, a_t) = R(s_t, a_t) + \\alpha \\cdot a^m_t$"}, {"label": "Boundary conditions", "value": "Same assumptions as StateMask. α is a sensitivity-low hyperparameter (values 0.01, 0.001, 0.0001 yield similar fidelity). Equivalent to StateMask in fidelity per Lemma 3.5."}], "related": ["G06", "G08"]}, {"term_id": "G08", "name": "Critical State", "aliases": [], "definition": "The state in trajectory τ where the mask network assigns highest importance score (probability of outputting 0, i.e., preserving the original action). Used as exploration frontier in RICE.", "fields": [{"label": "Notation", "value": "$s^* = \\arg\\max_{s_t \\in \\tau} \\tilde\\pi_\\theta(a^m=0 | s_t)$"}, {"label": "Boundary conditions", "value": "Only meaningful when the pre-trained policy satisfies Assumption 3.2 (good state coverage). In \"cold start\" scenarios (e.g., Mountain Car), no meaningful critical states exist."}], "related": ["G07", "G09"]}, {"term_id": "G09", "name": "Mixed Initial State Distribution", "aliases": [], "definition": "The mixture of the default initial distribution ρ and the critical-state distribution $d^{\\hat\\pi}_\\rho(s)$ from the MaskNet-based sampling. With probability p, the refining episode starts from a critical state; with probability (1-p) from the default initial state.", "fields": [{"label": "Notation", "value": "$\\mu(s) = \\beta \\cdot d^{\\hat\\pi}_\\rho(s) + (1-\\beta)\\rho(s)$; in code parameterized by reset probability $p$"}, {"label": "Boundary conditions", "value": "p=0 reduces to standard PPO fine-tuning; p=1 reduces to StateMask-R (overfits). Best performance at p ∈ {0.25, 0.5}."}], "related": ["G08", "G04"]}, {"term_id": "G10", "name": "Random Network Distillation (RND) Exploration Bonus", "aliases": [], "definition": "Intrinsic exploration reward based on the prediction error of a randomly initialized target network f by a trained predictor network $\\hat{f}$. Novel states produce higher prediction error, encouraging exploration of unseen states.", "fields": [{"label": "Notation", "value": "$R^{RND}(s_{t+1}) = |f(s_{t+1}) - \\hat{f}(s_{t+1})|^2$; total reward $R'(s_t,a_t) = R(s_t,a_t) + \\lambda \\cdot R^{RND}(s_{t+1})$"}, {"label": "Boundary conditions", "value": "As state coverage increases, RND bonus decays to zero and the task-reward-optimal policy is recovered. Count-based bonuses are impractical in large/continuous state spaces where RND is preferred. λ controls exploration-exploitation trade-off."}], "related": ["G09"]}], "lexicon": {"markov decision process": "G01", "mdp": "G01", "state occupancy distribution": "G02", "advantage function": "G03", "sub-optimality gap": "G04", "distribution mismatch coefficient": "G05", "statemask": "G06", "original": "G06", "optimized statemask": "G07", "rice's explanation module": "G07", "critical state": "G08", "mixed initial state distribution": "G09", "random network distillation (rnd) exploration bonus": "G10"}}, "dependencies": {"title": "Related Work / Dependencies", "preamble": "", "legend": [], "attribution": "", "footprint": [], "entries": [{"rw_id": "RW01", "inferred_id": false, "name": "Cheng et al., 2023 (StateMask)", "relation_raw": "extends", "relation_norm": "extends", "delta": "What changed: RICE simplifies StateMask's primal-dual objective to vanilla PPO with blinding bonus; adds mixed initial distribution and RND for refining instead of critical-state-only reset. Why: Primal-dual optimization is computationally expensive; critical-state-only reset causes overfitting.", "adopted": "Binary mask network architecture; state importance scoring via P(a^m=0|s); fidelity score metric definition.", "grounding": [{"raw": "Proc. NeurIPS 2023", "kind": "unknown", "target": null}], "claims": ["C01", "C02", "C03"], "cross_agent": false, "is_footprint": false}, {"rw_id": "RW02", "inferred_id": false, "name": "Uchendu et al., 2023 (JSRL)", "relation_raw": "baseline", "relation_norm": "baseline", "delta": "What changed: RICE replaces random curriculum frontier selection with explanation-guided critical state selection. Why: Random frontiers do not guarantee positive returns or useful exploration.", "adopted": "Roll-in concept (using pre-trained policy to set exploration start point); transformation of JSRL to a refining method by initializing πe = πg.", "grounding": [{"raw": "Proc. ICML 2023", "kind": "unknown", "target": null}], "claims": ["C01", "C02"], "cross_agent": false, "is_footprint": false}, {"rw_id": "RW03", "inferred_id": false, "name": "Kakade & Langford, 2002", "relation_raw": "imports", "relation_norm": "imports", "delta": "What changed: RICE uses the Performance Difference Lemma to bound sub-optimality via state distribution mismatch coefficient. Why: Provides rigorous theoretical foundation for the mixed initial distribution benefit.", "adopted": "Performance Difference Lemma; approximate policy gradient framework.", "grounding": [{"raw": "Proc. ICML 2002", "kind": "unknown", "target": null}], "claims": ["C01"], "cross_agent": false, "is_footprint": false}, {"rw_id": "RW04", "inferred_id": false, "name": "Burda et al., 2018 (RND)", "relation_raw": "imports", "relation_norm": "imports", "delta": "What changed: RICE applies RND as the exploration bonus starting from mixed initial states, rather than from default start. Why: RND is effective in large/continuous state spaces where count-based methods fail.", "adopted": "Random Network Distillation architecture (target + predictor); intrinsic reward formulation R_int = |f(s') − f̂(s')|².", "grounding": [{"raw": "Proc. ICLR 2018", "kind": "unknown", "target": null}, {"raw": "arXiv:1810.12894", "kind": "arxiv", "target": null}], "claims": ["C02", "C05"], "cross_agent": false, "is_footprint": false}, {"rw_id": "RW05", "inferred_id": false, "name": "Schulman et al., 2017 (PPO)", "relation_raw": "imports", "relation_norm": "imports", "delta": "What changed: RICE uses PPO as the base refining algorithm for both mask network training and policy refinement. Why: PPO's monotonicity guarantees and clip-based stability make it suitable for both phases.", "adopted": "PPO loss (clipped surrogate objective); advantage estimation; value network.", "grounding": [{"raw": "arXiv:1707.06347", "kind": "arxiv", "target": null}], "claims": ["C02", "C03"], "cross_agent": false, "is_footprint": false}, {"rw_id": "RW06", "inferred_id": false, "name": "Chang et al., 2023 (PPO++)", "relation_raw": "baseline", "relation_norm": "baseline", "delta": "What changed: RICE replaces random visited-state selection with explanation-guided selection, providing theoretical improvement in distribution mismatch coefficient. Why: Not all visited states are informative; random selection provides no guarantee.", "adopted": "Mixed initial distribution concept (combining default + visited states).", "grounding": [{"raw": "arXiv:2306.11816", "kind": "arxiv", "target": null}], "claims": ["C01", "C02"], "cross_agent": false, "is_footprint": false}, {"rw_id": "RW07", "inferred_id": false, "name": "Agarwal et al., 2022 (Reincarnating RL)", "relation_raw": "bounds", "relation_norm": "bounds", "delta": "What changed: RICE addresses a specific case of reincarnating RL — breaking bottlenecks rather than general policy transfer. Why: Provides broader motivation for reusing pre-trained policies.", "adopted": "Cost motivation (millions of dollars for re-training); prior computation reuse framework.", "grounding": [{"raw": "Proc. NeurIPS 2022", "kind": "unknown", "target": null}], "claims": ["C01"], "cross_agent": false, "is_footprint": false}, {"rw_id": "RW08", "inferred_id": false, "name": "Ecoffet et al., 2019/2021 (Go-Explore)", "relation_raw": "imports", "relation_norm": "imports", "delta": "What changed: RICE borrows the environment state restoration mechanism but selects frontiers via explanation rather than return-based archive. Why: Systematic state restoration is needed to reset to critical states in RICE.", "adopted": "Environment reset function to restore states; \"first return, then explore\" philosophy.", "grounding": [{"raw": "arXiv:1901.10995", "kind": "arxiv", "target": null}, {"raw": "Nature 2021", "kind": "unknown", "target": null}], "claims": ["C02"], "cross_agent": false, "is_footprint": false}, {"rw_id": "RW09", "inferred_id": false, "name": "Ho & Ermon, 2016 (GAIL)", "relation_raw": "imports", "relation_norm": "imports", "delta": "What changed: RICE uses GAIL as a bridge to convert non-PPO pretrained agents (SAC) to PPO-compatible policy networks for refining. Why: Enables algorithm-agnostic refining by obtaining a PPO-compatible approximation of any policy.", "adopted": "Adversarial imitation learning to distill policy behavior into a new network.", "grounding": [{"raw": "Proc. NeurIPS 2016", "kind": "unknown", "target": null}], "claims": ["C06"], "cross_agent": false, "is_footprint": false}]}, "recipes": {"title": "Solution", "files": [{"file": "constraints.md", "role": "constraints", "file_title": "Constraints", "sections": [{"sec_id": "BC1", "heading": "BC1: Warm-Start Requirement (Assumption 3.2)", "kind": "kv", "fields": [{"label": "Condition", "value": "The pre-trained policy π must have sufficient state coverage such that $\\|d^{\\pi^*}/d^\\pi_\\rho\\|_\\infty \\leq C$ for some finite constant C."}, {"label": "Implication", "value": "RICE does not work in \"cold-start\" settings where the pre-trained agent has very poor coverage (e.g., MountainCar — Appendix E). In such cases, RICE degenerates to plain RND exploration."}, {"label": "Test", "value": "Check whether the pre-trained agent can reliably reach a diverse set of environment states."}], "text": "Condition: The pre-trained policy π must have sufficient state coverage such that ||dπ*/dπρ||∞ ≤ C for some finite constant C. Implication: RICE does not work in \"cold-start\" settings where the pre-trained agent has very poor coverage (e.g., MountainCar — Appendix E). In such cases, RICE degenerates to plain RND exploration. Test: Check whether the pre-trained agent can reliably reach a diverse set of environment states.", "refs": []}, {"sec_id": "BC2", "heading": "BC2: Simulator-Based Environment Required", "kind": "kv", "fields": [{"label": "Condition", "value": "The environment must support state reset to arbitrary previously visited states."}, {"label": "Implication", "value": "Cannot be directly applied in real-world physical systems where deterministic state restoration is impossible. Workaround: goal/state-conditioned policy with sub-goals (Ecoffet et al., 2021)."}, {"label": "Note", "value": "All evaluated environments (MuJoCo, MetaDrive, CAGE, Malware RL, Selfish Mining) are simulator-based."}], "text": "Condition: The environment must support state reset to arbitrary previously visited states. Implication: Cannot be directly applied in real-world physical systems where deterministic state restoration is impossible. Workaround: goal/state-conditioned policy with sub-goals (Ecoffet et al., 2021). Note: All evaluated environments (MuJoCo, MetaDrive, CAGE, Malware RL, Selfish Mining) are simulator-based.", "refs": []}, {"sec_id": "BC3", "heading": "BC3: Pre-Trained Policy Must Outperform Random (Assumption 3.1)", "kind": "kv", "fields": [{"label": "Condition", "value": "$\\mathbb{E}_{a \\sim \\pi_r}[A^\\pi(s,a)] \\leq 0, \\forall s$"}, {"label": "Implication", "value": "RICE requires a reasonably good pre-trained policy. The explanation method is only meaningful when the policy has learned something useful."}], "text": "Condition: E_{a~πr}[Aπ(s,a)] ≤ 0, ∀s. Implication: RICE requires a reasonably good pre-trained policy. The explanation method is only meaningful when the policy has learned something useful.", "refs": []}, {"sec_id": "BC4", "heading": "BC4: Unknown Training Algorithm of Pre-Trained Policy", "kind": "kv", "fields": [{"label": "Condition", "value": "RICE does not require knowledge of the original training algorithm."}, {"label": "Implication", "value": "The pre-trained policy may have been trained with SAC, PPO, or other algorithms. For non-PPO policies, GAIL is used to obtain a PPO-compatible approximation (Experiment IV)."}], "text": "Condition: RICE does not require knowledge of the original training algorithm. Implication: The pre-trained policy may have been trained with SAC, PPO, or other algorithms. For non-PPO policies, GAIL is used to obtain a PPO-compatible approximation (Experiment IV).", "refs": []}, {"sec_id": "L1", "heading": "L1: Critical State Filtering Not Considered", "kind": "prose", "text": "States identified as critical may already have converged to optimal behavior. Resetting to these states provides little additional learning benefit. Future work: filter by TD error or policy convergence metrics.", "fields": [], "refs": []}, {"sec_id": "L2", "heading": "L2: Single Critical State Per Trajectory", "kind": "prose", "text": "Algorithm 2 selects only the single most critical state per trajectory. This may miss other important states in the same episode. Extension to top-K critical states is possible but not evaluated.", "fields": [], "refs": []}, {"sec_id": "L3", "heading": "L3: Non-Markovian Reward Designs", "kind": "prose", "text": "Reward functions that depend on initial state s_0 rather than current state s_t (discovered in MalConv, Appendix D) violate MDP assumptions and reduce PPO-based refining effectiveness. Requires reward debugging before RICE can be applied.", "fields": [], "refs": []}, {"sec_id": "L4", "heading": "L4: Requires Simulator for Fidelity Evaluation", "kind": "prose", "text": "The fidelity score metric requires the ability to fast-forward trajectories and randomize specific actions, which requires full environment access.", "fields": [], "refs": []}]}, {"file": "algorithm.md", "role": "algorithm", "file_title": "Algorithm", "sections": [{"sec_id": "", "heading": "Perturbed Policy", "kind": "math", "code": "\\bar\\pi(a|s) = \\tilde\\pi(a^m=0|s)\\cdot\\pi(a|s) + \\tilde\\pi(a^m=1|s)\\cdot\\pi_r(a|s)\n\na_t \\odot a^m_t = \\begin{cases} a_t & \\text{if } a^m_t = 0 \\\\ a_{\\text{random}} & \\text{if } a^m_t = 1 \\end{cases}", "text": "The perturbed policy π̄(a|s) = π̃(a^m=0|s)·π(a|s) + π̃(a^m=1|s)·π_r(a|s). The final action at time t: a_t ⊙ a^m_t = a_t if a^m_t=0, else a_random if a^m_t=1.", "fields": [], "refs": []}, {"sec_id": "", "heading": "Optimized Mask Network Objective", "kind": "math", "code": "J(\\theta) = \\min |\\eta(\\pi) - \\eta(\\bar\\pi)| \\; \\Rightarrow \\; J(\\theta) = \\max\\, \\eta(\\bar\\pi)\n\nR'(s_t, a_t) = R(s_t, a_t) + \\alpha \\cdot a^m_t", "text": "Original StateMask: J(θ) = min |η(π) - η(π̄)|. By Theorem 3.3 (under Assumption 3.1): η(π̄) ≤ η(π), therefore J(θ) = max η(π̄). Modified reward to prevent trivial solution (always output 0): R'(s_t, a_t) = R(s_t, a_t) + α·a^m_t.", "fields": [], "refs": [{"raw": "Theorem 3.3", "kind": "unknown", "target": null}]}, {"sec_id": "", "heading": "Sub-Optimality Bound (Theorem 3.6)", "kind": "math", "code": "V^{\\pi^*}(\\rho) - V^{\\pi'}(\\rho) \\leq O\\!\\left(\\frac{\\varepsilon}{(1-\\gamma)^2} \\left\\|\\frac{d^{\\pi^*}}{d^{\\hat\\pi}_\\rho}\\right\\|_\\infty\\right)", "text": "V^π*(ρ) − V^π′(ρ) ≤ O(ε/(1−γ)² · ‖dπ*/dπ̂ρ‖∞), where ε satisfies E_{s~d^π'_μ}[max_a A^π'(s,a)] &lt; ε.", "fields": [], "refs": [{"raw": "Theorem 3.6", "kind": "unknown", "target": null}]}, {"sec_id": "", "heading": "Mixed Initial Distribution", "kind": "math", "code": "\\mu(s) = \\beta \\cdot d^{\\hat\\pi}_\\rho(s) + (1-\\beta)\\rho(s)", "text": "μ(s) = β·d^π̂_ρ(s) + (1-β)ρ(s). In practice, parameterized via reset probability p (probability of initializing from critical state).", "fields": [], "refs": []}, {"sec_id": "", "heading": "RND Exploration Reward", "kind": "math", "code": "R'(s_t, a_t) = R(s_t, a_t) + \\lambda \\left|f(s_{t+1}) - \\hat{f}(s_{t+1})\\right|^2", "text": "R'(s_t, a_t) = R(s_t, a_t) + λ·|f(s_{t+1}) - f̂(s_{t+1})|².", "fields": [], "refs": []}, {"sec_id": "", "heading": "Algorithm 1: Training the Mask Network", "kind": "code", "code": "Input:  Target agent's policy π\nOutput: Mask network ˜πθ\n\nInitialize weights θ for mask net ˜πθ\nθ_old ← θ\nfor iteration = 1, 2, ... do\n    Set initial state s_0 ~ ρ\n    D ← ∅\n    for t = 0 to T do\n        Sample a_t ~ π(a_t | s_t)\n        Sample a^m_t ~ ˜πθ_old(a^m_t | s_t)\n        Compute actual action: a ← a_t ⊙ a^m_t\n        (s_{t+1}, R'_t) ← env.step(a)\n          where R'_t = R(s_t, a_t) + α · a^m_t\n        Record (s_t, s_{t+1}, a^m_t, R'_t) in D\n    end for\n    Update θ_old ← θ using D via PPO algorithm\nend for", "text": "Pseudocode for training the mask network via PPO with the modified reward R'_t = R(s_t,a_t) + α·a^m_t.", "fields": [], "refs": []}, {"sec_id": "", "heading": "Algorithm 2: Refining the DRL Agent", "kind": "code", "code": "Input:  Pre-trained policy π, trained mask network ˜πθ,\n        default initial distribution ρ, reset probability p\nOutput: Refined policy π'\n\nfor iteration = 1, 2, ... do\n    D ← ∅\n    RAND_NUM ← Uniform(0, 1)\n    if RAND_NUM &lt; p then\n        Run π to obtain trajectory τ of length K\n        Identify most critical state s_t in τ via ˜πθ\n           (s_t = argmax_t P(a^m=0|s_t))\n        Set initial state s_0 ← s_t\n    else\n        Set initial state s_0 ~ ρ\n    end if\n    for t = 0 to T do\n        Sample a_t ~ π(a_t | s_t)\n        (s_{t+1}, R_t) ← env.step(a_t)\n        Compute RND bonus R^RND_t = |f(s_{t+1}) - f̂(s_{t+1})|²\n           (with normalization)\n        Add (s_t, s_{t+1}, a_t, R_t + λ · R^RND_t) to D\n    end for\n    Optimize πθ w.r.t. PPO loss on D\n    Optimize f̂θ w.r.t. MSE loss on D using Adam\nend for\nπ' ← πθ", "text": "Pseudocode for RICE refining: mixed-distribution initial state sampling (probability p of resetting to the critical state) plus RND-augmented PPO updates.", "fields": [], "refs": []}, {"sec_id": "", "heading": "Key Theoretical Results", "kind": "kv", "fields": [{"label": "Theorem 3.3", "value": "(η(π̄) ≤ η(π)): Under Assumption 3.1 (pre-trained policy better than random), the perturbed policy's expected reward is upper-bounded by that of the target policy. Proof via Performance Difference Lemma (Kakade & Langford, 2002)."}, {"label": "Lemma 3.5", "value": "(MaskNet sampling ≡ better policy): The importance-weighted sampling of states via the mask network is equivalent to sampling from a state occupancy distribution induced by an improved policy ˆπ with η(ˆπ) ≥ η(π). Proof via reweighting: d^π̂_ρ(s,a) = d^π_ρ(s,a) · w(s,a) where w(s,a) ∝ Q^π(s,a)."}, {"label": "Claim 1", "value": "(Tighter bound with explanation): By Assumption 3.4, η(ˆπ) ≥ η(π) implies ‖d^π*/d^π̂_ρ‖∞ ≤ ‖d^π*/d^π_ρ‖∞, thus the sub-optimality bound under RICE's mixed distribution is tighter than under random explanation."}], "text": "Theorem 3.3 (η(π̄) ≤ η(π)); Lemma 3.5 (MaskNet sampling ≡ better policy); Claim 1 (tighter bound with explanation).", "refs": [{"raw": "Theorem 3.3", "kind": "unknown", "target": null}, {"raw": "Lemma 3.5", "kind": "unknown", "target": null}]}, {"sec_id": "", "heading": "Complexity", "kind": "prose", "text": "Mask network training: O(N·T) per iteration (N environments rollouts, T timesteps), same order as original policy training. Critical state identification: O(T) per trajectory (single forward pass through mask network). RICE refining: O(N·T) per iteration (standard PPO) + O(d_f) for RND target/predictor forward pass.", "fields": [], "refs": []}]}, {"file": "architecture.md", "role": "architecture", "file_title": "System Architecture", "sections": [{"sec_id": "", "heading": "Overview", "kind": "steps", "steps": ["Explanation Phase: Train a mask network (Optimized StateMask) to identify critical states.", "Refining Phase: Use critical states + default states as mixed initial distribution; refine policy with PPO + RND."], "text": "RICE consists of two sequential phases operating on a pre-trained DRL policy π: (1) Explanation Phase: Train a mask network (Optimized StateMask) to identify critical states. (2) Refining Phase: Use critical states + default states as mixed initial distribution; refine policy with PPO + RND.", "fields": [], "refs": []}, {"sec_id": "", "heading": "Component Graph", "kind": "code", "code": "Pre-trained Policy π\n       │\n       ▼\n┌───────────────────────────────────────┐\n│  PHASE 1: Mask Network Training          │\n│                                         │\n│  [Mask Network ˜πθ]                     │\n│    Input:  state s_t ∈ ℝ^d_s            │\n│    Output: binary action a^m_t ∈ {0,1}  │\n│    Same arch as target policy network   │\n│                                         │\n│  [Perturbed Policy π̄]                   │\n│    a_t = at ⊙ a^m_t                     │\n│    (a^m=0 → keep at; a^m=1 → random)   │\n│                                         │\n│  [Modified Reward]                      │\n│    R′(s,a) = R(s,a) + α·a^m_t          │\n│                                         │\n│  [PPO Optimizer for ˜πθ]               │\n│    Objective: J(θ) = max η(π̄)          │\n└───────────────────────────────────────┘\n       │\n       │  trained mask network ˜πθ\n       ▼\n┌───────────────────────────────────────┐\n│  PHASE 2: RICE Refining                  │\n│                                         │\n│  [Critical State Identifier]            │\n│    Run π to get trajectory τ            │\n│    Apply ˜πθ → importance scores        │\n│    Select s* = argmax P(a^m=0|s_t)      │\n│                                         │\n│  [Mixed Initial Distribution Sampler]   │\n│    With prob p: s0 ← s* (critical)      │\n│    With prob (1-p): s0 ~ ρ (default)   │\n│                                         │\n│  [RND Module]                           │\n│    Target network f: ℝ^d_s → ℝ^d_f     │\n│    Predictor network f̂: ℝ^d_s → ℝ^d_f  │\n│    Bonus: R^RND = |f(s') - f̂(s')|²     │\n│    Normalized per-episode               │\n│                                         │\n│  [PPO Refining Agent]                   │\n│    Total reward: R(s,a) + λ·R^RND(s')  │\n│    Optimizes π using PPO loss           │\n│    f̂ updated via MSE loss on D         │\n│                                         │\n│  Output: Refined policy π′             │\n└───────────────────────────────────────┘", "text": "Two-phase component graph: Phase 1 (Mask Network Training) feeds its trained mask network into Phase 2 (RICE Refining), which combines the Critical State Identifier, Mixed Initial Distribution Sampler, RND Module, and PPO Refining Agent to produce the refined policy π'.", "fields": [], "refs": []}, {"sec_id": "", "heading": "Design Rationale", "kind": "steps", "steps": ["Simplified StateMask objective: By Theorem 3.3 (η(π̄) ≤ η(π) under Assumption 3.1), maximizing η(π̄) is equivalent to the original min-|η(π)−η(π̄)| and enables vanilla PPO training.", "Binary blinding action: The mask network outputs 0 (critical — preserve action) or 1 (non-critical — randomize action). State importance = P(a^m=0|s).", "Episode-level critical state selection: From each sampled trajectory τ of length K, the single state with maximum importance score is selected as the critical state for reset.", "RND normalization: The RND bonus is normalized per episode to maintain stable scale relative to the task reward.", "PPO as the base algorithm: Leverages PPO's monotonic improvement guarantee for both mask network training and policy refining.", "Environment reset mechanism: Implemented as in Go-Explore (Ecoffet et al., 2019) — requires simulator-based environment that supports state restoration. Compatible with goal/state-conditioned policies as a fallback."], "text": "Six design-rationale points explaining the simplified objective, binary blinding action, episode-level critical state selection, RND normalization, choice of PPO, and the Go-Explore-style environment reset mechanism.", "fields": [], "refs": []}, {"sec_id": "", "heading": "Component Interfaces", "kind": "table", "markdown": "| Component | Input | Output |\n|-----------|-------|--------|\n| Mask Network | state s_t (obs vector) | P(a^m=0|s) ∈ [0,1] |\n| Critical State Identifier | trajectory τ = {s_0,...,s_T}, trained π̃θ | critical state s* |\n| Mixed Distribution Sampler | s*, ρ, p ∈ [0,1] | initial state s_0 |\n| RND Module | next state s_{t+1} | scalar bonus R^RND |\n| PPO Refining Agent | (s_t, a_t, R_t + λ·R^RND, s_{t+1}) | updated policy π′ |", "text": "Table of component I/O interfaces: Mask Network, Critical State Identifier, Mixed Distribution Sampler, RND Module, PPO Refining Agent.", "fields": [], "refs": []}]}, {"file": "heuristics.md", "role": "heuristics", "file_title": "Heuristics", "sections": [{"sec_id": "H01", "heading": "H01: Set Reset Probability p to 0.25–0.5", "kind": "kv", "fields": [{"label": "Rationale", "value": "Exclusively using critical states (p=1) causes overfitting; exclusively using default states (p=0) recovers vanilla PPO fine-tuning. A mixed distribution prevents overfitting while still leveraging critical state information. The range [0.25, 0.5] provides the best empirical trade-off across all tested environments."}, {"label": "Sensitivity", "value": "medium"}, {"label": "Bounds", "value": "p ∈ {0, 0.25, 0.5, 0.75, 1.0} tested; p=0.25 optimal for Hopper, Walker2d, Selfish Mining, Auto Driving; p=0.5 optimal for Reacher, HalfCheetah, CAGE, Malware."}, {"label": "Code ref", "value": "src/execution/rice_refine.py"}, {"label": "Source", "value": "Section 4.3, Appendix C.3, Figure 7"}], "text": "Set reset probability p to 0.25–0.5, the empirical sweet spot between overfitting (p=1) and vanilla fine-tuning (p=0).", "refs": [{"raw": "src/execution/rice_refine.py", "kind": "unknown", "target": null}, {"raw": "Figure 7", "kind": "figure", "target": null}]}, {"sec_id": "H02", "heading": "H02: Set RND Weight λ to 0.01 for Most Environments", "kind": "kv", "fields": [{"label": "Rationale", "value": "Any λ > 0 significantly improves performance over λ = 0. The exact value has low sensitivity. λ = 0.01 provides the best performance in all environments except Selfish Mining."}, {"label": "Sensitivity", "value": "low"}, {"label": "Bounds", "value": "λ ∈ {0, 0.001, 0.01, 0.1} tested; λ=0.001 for Hopper/Reacher/Selfish Mining; λ=0.01 for all others."}, {"label": "Code ref", "value": "src/execution/rice_refine.py"}, {"label": "Source", "value": "Section 4.3, Appendix C.3, Figure 8, Table 3"}], "text": "Set RND weight λ to 0.01 for most environments; any λ > 0 helps, exact value has low sensitivity.", "refs": [{"raw": "src/execution/rice_refine.py", "kind": "unknown", "target": null}, {"raw": "Figure 8", "kind": "figure", "target": null}, {"raw": "Table 3", "kind": "figure", "target": null}]}, {"sec_id": "H03", "heading": "H03: Set Blinding Bonus α to 0.0001 (Low Sensitivity)", "kind": "kv", "fields": [{"label": "Rationale", "value": "α prevents the trivial solution (mask never blinds). Fidelity score is insensitive to α across the range tested. Using 0.0001 is conservative and avoids distorting the task reward signal."}, {"label": "Sensitivity", "value": "low"}, {"label": "Bounds", "value": "α ∈ {0.01, 0.001, 0.0001} tested; all yield comparable fidelity. Default: α = 0.0001 for all environments."}, {"label": "Code ref", "value": "src/execution/mask_network.py"}, {"label": "Source", "value": "Section 4.3, Appendix C.3, Figure 9, Table 3"}], "text": "Set blinding bonus α to 0.0001 for all environments; fidelity is insensitive to the exact value.", "refs": [{"raw": "src/execution/mask_network.py", "kind": "unknown", "target": null}, {"raw": "Figure 9", "kind": "figure", "target": null}, {"raw": "Table 3", "kind": "figure", "target": null}]}, {"sec_id": "H04", "heading": "H04: Use Vanilla PPO (Not Primal-Dual) for Mask Network Training", "kind": "kv", "fields": [{"label": "Rationale", "value": "By Theorem 3.3, the mask network objective can be simplified from min|η(π)−η(π̄)| to max η(π̄), enabling standard PPO. This eliminates the need to estimate discounted returns under both target and perturbed policies, reducing computation by ~16.8% on average."}, {"label": "Sensitivity", "value": "high (choice of optimizer determines theoretical validity)"}, {"label": "Bounds", "value": "Only PPO is theoretically justified here; other optimizers not validated."}, {"label": "Code ref", "value": "src/execution/mask_network.py"}, {"label": "Source", "value": "Section 3.3, Theorem 3.3, Table 4"}], "text": "Use vanilla PPO (not primal-dual) for mask network training, per Theorem 3.3's simplification.", "refs": [{"raw": "src/execution/mask_network.py", "kind": "unknown", "target": null}, {"raw": "Theorem 3.3", "kind": "unknown", "target": null}, {"raw": "Table 4", "kind": "figure", "target": null}]}, {"sec_id": "H05", "heading": "H05: Normalize RND Bonus Per Episode", "kind": "kv", "fields": [{"label": "Rationale", "value": "Raw RND prediction errors have varying magnitudes across environments. Normalization ensures the exploration bonus remains proportional to the task reward regardless of state space dimensionality."}, {"label": "Sensitivity", "value": "medium"}, {"label": "Bounds", "value": "Normalization should not collapse the bonus to zero before genuine exploration has occurred."}, {"label": "Code ref", "value": "src/execution/rice_refine.py"}, {"label": "Source", "value": "Section 3.3 (Algorithm 2), Burda et al. (2018)"}], "text": "Normalize the RND bonus per episode so it stays proportional to the task reward across environments.", "refs": [{"raw": "src/execution/rice_refine.py", "kind": "unknown", "target": null}]}]}]}}
+/* __ARA_DATA_END__ */
+</script>
+
+<script>
+"use strict";
+(function () {
+  const GLYPH = { question:"Q", experiment:"✦", decision:"→", dead_end:"✗", pivot:"↻", insight:"!", default:"•" };
+  const TYPES = ["question","experiment","decision","dead_end","pivot","insight"];
+
+  let DATA;
+  try {
+    // The payload sits between the BEGIN/END marker comments (kept in-file so the
+    // skill can re-inject). Strip ONLY those two named markers before parsing; the
+    // rest of textContent is pure JSON. (Marker text is not written literally here,
+    // so it stays a single injection site.)
+    var raw = document.getElementById("ara-data").textContent
+                .replace(/\/\*\s*__ARA_DATA_(?:BEGIN|END)__\s*\*\//g, "");
+    DATA = JSON.parse(raw);
+  } catch (e) {
+    document.getElementById("detail").innerHTML =
+      '<div class="none">Could not parse embedded ARA data: ' + String(e) + '</div>';
+    return;
+  }
+
+  const nodes = DATA.nodes || [];
+  const byId = new Map(nodes.map(n => [n.id, n]));
+  const kids = new Map();
+  nodes.forEach(n => kids.set(n.id, []));
+  let roots = [];
+  nodes.forEach(n => {
+    if (n.parent && byId.has(n.parent)) kids.get(n.parent).push(n.id);
+    else roots.push(n.id);
+  });
+  // Traversal order: explicit DATA.order if given, else DFS from roots.
+  let order = Array.isArray(DATA.order) && DATA.order.length ? DATA.order.filter(id => byId.has(id)) : [];
+  if (!order.length) { const seen=new Set(); const dfs=id=>{if(seen.has(id))return;seen.add(id);order.push(id);(kids.get(id)||[]).forEach(dfs)}; roots.forEach(dfs); }
+
+  const esc = s => String(s==null?"":s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  const glyph = t => GLYPH[t] || GLYPH.default;
+  const cls = t => TYPES.includes(t) ? t : "default";
+
+  // ---- header ----
+  const m = DATA.meta || {};
+  document.getElementById("h-title").textContent = m.title || "ARA Trajectory";
+  document.getElementById("h-sub").textContent =
+    [ (m.authors||[]).join(", "), m.venue, m.year ].filter(Boolean).join(" · ");
+  if (m.abstract) document.getElementById("h-abstract").textContent = m.abstract;
+  else document.getElementById("h-abstract-wrap").style.display = "none";
+
+  const ftype = document.getElementById("ftype");
+  const present = [...new Set(nodes.map(n => n.type))];
+  TYPES.concat(present.filter(t=>!TYPES.includes(t))).filter(t=>present.includes(t))
+    .forEach(t => { const o=document.createElement("option"); o.value=t; o.textContent=t; ftype.appendChild(o); });
+
+  // ---- minimal markdown-table renderer ----
+  function renderMd(md){
+    if(!md) return "";
+    const lines = String(md).split("\n");
+    let out=[], i=0;
+    while(i<lines.length){
+      if(/^\s*\|/.test(lines[i]) && i+1<lines.length && /^\s*\|?[\s:|-]+\|?\s*$/.test(lines[i+1])){
+        const row = l => l.replace(/^\s*\|/,"").replace(/\|\s*$/,"").split("|").map(c=>c.trim());
+        const head = row(lines[i]); i+=2; const body=[];
+        while(i<lines.length && /^\s*\|/.test(lines[i])){ body.push(row(lines[i])); i++; }
+        out.push('<table class="md"><thead><tr>'+head.map(h=>"<th>"+esc(h)+"</th>").join("")+
+          '</tr></thead><tbody>'+body.map(r=>"<tr>"+r.map(c=>"<td>"+esc(c)+"</td>").join("")+"</tr>").join("")+"</tbody></table>");
+      } else { if(lines[i].trim()) out.push("<div>"+esc(lines[i])+"</div>"); i++; }
+    }
+    return out.join("");
+  }
+
+  // ---- detail pane ----
+  function block(title, tag, inner, open, cls){
+    return '<details class="block'+(cls?" "+cls:"")+'"'+(open?" open":"")+'><summary>'+esc(title)+
+      (tag?'<span class="tag">'+esc(tag)+'</span>':'')+'</summary><div class="body">'+inner+'</div></details>';
+  }
+  function chips(arr, klass){ return arr&&arr.length ? '<div class="chips">'+arr.map(x=>'<span class="chip '+(klass||"")+'">'+esc(x)+'</span>').join("")+'</div>' : ""; }
+
+  function renderDetail(n){
+    const d = document.getElementById("detail");
+    let h = '<div class="dhead"><span class="badge '+cls(n.type)+'">'+esc(n.type)+'</span>'+
+      '<span class="did">'+esc(n.id)+'</span>'+
+      (n.support_level?'<span class="pill '+esc(n.support_level)+'">'+esc(n.support_level)+'</span>':'')+
+      (n.isolated?'<span class="pill iso">isolated</span>':'')+'</div>';
+    h += '<div class="dtitle">'+esc(n.title||"(untitled)")+'</div>';
+
+    // reasoning (primary, always open) — the agent's thinking IS the content of a step
+    let reason="";
+    if(n.thinking){
+      reason += '<div class="lead">'+esc(n.thinking)+'</div>';
+      if(n.body) reason += '<div class="didwhat">what it did</div><div>'+esc(n.body)+'</div>';
+    } else {
+      reason += n.body ? '<div class="lead">'+esc(n.body)+'</div>' : '<div class="empty">No description.</div>';
+    }
+    if(n.depends_on&&n.depends_on.length) reason += chips(n.depends_on.map(x=>"⇠ depends on "+x));
+    if(n.source_refs&&n.source_refs.length) reason += chips(n.source_refs, "ext");
+    if(n.built_on&&n.built_on.length) reason += chipRow("built on", n.built_on, "chip-built");
+    if(n.rejected_here&&n.rejected_here.length) reason += chipRow("rejected here", n.rejected_here, "chip-rej");
+    if(n.recipe_refs&&n.recipe_refs.length) reason += recipeChips(n.recipe_refs);
+    h += block(n.thinking?"reasoning":"what", n.type, reason, true, "reason");
+
+    // result (the grounded payload) — open
+    const r = n.result||{};
+    if((r.sources&&r.sources.length)||(r.figures&&r.figures.length)||(r.tables&&r.tables.length)||(r.data&&r.data.length)){
+      let s="";
+      (r.figures||[]).forEach(f=>{ s+='<figure><img src="'+esc(f.img)+'" alt="'+esc(f.caption||f.id)+'"/>'+
+        (f.caption?'<figcaption>'+esc(f.caption)+'</figcaption>':'')+'</figure>'; });
+      (r.tables||[]).forEach(t=>{ s+=(t.caption?'<div class="empty">'+esc(t.caption)+'</div>':'')+renderMd(t.markdown); });
+      (r.sources||[]).forEach(q=>{ s+='<div class="quote">'+esc(q.quote)+(q.ref?'<div class="ref">← '+esc(q.ref)+'</div>':'')+'</div>'; });
+      (r.data||[]).forEach(x=>{ s+='<div class="ptr">⛁ <span class="path">'+esc(x.path)+'</span>'+(x.note?' — '+esc(x.note):'')+'</div>'; });
+      h += block("result", "", s, true);
+    }
+
+    // why (claims) — supporting detail, collapsed
+    if(n.why&&n.why.length){
+      const w = n.why.map(c=>{
+        let s='<div class="claim"><h4>'+esc(c.id)+(c.title?' — '+esc(c.title):'')+'</h4>';
+        if(c.statement) s+='<div class="kv">'+esc(c.statement)+'</div>';
+        if(c.status) s+='<div class="kv"><b>status</b> <span class="status '+esc(String(c.status).toLowerCase())+'">'+esc(c.status)+'</span></div>';
+        if(c.conditions) s+='<div class="kv"><b>conditions</b> '+esc(c.conditions)+'</div>';
+        if(c.falsification) s+='<div class="kv"><b>falsified if</b> '+esc(c.falsification)+'</div>';
+        if(c.dependencies&&c.dependencies.length) s+='<div class="kv"><b>depends on</b> '+esc(c.dependencies.join(", "))+'</div>';
+        if(c.provenance) s+='<div class="kv"><span class="prov">provenance: '+esc(c.provenance)+'</span></div>';
+        return s+'</div>';
+      }).join("");
+      h += block("why", n.why.map(c=>c.id).join(" · "), w);
+    }
+
+    // how verified (experiments) — supporting detail, collapsed
+    if(n.verified_by&&n.verified_by.length){
+      const v = n.verified_by.map(e=>'<div class="claim"><h4>'+esc(e.id)+(e.title?' — '+esc(e.title):'')+'</h4>'+
+        (e.run?'<div class="kv"><b>run</b> <span class="path mono">'+esc(e.run)+'</span></div>':'')+
+        (e.setup?'<div class="kv"><b>setup</b> '+esc(e.setup)+'</div>':'')+
+        (e.metrics?'<div class="kv"><b>metrics</b> '+esc(e.metrics)+'</div>':'')+'</div>').join("");
+      h += block("how verified", n.verified_by.map(e=>e.id).join(" · "), v);
+    }
+
+    // artifact pointers (src/artifacts.md) — collapsed
+    if(n.artifact&&n.artifact.length){
+      const a = n.artifact.map(x=>'<div class="ptr">▸ <b>'+esc(x.name)+'</b> — <span class="path">'+esc(x.pointer)+'</span>'+
+        (x.what?'<div class="empty">'+esc(x.what)+'</div>':'')+'</div>').join("");
+      h += block("artifact", "pointer", a);
+    }
+
+    d.innerHTML = h;
+    if(typeof LEX!=="undefined" && LEX) linkifyConcepts(d);
+    d.scrollTop = 0;
+  }
+
+  // ---- map ----
+  let selected = null;
+  function selectNode(id){
+    if(!byId.has(id)) return;
+    selected = id;
+    document.querySelectorAll(".node").forEach(el=>el.classList.toggle("sel", el.dataset.id===id));
+    const el = document.querySelector('.node[data-id="'+CSS.escape(id)+'"]');
+    if(el) el.scrollIntoView({block:"nearest"});
+    renderDetail(byId.get(id));
+    rstat();
+  }
+
+  function nodeRow(n){
+    const row = document.createElement("div");
+    row.className = "node "+(n.type==="dead_end"?"dead":"");
+    row.dataset.id = n.id; row.dataset.type = n.type;
+    // calmer than before: one glyph + id + (quiet) cross-edge marker; the ⊕/⊘ count soup is gone.
+    row.innerHTML = '<span class="glyph '+cls(n.type)+'">'+glyph(n.type)+'</span>'+
+      '<span><span class="meta"><span class="nid">'+esc(n.id)+'</span>'+
+      (n.depends_on&&n.depends_on.length?'<span class="dep" title="depends on '+esc(n.depends_on.join(", "))+'">⇠ '+esc(n.depends_on.join(","))+'</span>':'')+
+      '</span><div class="ntitle">'+esc(n.title||n.body||"(untitled)")+'</div></span>';
+    row.addEventListener("click", ()=>selectNode(n.id));
+    // hover a node to highlight its cross-edge targets (gentler than always-on connectors)
+    if(n.depends_on&&n.depends_on.length){
+      row.addEventListener("mouseenter", ()=>n.depends_on.forEach(t=>{ const el=document.querySelector('.node[data-id="'+CSS.escape(t)+'"]'); if(el) el.classList.add("deptarget"); }));
+      row.addEventListener("mouseleave", ()=>document.querySelectorAll(".node.deptarget").forEach(el=>el.classList.remove("deptarget")));
+    }
+    return row;
+  }
+  function renderSubtree(id, container){
+    const n = byId.get(id); if(!n) return;
+    container.appendChild(nodeRow(n));
+    const cs = kids.get(id)||[];
+    if(cs.length){ const wrap=document.createElement("div"); wrap.className="kid"; cs.forEach(c=>renderSubtree(c,wrap)); container.appendChild(wrap); }
+  }
+  function renderMap(){
+    const map = document.getElementById("map"); map.innerHTML="";
+    const normalRoots = roots.filter(id=>!byId.get(id).isolated);
+    const isoRoots = roots.filter(id=>byId.get(id).isolated);
+    normalRoots.forEach(id=>renderSubtree(id, map));
+    if(isoRoots.length){
+      const box=document.createElement("div"); box.className="isobox";
+      const hdr=document.createElement("div"); hdr.className="isohdr"; hdr.textContent="isolated subtree"; box.appendChild(hdr);
+      isoRoots.forEach(id=>renderSubtree(id, box)); map.appendChild(box);
+    }
+  }
+
+  // ---- filter / search ----
+  function applyFilters(){
+    const q = document.getElementById("q").value.trim().toLowerCase();
+    const ty = document.getElementById("ftype").value;
+    const deadOnly = document.getElementById("fdead").checked;
+    let shown=0;
+    document.querySelectorAll(".node").forEach(el=>{
+      const n = byId.get(el.dataset.id);
+      const text = (n.id+" "+(n.title||"")+" "+(n.body||"")).toLowerCase();
+      const ok = (!q||text.includes(q)) && (!ty||n.type===ty) && (!deadOnly||n.type==="dead_end");
+      el.classList.toggle("dim", !ok);
+      if(ok) shown++;
+    });
+    document.getElementById("rstat").textContent = shown+" / "+nodes.length+" steps";
+  }
+  function rstat(){
+    const i = selected?order.indexOf(selected):-1;
+    document.getElementById("rstat").textContent = (i>=0?("step "+(i+1)+" / "+order.length):(nodes.length+" steps"));
+  }
+
+  // ---- replay ----
+  let timer=null;
+  function step(delta){
+    let i = selected?order.indexOf(selected):-1;
+    i = Math.max(0, Math.min(order.length-1, i+delta));
+    selectNode(order[i]);
+  }
+  function play(){
+    if(timer){ stop(); return; }
+    if(!selected) selectNode(order[0]);
+    document.getElementById("rplay").textContent="⏸ Pause";
+    timer = setInterval(()=>{
+      const i = selected?order.indexOf(selected):-1;
+      if(i>=order.length-1){ stop(); return; }
+      step(1);
+    }, 1300);
+  }
+  function stop(){ if(timer){clearInterval(timer);timer=null;} document.getElementById("rplay").textContent="▶ Replay"; }
+
+  // ======================= v1.1 enrichment layers (all inert unless present) =======================
+  const CTX = DATA.context, GLO = DATA.glossary, DEP = DATA.dependencies, REC = DATA.recipes;
+  const LAYERS = { context:CTX, glossary:GLO, dependencies:DEP, recipes:REC };
+
+  // ---- indexes (built once) ----
+  const claimToNodes = new Map();
+  nodes.forEach(n => (n.why||[]).forEach(c => { if(c&&c.id){ if(!claimToNodes.has(c.id)) claimToNodes.set(c.id,[]); claimToNodes.get(c.id).push(n.id); } }));
+  const firstNodeForClaim = id => (claimToNodes.get(id)||[])[0] || null;
+  const rwById   = new Map(((DEP&&DEP.entries)||[]).map(e => [e.rw_id, e]));
+  const termById = new Map(((GLO&&GLO.terms)||[]).map(t => [t.term_id, t]));
+  // concept "used by" (inferred) from each node's name-matched concepts[]
+  if(GLO){
+    const nameToTerm = new Map();
+    (GLO.terms||[]).forEach(t => { if(t.name) nameToTerm.set(String(t.name).toLowerCase(), t); (t.aliases||[]).forEach(a=>nameToTerm.set(String(a).toLowerCase(), t)); });
+    nodes.forEach(n => (n.concepts||[]).forEach(cn => { const t=nameToTerm.get(String(cn).toLowerCase()); if(t){ (t._used=t._used||[]).push(n.id); } }));
+  }
+
+  // ---- tiny inline-math fallback (no CDN; operates on already-escaped text, adds only safe tags) ----
+  const GK={alpha:"α",beta:"β",gamma:"γ",delta:"δ",epsilon:"ε",eta:"η",theta:"θ",kappa:"κ",lambda:"λ",mu:"μ",nu:"ν",pi:"π",rho:"ρ",sigma:"σ",tau:"τ",phi:"φ",chi:"χ",psi:"ψ",omega:"ω",Delta:"Δ",Sigma:"Σ",Omega:"Ω",Phi:"Φ",Theta:"Θ",Lambda:"Λ",Gamma:"Γ",nabla:"∇",partial:"∂",times:"×",cdot:"·",infty:"∞",approx:"≈",leq:"≤",geq:"≥",neq:"≠",to:"→",in:"∈",sum:"Σ",prod:"Π",sqrt:"√",mathbb:"",mathcal:"",mathbf:"",mathrm:"",left:"",right:""};
+  function texInner(s){
+    s=s.replace(/\\(?:mathbb|mathcal|mathbf|mathrm)\{([^{}]*)\}/g,"$1");
+    s=s.replace(/\\frac\{([^{}]*)\}\{([^{}]*)\}/g,"($1)/($2)");
+    s=s.replace(/\\([A-Za-z]+)/g,(m,w)=>GK[w]!==undefined?GK[w]:m);
+    s=s.replace(/\^\{([^{}]*)\}/g,"<sup>$1</sup>").replace(/\^([\w()+\-])/g,"<sup>$1</sup>");
+    s=s.replace(/_\{([^{}]*)\}/g,"<sub>$1</sub>").replace(/_([\w()+\-])/g,"<sub>$1</sub>");
+    return s;
+  }
+  function mathPass(escaped){
+    if(escaped.indexOf("$")<0) return escaped;
+    return escaped.replace(/\$\$([^$]+)\$\$/g,(m,x)=>'<span class="math">'+texInner(x)+'</span>')
+                  .replace(/\$([^$]+)\$/g,(m,x)=>'<span class="math">'+texInner(x)+'</span>');
+  }
+  function mtext(v){ const e=esc(v); try{ return mathPass(e); }catch(_){ return e; } }
+
+  // ---- typed-ref rendering (off-ARA pointers stay inert; in-ARA targets become jump chips) ----
+  function refUrl(rf){
+    const raw=rf.raw||"";
+    if(rf.kind==="url"){ const m=raw.match(/https?:\/\/\S+/); return m?m[0]:""; }
+    if(rf.kind==="arxiv"){ const m=raw.match(/(\d{4}\.\d{4,5})/); return m?("https://arxiv.org/abs/"+m[1]):""; }
+    if(rf.kind==="doi"){ const m=raw.match(/(10\.\d{4,}\/\S+)/); return m?("https://doi.org/"+m[1]):""; }
+    return "";
+  }
+  function refChip(rf){
+    const raw=esc(rf.raw||""), url=refUrl(rf);
+    if(url) return '<a class="chip ext" href="'+esc(url)+'" target="_blank" rel="noopener">'+raw+'</a>';
+    if(rf.target){
+      if(rf.kind==="claim")        return '<span class="chip jump" data-jump-claim="'+esc(rf.target)+'">'+raw+'</span>';
+      if(rf.kind==="node")         return '<span class="chip jump" data-jump-node="'+esc(rf.target)+'">'+raw+'</span>';
+      if(rf.kind==="concept")      return '<span class="chip jump" data-open-term="'+esc(rf.target)+'">'+raw+'</span>';
+      if(rf.kind==="related_work") return '<span class="chip jump" data-open-panel="dependencies" data-anchor="ov-'+esc(rf.target)+'">'+raw+'</span>';
+      return '<span class="chip jump" data-scroll="ov-'+esc(rf.target)+'">'+raw+'</span>';
+    }
+    const dangle=(rf.kind==="claim"||rf.kind==="related_work"||rf.kind==="concept");
+    return '<span class="chip '+(dangle?'dangle" title="referenced but not found in this ARA':'ext')+'">'+raw+'</span>';
+  }
+  function refRow(refs){ return refs&&refs.length ? '<div class="chips">'+refs.map(refChip).join("")+'</div>' : ""; }
+
+  // ---- per-node provenance chips (consumed by renderDetail) ----
+  function chipRow(label, arr, klass){
+    const cs=arr.map(x=>{
+      const txt=[x.rw_id,x.name].filter(Boolean).join(" · ")||"?";
+      const tip=x.relation_raw?(' title="'+esc(x.relation_raw)+'"'):'';
+      const op =x.rw_id?(' data-open-panel="dependencies" data-anchor="ov-'+esc(x.rw_id)+'"'):'';
+      return '<span class="chip '+klass+(x.rw_id?' jump':'')+'"'+tip+op+'>'+esc(txt)+'</span>';
+    }).join("");
+    return '<div class="chiplabel">'+esc(label)+'</div><div class="chips">'+cs+'</div>';
+  }
+  function recipeChips(arr){
+    const cs=arr.map(x=>{
+      const anchor="ov-sec-"+(x.file||"")+"-"+(x.sec_id||"");
+      return '<span class="chip chip-recipe jump" data-open-panel="recipes" data-anchor="'+esc(anchor)+'" title="'+esc((x.file||"")+(x.role?(" · "+x.role):""))+'">▦ '+esc(x.heading||x.file||"recipe")+'</span>';
+    }).join("");
+    return '<div class="chiplabel">recipe</div><div class="chips">'+cs+'</div>';
+  }
+
+  // ---- the four overlay renderers (reuse block/chips/renderMd) ----
+  function renderContext(){
+    let h=""; if(CTX.summary) h+='<div class="ribbon">'+esc(CTX.summary)+'</div>';
+    (CTX.sections||[]).forEach(sec=>{
+      let inner="";
+      if(sec.present===false){ inner='<div class="muted grey">(not specified in this ARA)</div>'; }
+      else (sec.entries||[]).forEach(en=>{
+        let c='<div class="card" id="ov-'+esc(en.ent_id||"")+'"><h4>'+(en.ent_id?'<span class="did">'+esc(en.ent_id)+'</span> ':'')+esc(en.ent_title||"")+(en.inferred_id?' <span class="sub">(pos.)</span>':'')+'</h4>';
+        if(!en.unstructured && en.fields && en.fields.length) en.fields.forEach(f=>c+='<div class="kv"><b>'+esc(f.label)+'</b> '+mtext(f.value)+'</div>');
+        else if(en.text) c+='<div class="kv">'+mtext(en.text)+'</div>';
+        if(en.unstructured) c+='<div class="sub">unstructured</div>';
+        c+=refRow(en.refs)+'</div>'; inner+=c;
+      });
+      h+=block(sec.heading||sec.role||"section", sec.role||"", inner, sec.role==="insight");
+    });
+    return h || '<div class="muted">No problem context.</div>';
+  }
+  function renderGlossary(filter){
+    const f=(filter||"").trim().toLowerCase();
+    const match=t=>!f||((t.name||"")+" "+(t.aliases||[]).join(" ")+" "+(t.definition||"")).toLowerCase().includes(f);
+    function card(t){
+      let c='<div class="card" id="ov-'+esc(t.term_id)+'"><h4>'+esc(t.name)+(t.group?' <span class="sub">'+esc(t.group)+'</span>':'')+'</h4>';
+      if(t.aliases&&t.aliases.length) c+='<div class="chips">'+t.aliases.map(a=>'<span class="chip">'+esc(a)+'</span>').join("")+'</div>';
+      if(t.definition) c+='<div class="kv">'+mtext(t.definition)+'</div>';
+      (t.fields||[]).forEach(fl=>c+='<div class="kv"><b>'+esc(fl.label)+'</b> '+mtext(fl.value)+'</div>');
+      if(t.related&&t.related.length) c+='<div class="kv"><b>related</b> '+t.related.map(r=>{const rt=termById.get(r);return '<span class="chip jump" data-open-term="'+esc(r)+'">'+esc(rt?rt.name:r)+'</span>';}).join(" ")+'</div>';
+      if(t._used&&t._used.length) c+='<div class="kv"><b>mentions</b> '+[...new Set(t._used)].map(nid=>'<span class="chip jump" data-jump-node="'+esc(nid)+'">'+esc(nid)+'</span>').join(" ")+' <span class="sub">(inferred)</span></div>';
+      return c+refRow(t.refs)+'</div>';
+    }
+    const groups=GLO.groups&&GLO.groups.length?GLO.groups:null; let h="";
+    if(groups){
+      const grouped=new Set();
+      groups.forEach(g=>{ (g.term_ids||[]).forEach(id=>grouped.add(id)); const ts=(g.term_ids||[]).map(id=>termById.get(id)).filter(Boolean).filter(match); if(ts.length) h+=block(g.name||"group", String(ts.length), ts.map(card).join(""), true); });
+      const rest=(GLO.terms||[]).filter(t=>!grouped.has(t.term_id)).filter(match);
+      if(rest.length) h+=block("other", String(rest.length), rest.map(card).join(""), true);
+    } else { const ts=(GLO.terms||[]).filter(match); h=ts.map(card).join(""); }
+    return h || '<div class="muted">No matching terms.</div>';
+  }
+  function renderDeps(filter){
+    const f=(filter||"").trim().toLowerCase(); let h="";
+    if(DEP.preamble) h+='<div class="muted">'+esc(DEP.preamble)+'</div>';
+    if(DEP.attribution) h+='<div class="ribbon">'+esc(DEP.attribution)+'</div>';
+    const ents=(DEP.entries||[]).filter(e=>!e.is_footprint).filter(e=>!f||(((e.rw_id||"")+" "+(e.name||"")+" "+(e.relation_raw||"")+" "+(e.delta||"")).toLowerCase().includes(f)));
+    ents.forEach(e=>{
+      const rn=e.relation_norm, relc=["baseline","imports","extends","bounds","refutes"].includes(rn)?rn:"neutral";
+      let c='<div class="card" id="ov-'+esc(e.rw_id||"")+'"><h4>'+(e.rw_id?'<span class="did">'+esc(e.rw_id)+'</span> ':'')+esc(e.name||"")+'</h4>';
+      c+='<div class="chips"><span class="rel '+relc+'">'+esc(e.relation_raw||rn||"related")+'</span>'+(e.cross_agent?'<span class="chip" title="other-agent provenance">↔ other-agent</span>':'')+'</div>';
+      if(e.delta) c+='<div class="kv">'+mtext(e.delta)+'</div>';
+      if(e.adopted) c+='<div class="kv"><b>adopted</b> '+esc(e.adopted)+'</div>';
+      let prov=(e.grounding||[]).map(refChip).join("");
+      (e.claims||[]).filter(id=>claimToNodes.has(id)).forEach(id=>prov+='<span class="chip jump" data-jump-claim="'+esc(id)+'">'+esc(id)+'</span>');
+      c+= prov?('<div class="kv"><b>grounding</b> '+prov+'</div>'):'<div class="muted">ungrounded</div>';
+      h+=c+'</div>';
+    });
+    if(!ents.length) h+='<div class="muted">No matching dependencies.</div>';
+    const fp=DEP.footprint||[];
+    if(fp.length) h+=block("Citation footprint", String(fp.length), fp.map(x=>'<div class="ptr"><span class="muted">'+esc(x.ref_id||"")+'</span> '+esc(x.citation||"")+'</div>').join(""), false);
+    return h;
+  }
+  function renderRecipes(){
+    let h="";
+    (REC.files||[]).forEach(file=>{
+      let inner="";
+      (file.sections||[]).forEach(sec=>{
+        let c='<div class="card" id="ov-sec-'+esc((file.file||"")+"-"+(sec.sec_id||""))+'"><h4>'+(sec.sec_id?'<span class="did">'+esc(sec.sec_id)+'</span> ':'')+esc(sec.heading||"")+'</h4>';
+        if(sec.kind==="table"&&sec.markdown) c+=renderMd(sec.markdown);
+        else if(sec.kind==="steps"&&sec.steps&&sec.steps.length) c+='<ol>'+sec.steps.map(s=>'<li>'+mtext(String(s).replace(/^\s*\d+\.\s*/,""))+'</li>').join("")+'</ol>';
+        else if(sec.kind==="kv"&&sec.fields&&sec.fields.length) sec.fields.forEach(fl=>c+='<div class="kv"><b>'+esc(fl.label)+'</b> '+mtext(fl.value)+'</div>');
+        else if(sec.kind==="code"&&sec.code) c+='<pre class="snip">'+esc(sec.code)+'</pre>';
+        else if(sec.kind==="math"&&sec.code) c+='<div class="kv math">'+mtext(sec.code)+'</div>';
+        else if(sec.text) c+='<div class="kv">'+mtext(sec.text)+'</div>';
+        if(sec.warn) c+='<div class="warn">'+esc(sec.warn)+'</div>';
+        inner+=c+refRow(sec.refs)+'</div>';
+      });
+      h+=block((file.file_title||file.file||"recipe")+(file.role?("  ·  "+file.role):""), String((file.sections||[]).length), inner, true);
+    });
+    return h || '<div class="muted">No recipe content.</div>';
+  }
+
+  // ---- overlay open/close + layerbar wiring ----
+  const ov=document.getElementById("overlay");
+  let lastTrigger=null;
+  const PANEL_RENDER={ context:renderContext, glossary:()=>renderGlossary(""), dependencies:()=>renderDeps(""), recipes:renderRecipes };
+  function hasContent(name){ const L=LAYERS[name]; if(!L) return false;
+    if(name==="context") return (L.sections||[]).length>0;
+    if(name==="glossary") return (L.terms||[]).length>0;
+    if(name==="dependencies") return (L.entries||[]).length>0||(L.footprint||[]).length>0;
+    if(name==="recipes") return (L.files||[]).length>0; return false; }
+  function panelTitle(name){ const L=LAYERS[name]||{}; return L.title || ({context:"Context",glossary:"Concepts",dependencies:"Dependencies",recipes:"Solution"}[name]); }
+  function panelCount(name){ const L=LAYERS[name]||{};
+    if(name==="glossary") return (L.terms||[]).length;
+    if(name==="dependencies") return (L.entries||[]).length;
+    if(name==="recipes") return (L.files||[]).reduce((a,f)=>a+(f.sections||[]).length,0); return 0; }
+  function openPanel(name, anchor){
+    if(!hasContent(name)) return;
+    stop(); lastTrigger=document.activeElement;
+    document.getElementById("ov-title").textContent=panelTitle(name);
+    const body=document.getElementById("ov-body"); body.innerHTML=PANEL_RENDER[name]();
+    if(LEX) linkifyConcepts(body);
+    const q=document.getElementById("ov-q");
+    if(name==="glossary"||name==="dependencies"){ q.hidden=false; q.value=""; q.dataset.panel=name; } else { q.hidden=true; }
+    ov.hidden=false;
+    if(anchor){ const el=document.getElementById(anchor); if(el) el.scrollIntoView({block:"center"}); } else body.scrollTop=0;
+    (q.hidden?document.getElementById("ov-close"):q).focus();
+  }
+  function closePanel(){ ov.hidden=true; if(lastTrigger&&lastTrigger.focus) lastTrigger.focus(); }
+  document.querySelectorAll(".lbtn").forEach(b=>{ const name=b.dataset.panel;
+    if(hasContent(name)){ b.hidden=false; const c=b.querySelector(".cnt"); if(c){ const n=panelCount(name); if(n) c.textContent=n; } b.addEventListener("click",()=>openPanel(name)); } });
+  document.getElementById("ov-q").addEventListener("input", e=>{ const p=e.target.dataset.panel, body=document.getElementById("ov-body");
+    body.innerHTML = p==="glossary"?renderGlossary(e.target.value):renderDeps(e.target.value); if(LEX) linkifyConcepts(body); });
+
+  // ---- glossary lexicon + popover ----
+  const LEX=(GLO&&GLO.lexicon&&Object.keys(GLO.lexicon).length)?(function(){
+    const surf=Object.keys(GLO.lexicon).filter(s=>s.length>=3).sort((a,b)=>b.length-a.length);
+    if(!surf.length) return null;
+    const re=s=>s.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+    return { re:new RegExp("\\b("+surf.map(re).join("|")+")\\b","i"), map:GLO.lexicon };
+  })():null;
+  const SKIP_TAGS={A:1,CODE:1,PRE:1,BUTTON:1,SCRIPT:1,STYLE:1,H4:1,H5:1,SUMMARY:1};
+  function linkifyConcepts(root){
+    if(!LEX) return;
+    const walker=document.createTreeWalker(root, NodeFilter.SHOW_TEXT, { acceptNode(t){
+      if(!t.nodeValue||!t.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+      let p=t.parentNode; while(p&&p!==root){ if(p.classList&&p.classList.contains("gterm")) return NodeFilter.FILTER_REJECT; if(SKIP_TAGS[p.tagName]) return NodeFilter.FILTER_REJECT; p=p.parentNode; }
+      return NodeFilter.FILTER_ACCEPT; } });
+    const seen=new Set(), hits=[]; let t;
+    while((t=walker.nextNode())){ const m=LEX.re.exec(t.nodeValue); if(!m) continue; const tid=LEX.map[m[1].toLowerCase()]; if(!tid||seen.has(tid)) continue; seen.add(tid); hits.push({node:t,index:m.index,len:m[1].length,tid}); }
+    hits.forEach(hp=>{ const tn=hp.node, txt=tn.nodeValue, par=tn.parentNode; if(!par) return;
+      const span=document.createElement("span"); span.className="gterm"; span.dataset.term=hp.tid; span.tabIndex=0; span.textContent=txt.slice(hp.index,hp.index+hp.len);
+      const after=document.createTextNode(txt.slice(hp.index+hp.len));
+      par.replaceChild(after,tn); par.insertBefore(span,after); par.insertBefore(document.createTextNode(txt.slice(0,hp.index)),span); });
+  }
+  const gpop=document.getElementById("gpop");
+  function gpopShow(span){ const t=termById.get(span.dataset.term); if(!t) return;
+    const def=t.definition||""; gpop.innerHTML='<h5>'+esc(t.name)+'</h5><div>'+mtext(def.slice(0,240))+(def.length>240?'…':'')+'</div><span class="gp-open" data-open-term="'+esc(t.term_id)+'">open in glossary →</span>';
+    gpop.style.display="block"; const r=span.getBoundingClientRect();
+    gpop.style.left=Math.max(6,Math.min(r.left, window.innerWidth-372))+"px"; gpop.style.top=(r.bottom+6)+"px"; }
+  function gpopHide(){ gpop.style.display="none"; }
+
+  // ---- delegated interactions for the new layers ----
+  document.addEventListener("click", e=>{
+    const el=e.target.closest&&e.target.closest("[data-close],[data-jump-node],[data-jump-claim],[data-open-panel],[data-open-term],[data-scroll]");
+    if(!el) return;
+    if(el.hasAttribute("data-close")){ closePanel(); return; }
+    if(el.dataset.jumpNode){ closePanel(); selectNode(el.dataset.jumpNode); return; }
+    if(el.dataset.jumpClaim){ const nid=firstNodeForClaim(el.dataset.jumpClaim); if(nid){ closePanel(); selectNode(nid); } return; }
+    if(el.dataset.openTerm){ openPanel("glossary","ov-"+el.dataset.openTerm); return; }
+    if(el.hasAttribute("data-open-panel")){ openPanel(el.dataset.openPanel, el.dataset.anchor||null); return; }
+    if(el.dataset.scroll){ const t=document.getElementById(el.dataset.scroll); if(t) t.scrollIntoView({block:"center"}); return; }
+  });
+  document.addEventListener("mouseover", e=>{ const g=e.target.closest&&e.target.closest(".gterm"); if(g) gpopShow(g); });
+  document.addEventListener("mouseout",  e=>{ const g=e.target.closest&&e.target.closest(".gterm"); if(g) gpopHide(); });
+  document.addEventListener("focusin",   e=>{ const g=e.target.closest&&e.target.closest(".gterm"); if(g) gpopShow(g); });
+  document.addEventListener("focusout",  e=>{ const g=e.target.closest&&e.target.closest(".gterm"); if(g) gpopHide(); });
+  window.addEventListener("scroll", gpopHide, true);
+
+  document.getElementById("q").addEventListener("input", applyFilters);
+  document.getElementById("ftype").addEventListener("change", applyFilters);
+  document.getElementById("fdead").addEventListener("change", applyFilters);
+  document.getElementById("rplay").addEventListener("click", play);
+  document.getElementById("rprev").addEventListener("click", ()=>{stop();step(-1);});
+  document.getElementById("rnext").addEventListener("click", ()=>{stop();step(1);});
+  document.addEventListener("keydown", e=>{
+    if(e.key==="Escape"){ if(!ov.hidden){ closePanel(); return; } gpopHide(); }
+    if(e.target.tagName==="INPUT"||e.target.tagName==="SELECT") return;
+    if(e.key==="ArrowLeft"){stop();step(-1);} else if(e.key==="ArrowRight"){stop();step(1);}
+    else if(e.key==="c"||e.key==="g"||e.key==="d"||e.key==="r"){ const p={c:"context",g:"glossary",d:"dependencies",r:"recipes"}[e.key]; if(hasContent(p)) openPanel(p); }
+  });
+
+  renderMap();
+  rstat();
+})();
+</script>
+</body>
+</html>

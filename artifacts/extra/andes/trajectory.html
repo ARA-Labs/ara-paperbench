@@ -1,0 +1,741 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ARA Trajectory</title>
+<!--
+  ARA Trajectory Viewer — canonical self-contained scaffold for the `research-visualizer` skill.
+
+  HOW THE SKILL USES THIS FILE
+  ----------------------------
+  The rendering logic below is FIXED. The agent does NOT rewrite it. The agent only:
+    1. Parses the ARA into one ARA_DATA object (schema in references/binding.md).
+    2. base64-inlines every referenced figure .png into node.result.figures[].img.
+    3. Replaces ONLY the JSON between the BEGIN/END markers in the <script id="ara-data"> block.
+    4. Writes the result to <ara>/trajectory.html (or --output).
+  Everything is inline (no CDN, no fetch, no server) so the output is one portable file.
+
+  INJECTION CONTRACT
+  ------------------
+  - Replace exactly the lines between  __ARA_DATA_BEGIN__  and  __ARA_DATA_END__.
+  - The payload MUST be valid JSON (it is read with JSON.parse).
+  - JSON must not contain the literal substring "</script>"; escape any "<" in inlined
+    markdown/text as "<" to be safe.
+  - The demo payload shipped here renders a 3-node sample so the bare template opens and
+    shows every node state (experiment, dead_end, isolated). The skill overwrites it.
+-->
+<style>
+  /* Research Visualizer — "field notebook of a machine scientist".
+     Cool archival vellum + ink; monospace is the machine-readout voice for
+     structure / IDs / data, a humanist serif carries the reasoning prose. The
+     signature is a traced trajectory spine that forks at branches and is struck
+     through at dead ends. Type is read from glyph + label; colour is reserved
+     for true epistemic status (teal = chrome, green = supported, amber =
+     tentative, clay-red = dead end) — never decoration. */
+  :root{
+    /* paper & ink — deliberately cool vellum, NOT warm cream */
+    --bg:#e9ece4; --panel:#f4f6f0; --panel2:#e3e7dd; --line:#ccd3c7; --ink:#1b2420;
+    --muted:#67726a; --faint:#8a948b; --accent:#0e6b62; --accent-ink:#0a4f48; --chip:#e6eae0;
+    --ok:#3a6a39; --warn:#a6402c; --tentative:#8a6310; --glyph-bg:#e0e5da; --glyph-ink:#4a544c;
+    --sel-bg:#e3ede7; --code-bg:#eaeee6; --reason-bg:#f4f6f0;
+    --iso-line:#b7c0ae; --iso-bg:#e5eadf; --iso-ink:#5f6b58;
+    --scrim:rgba(20,28,24,.42); --shadow:rgba(20,28,24,.16);
+    --add-bg:#e0ebdb; --add-ink:#2f5a2e; --del-bg:#f1e0da; --del-ink:#8c3623; --hunk:#67726a;
+    --spine:#c3ccbd; --grid:rgba(27,36,32,.05);
+    /* legacy type vars retained so any leftover hooks resolve */
+    --q:var(--glyph-bg); --exp:var(--glyph-bg); --dec:var(--glyph-bg); --piv:var(--glyph-bg); --ins:var(--glyph-bg); --def:var(--glyph-bg); --dead:var(--warn);
+    /* type roles: a serif reads the prose, monospace reads the machine */
+    --serif:ui-serif,"New York","Iowan Old Style",Palatino,Georgia,serif;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--bg);color:var(--ink);font:14px/1.65 var(--sans);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  code,pre,.mono{font-family:var(--mono)}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+
+  /* ---- masthead ---- */
+  header{padding:20px 24px 14px;border-bottom:1px solid var(--line);background:var(--panel)}
+  header .title{font-family:var(--serif);font-size:23px;font-weight:600;margin:0;letter-spacing:-.012em}
+  header .sub{font-family:var(--mono);color:var(--muted);font-size:11.5px;margin-top:5px;letter-spacing:.01em}
+  header details{margin-top:10px;color:var(--ink)}
+  header summary{cursor:pointer;color:var(--accent-ink);font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em}
+  .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:16px}
+  .toolbar input[type=search],.toolbar select{background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:6px 10px;font-size:13px;font-family:var(--sans)}
+  .toolbar input[type=search]{min-width:230px}
+  .toolbar input[type=search]:focus,.toolbar select:focus{border-color:var(--accent);outline:none}
+  .toolbar label{color:var(--muted);font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.06em;display:flex;gap:6px;align-items:center}
+  .btn{background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:6px 11px;font-size:12.5px;font-family:var(--mono);cursor:pointer;transition:border-color .12s,color .12s,background .12s}
+  .btn:hover{border-color:var(--accent);color:var(--accent-ink)}
+  .btn.primary{border-color:var(--accent);color:#fff;background:var(--accent)}
+  .btn.primary:hover{background:var(--accent-ink)}
+  .spacer{flex:1}
+  .count{color:var(--muted);font-family:var(--mono);font-size:11px;letter-spacing:.04em;padding-left:10px;border-left:1px solid var(--line)}
+
+  main{display:grid;grid-template-columns:minmax(300px,36%) 1fr;height:calc(100% - 0px);min-height:0}
+  #map{overflow:auto;border-right:1px solid var(--line);padding:18px 12px 56px;background:var(--bg);
+    background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+    background-size:24px 24px;background-position:-1px -1px}
+  #detail{overflow:auto;padding:26px 32px 80px;background:var(--bg)}
+
+  /* ---- process map: the trajectory spine is the signature ---- */
+  .node{position:relative;display:flex;gap:10px;align-items:flex-start;padding:7px 9px;border-radius:6px;cursor:pointer;border:1px solid transparent}
+  .node:hover{background:var(--panel2)}
+  .node.sel{background:var(--sel-bg);border-color:var(--accent)}
+  .node.deptarget{background:var(--sel-bg);outline:1px dashed var(--accent);outline-offset:-1px}
+  .node.dim{opacity:.32}
+  .node .glyph{flex:none;width:20px;height:20px;border-radius:5px;display:grid;place-items:center;font-family:var(--mono);font-size:11px;font-weight:700;color:var(--glyph-ink);background:var(--glyph-bg);border:1px solid var(--line);margin-top:1px}
+  .node.sel .glyph{border-color:var(--accent);color:var(--accent-ink)}
+  .node .nid{color:var(--muted);font-size:10.5px;font-family:var(--mono);letter-spacing:.02em}
+  .node .ntitle{font-size:13px;line-height:1.45}
+  .node.dead .ntitle{color:var(--warn);text-decoration:line-through;text-decoration-color:rgba(166,64,44,.45)}
+  .node .meta{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  /* the spine + branch connectors: nested steps trace back to their parent */
+  .kid{margin-left:19px;border-left:2px solid var(--spine);padding-left:14px}
+  .kid>.node::before{content:"";position:absolute;left:-14px;top:14px;width:10px;height:2px;background:var(--spine)}
+  .kid>.node.sel::before{background:var(--accent)}
+  .isobox{border:1px dashed var(--iso-line);border-radius:8px;margin:12px 2px;padding:6px 4px;background:var(--iso-bg)}
+  .isobox .isohdr{color:var(--iso-ink);font-family:var(--mono);font-size:10px;padding:3px 8px 7px;text-transform:uppercase;letter-spacing:.1em}
+  .dep{color:var(--muted);font-size:10px;font-family:var(--mono);border:1px solid var(--line);border-radius:4px;padding:0 5px}
+
+  .glyph.dead_end{background:var(--warn);color:#fff;border-color:var(--warn)}
+
+  /* ---- detail pane ---- */
+  .dhead{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-bottom:2px}
+  .badge{font-family:var(--mono);font-size:10px;font-weight:700;border-radius:4px;padding:3px 9px;color:var(--glyph-ink);background:var(--glyph-bg);border:1px solid var(--line);text-transform:uppercase;letter-spacing:.08em}
+  .badge.dead_end{background:var(--warn);color:#fff;border-color:var(--warn)}
+  .pill{font-family:var(--mono);font-size:10px;border:1px solid var(--line);border-radius:20px;padding:2px 9px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+  .pill.explicit{border-color:var(--ok);color:var(--ok)} .pill.inferred{border-color:var(--tentative);color:var(--tentative)}
+  .pill.iso{border-color:var(--iso-line);color:var(--iso-ink)}
+  .dtitle{font-family:var(--serif);font-size:25px;font-weight:600;margin:12px 0 6px;letter-spacing:-.012em;line-height:1.28}
+  .did{color:var(--muted);font-family:var(--mono);font-size:11.5px}
+
+  .block{border:1px solid var(--line);border-radius:7px;margin:15px 0;background:var(--panel)}
+  .block>summary{cursor:pointer;padding:11px 15px;font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);list-style:none;display:flex;align-items:center;gap:8px}
+  .block>summary::-webkit-details-marker{display:none}
+  .block>summary:hover{color:var(--accent-ink)}
+  .block>summary .tag{margin-left:auto;color:var(--faint);font-size:10.5px;font-weight:400;font-family:var(--mono);text-transform:none;letter-spacing:0}
+  .block .body{padding:4px 16px 16px}
+  /* the primary reasoning block: the agent's thinking, set as typeset prose */
+  .block.reason{border-left:3px solid var(--accent);background:var(--reason-bg)}
+  .block.reason>summary{color:var(--accent-ink)}
+  .block.reason .lead{font-family:var(--serif);font-size:17px;line-height:1.7;color:var(--ink)}
+  .didwhat{color:var(--muted);font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.09em;margin:16px 0 4px}
+  .lead{font-family:var(--serif);color:#2a322c;font-size:16px;line-height:1.7}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:11px}
+  .chip{background:var(--chip);border:1px solid var(--line);border-radius:4px;padding:2px 8px;font-size:11px;color:#46504a;font-family:var(--mono)}
+  .chip.ext{color:var(--muted)}
+
+  .claim{border:1px solid var(--line);border-left:2px solid var(--accent);border-radius:0 6px 6px 0;padding:11px 13px;margin:11px 0;background:var(--panel2)}
+  .claim h4{margin:0 0 6px;font-family:var(--mono);font-size:12px}
+  .claim .kv{font-size:13px;line-height:1.6;margin:4px 0;color:#3a423c}
+  .claim .kv b{color:var(--muted);font-weight:600;font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em}
+  .status{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.05em;border-radius:4px;padding:1px 7px;border:1px solid var(--line)}
+  .status.supported{color:var(--ok);border-color:var(--ok)}
+  .status.refuted{color:var(--warn);border-color:var(--warn)}
+  .status.hypothesis{color:var(--tentative);border-color:var(--tentative)}
+  .prov{font-size:11px;color:var(--iso-ink);font-family:var(--mono)}
+
+  .quote{border-left:3px solid var(--accent);background:var(--panel);border-radius:0 6px 6px 0;padding:9px 13px;margin:9px 0;font-size:13.5px;line-height:1.6;color:#2a322c}
+  .quote .ref{color:var(--muted);font-size:10.5px;font-family:var(--mono);margin-top:5px}
+  figure{margin:14px 0}
+  figure img{max-width:100%;border:1px solid var(--line);border-radius:5px;background:#fff;padding:6px}
+  figcaption{color:var(--muted);font-family:var(--mono);font-size:11px;margin-top:7px}
+
+  table.md{border-collapse:collapse;width:100%;font-family:var(--mono);font-size:12px;margin:10px 0}
+  table.md th,table.md td{border:1px solid var(--line);padding:5px 9px;text-align:left}
+  table.md th{background:var(--panel2);color:var(--ink);font-weight:700;text-transform:uppercase;font-size:10.5px;letter-spacing:.04em}
+  pre.snip{background:var(--code-bg);border:1px solid var(--line);border-radius:6px;padding:10px 12px;overflow:auto;font-size:12px;color:var(--ink);white-space:pre-wrap}
+
+  .ptr{font-size:13px;margin:7px 0}
+  .ptr .path{font-family:var(--mono);color:#46504a}
+  .truncated{color:var(--muted);font-size:11.5px;font-style:italic}
+  .empty{color:var(--muted);font-size:13px}
+  .none{color:var(--muted);padding:40px 24px;text-align:center;font-family:var(--mono);font-size:12px;letter-spacing:.02em}
+  kbd{background:var(--panel2);border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 5px;font-family:var(--mono);font-size:11px}
+
+  /* ---- enrichment layers (all inert unless the data is present) ---- */
+  .layerbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+  .lbtn .cnt{color:var(--muted);font-size:10.5px}
+  .chiplabel{color:var(--muted);font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.08em;margin:12px 0 3px}
+  .chip.jump{cursor:pointer}
+  .chip.jump:hover{border-color:var(--accent);color:var(--accent-ink)}
+  .chip.dangle{color:#9aa49b;text-decoration:line-through;cursor:not-allowed}
+  .chip.infer{border-style:dashed}
+  .chip-built{border-color:var(--ok);color:var(--ok)}
+  .chip-rej{border-color:var(--warn);color:var(--warn)}
+  .chip-recipe{border-color:var(--accent);color:var(--accent-ink)}
+  .nmark{color:var(--muted);font-size:10px;margin-left:5px;font-family:var(--mono)}
+  .rel{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.05em;border-radius:4px;padding:2px 8px;color:var(--glyph-ink);background:var(--glyph-bg);font-weight:700}
+  .rel.bounds,.rel.refutes{background:var(--warn);color:#fff}
+  .rel.neutral{background:var(--chip);color:var(--ink);border:1px solid var(--line);font-weight:400}
+  .ribbon{border-left:3px solid var(--accent);background:var(--panel2);border-radius:0 6px 6px 0;padding:9px 13px;margin:9px 0;color:#3a423c;font-size:13px;line-height:1.6}
+  .warn{border-left:3px solid var(--warn);background:var(--del-bg);border-radius:0 6px 6px 0;padding:9px 13px;margin:9px 0;font-size:13px;line-height:1.6}
+  .muted{color:var(--muted);font-size:11.5px}
+  .math{font-family:var(--serif);font-style:italic}
+  .gterm{border-bottom:1px dashed var(--accent);cursor:help}
+  #gpop{position:fixed;max-width:360px;background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:11px 13px;z-index:60;box-shadow:0 8px 28px var(--shadow);font-size:13px;line-height:1.55;display:none}
+  #gpop h5{margin:0 0 5px;font-family:var(--mono);font-size:12px;text-transform:uppercase;letter-spacing:.05em}
+  #gpop .gp-open{color:var(--accent);cursor:pointer;font-family:var(--mono);font-size:11px;margin-top:7px;display:inline-block}
+  .ov{position:fixed;inset:0;z-index:50}
+  .ov[hidden]{display:none}
+  .ov-scrim{position:absolute;inset:0;background:var(--scrim)}
+  .ov-sheet{position:relative;margin:5vh auto;max-width:920px;max-height:86vh;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 16px 48px var(--shadow)}
+  .ov-head{position:sticky;top:0;display:flex;gap:10px;align-items:center;padding:13px 17px;border-bottom:1px solid var(--line);background:var(--panel);z-index:1}
+  .ov-head #ov-title{font-family:var(--mono);font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.09em;color:var(--accent-ink)}
+  .ov-head input[type=search]{flex:1;max-width:260px;background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:5px 10px;font-size:13px}
+  .ov-body{padding:10px 17px 26px}
+  .ov-body .spacer{flex:1}
+  .card{border:1px solid var(--line);border-radius:6px;padding:11px 13px;margin:11px 0;background:var(--panel2)}
+  .card h4{margin:0 0 6px;font-family:var(--mono);font-size:12px}
+  .card .sub{color:var(--muted);font-family:var(--mono);font-size:10.5px}
+  .grey{opacity:.5}
+
+  /* responsive: stack the two panes on a narrow screen */
+  @media (max-width:720px){
+    main{grid-template-columns:1fr;grid-template-rows:42vh 1fr}
+    #map{border-right:none;border-bottom:1px solid var(--line)}
+    #detail{padding:20px 18px 64px}
+    .dtitle{font-size:21px}
+  }
+  /* honour reduced-motion */
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<header>
+  <h1 class="title" id="h-title">ARA Trajectory</h1>
+  <div class="sub" id="h-sub"></div>
+  <details id="h-abstract-wrap"><summary>Abstract</summary><div class="lead" id="h-abstract"></div></details>
+  <div class="toolbar">
+    <input type="search" id="q" placeholder="search steps…" autocomplete="off" />
+    <label>type
+      <select id="ftype"><option value="">all</option></select>
+    </label>
+    <label><input type="checkbox" id="fdead" /> dead ends only</label>
+    <span class="spacer"></span>
+    <button class="btn" id="rprev" title="previous (←)">‹</button>
+    <button class="btn primary" id="rplay">▶ Replay</button>
+    <button class="btn" id="rnext" title="next (→)">›</button>
+    <span class="count" id="rstat"></span>
+  </div>
+  <div class="layerbar" id="layerbar">
+    <button class="btn lbtn" data-panel="context" hidden>◧ Context</button>
+    <button class="btn lbtn" data-panel="glossary" hidden>▤ Glossary <span class="cnt"></span></button>
+    <button class="btn lbtn" data-panel="dependencies" hidden>⇄ Dependencies <span class="cnt"></span></button>
+    <button class="btn lbtn" data-panel="recipes" hidden>▦ Recipes <span class="cnt"></span></button>
+  </div>
+</header>
+
+<main>
+  <aside id="map"></aside>
+  <section id="detail"><div class="none">Select a step on the left, or press <kbd>▶ Replay</kbd>.</div></section>
+</main>
+
+<!-- v1.1: one shared modal overlay for the Context/Glossary/Dependencies/Recipes panels, + a glossary popover. Both inert unless their data is present. -->
+<div id="overlay" class="ov" hidden role="dialog" aria-modal="true">
+  <div class="ov-scrim" data-close></div>
+  <div class="ov-sheet">
+    <div class="ov-head"><span id="ov-title"></span>
+      <input type="search" id="ov-q" placeholder="filter…" hidden autocomplete="off" />
+      <span class="spacer"></span>
+      <button class="btn" id="ov-close" data-close>✕ <kbd>Esc</kbd></button>
+    </div>
+    <div class="ov-body" id="ov-body"></div>
+  </div>
+</div>
+<div id="gpop"></div>
+
+<!-- The skill replaces ONLY the JSON between the two markers below. -->
+<script id="ara-data" type="application/json">
+/* __ARA_DATA_BEGIN__ */
+{"meta": {"title": "Andes: Defining and Enhancing Quality-of-Experience in LLM-Based Text Streaming Services", "authors": ["Jiachen Liu", "Jae-Won Chung", "Zhiyu Wu", "Fan Lai", "Myungjin Lee", "Mosharaf Chowdhury"], "year": "2024", "venue": "arXiv", "ara_dir": "andes", "abstract": "Large language models (LLMs) are now at the core of conversational AI services such as real-time translation and chatbots, which provide live user interaction by incrementally streaming text to the user. However, existing LLM serving systems fail to provide good user experience because their optimization metrics are not always aligned with user experience. In this paper, we first introduce and define the notion of Quality-of-Experience (QoE) for text streaming services by considering each user's end-to-end interaction timeline. Based on this, we propose Andes, a QoE-aware LLM serving system that enhances user experience by ensuring that users receive the first token promptly and subsequent tokens at a smooth, digestible pace, even during surge periods. This is enabled by Andes's preemptive request scheduler that dynamically prioritizes requests at the token granularity based on each request's expected QoE gain and GPU resource usage. Our evaluations demonstrate that, compared to state-of-the-art LLM serving systems, Andes improves the average QoE by up to 4.7x given the same GPU resource, or saves up to 61% GPU resources while maintaining the same high QoE."}, "order": ["N01", "N02", "N04", "N05", "N07", "N08", "N06", "N09", "N10", "N11", "N12", "N03"], "nodes": [{"id": "N01", "type": "question", "parent": null, "title": "What metric should optimize LLM serving for conversational AI?", "body": "Existing LLM serving metrics (throughput, TTFT, TPOT) are widely used, but do they align with actual user experience in text streaming? If not, what is the right metric?", "thinking": "The project starts from a gap between how serving systems are graded and what users actually feel. Throughput, time-to-first-token, and time-per-output-token are the metrics everyone optimizes for, but none of them was ever checked against the lived experience of someone watching text stream in. That mismatch is the opening question: is there a better, user-centered way to measure quality of service for conversational AI, and if the existing metrics fall short, what should replace them?", "support_level": "explicit", "isolated": false, "depends_on": [], "source_refs": [], "why": [], "result": {"sources": [], "figures": [], "tables": [], "data": []}, "verified_by": [], "artifact": []}, {"id": "N02", "type": "experiment", "parent": "N01", "title": "Observe mismatch between TDS and user consumption speed in vLLM", "body": "Measuring vLLM directly on the BurstGPT trace showed the server pushing tokens far faster than anyone could read or listen to them: average token delivery speed (TDS) of 11.2 tokens/s against a human reading speed of 4.8 tokens/s and a listening speed of 3.3 tokens/s, and that gap persisted even under severe load surges. At the same time, average time-to-first-token (TTFT) inflated to 10.4s under BurstGPT, well past what a user would tolerate before the first word even appears.", "thinking": "The first concrete measurement targets vLLM's own behavior: how fast does it actually stream tokens, and how fast do people actually consume them? The answer is a large and wasteful gap. The server generates far more tokens per second than a reader or listener can absorb, meaning GPU cycles are being spent on speed nobody benefits from. Worse, that same server is slow where it matters most: getting the very first token out during a burst. This is the seed observation the whole project builds on: there is slack in how fast tokens are pushed, and that slack is being spent in the wrong place.", "support_level": "explicit", "isolated": false, "depends_on": [], "source_refs": ["Figure 3 (referenced, no evidence file indexed in this ARA)", "§2.2"], "why": [{"id": "C04", "title": "Andes achieves QoE >= 0.95 for 97% of requests on real-world BurstGPT traces", "statement": "On a one-hour BurstGPT trace replay, 97% of requests served by Andes achieve QoE >= 0.95, compared to only 75% under vLLM. Andes raises average QoE from 0.88 to 0.99 and reduces average TTFT from 10.5s to 1.8s.", "status": "supported", "conditions": "", "falsification": "Fewer than 97% of Andes-served requests achieve QoE >= 0.95 on the BurstGPT one-hour trace, or average TTFT is not reduced to 1.8s.", "dependencies": ["C01", "C02"], "provenance": null}], "result": {"sources": [], "figures": [], "tables": [{"id": "Figure4", "caption": "Figure 4 (Sec. 2.2) — vLLM average TTFT and TDS vs burst duration (20-minute trace, Phi-3.5-MoE 16x3.8B, 8xA100).", "markdown": "| Reference line | Value | Description |\n|---|---|---|\n| Target TTFT | 1.3 s | Google web-page-loading recommendation |\n| Reading speed | 4.8 tokens/s | User reading speed reference |\n| Listening speed | 3.3 tokens/s | User listening speed reference |\n\n| Observation | Value |\n|---|---|\n| vLLM TDS at moderate burst (10 min duration) | ~11 tokens/s |\n| Ideal preemption multiplier at 10-min burst | 2.3x (11/4.8) |"}, {"id": "Table1", "caption": "Table 1 (Sec. 6.1) — Models and hardware configurations.", "markdown": "| Model | Architecture | Memory | Hardware |\n|---|---|---|---|\n| Phi-3-mini 3.8B | Dense, MHA | 7 GB | A100x4 |\n| Command R 32B | Dense, GQA | 61 GB | A100x8 |\n| Phi-3.5-MoE 16x3.8B | MoE, GQA | 80 GB | A100x8 |\n| Llama 3.1 70B | Dense, GQA | 132 GB | A100x8 |"}, {"id": "Figure11", "caption": "Figure 11 (Sec. 6.2) — QoE / TTFT / TDS CDFs on the one-hour BurstGPT trace (Phi-3.5-MoE 16x3.8B, 8xA100).", "markdown": "| System | Average QoE | % requests QoE >= 0.95 | Average TTFT (s) | Average TDS (tokens/s) |\n|---|---|---|---|---|\n| Andes | 0.99 | 97% | 1.8 | 10.9 |\n| vLLM | 0.88 | 75% | 10.5 | 11.2 |"}], "data": []}, "verified_by": [{"id": "E01", "title": "End-to-End QoE Improvement on Real-World BurstGPT Trace", "run": "Replay the one-hour BurstGPT trace through vLLM (FCFS) and through Andes; record per-request token delivery timestamps for both.", "setup": "Model: Phi-3.5-MoE 16x3.8B; Hardware: 8x NVIDIA A100 SXM4 40GB (AWS p4d.24xlarge, tensor parallelism); Dataset: Multi-Round ShareGPT + one-hour BurstGPT trace slice; target TTFT = max(input_length/5000, 1) s; baseline vLLM v0.6.1 (FCFS).", "metrics": "Average QoE, CDF of QoE at threshold 0.95, average TTFT (s), average TDS (tokens/s), peak waiting queue length, GPU memory utilization (%)."}], "artifact": [], "built_on": [{"rw_id": "RW01", "name": "Kwon et al., 2023 (vLLM)", "relation_raw": "baseline"}, {"rw_id": "RW10", "name": "Wang et al., 2024 (BurstGPT)", "relation_raw": "imports"}], "concepts": ["TDS"]}, {"id": "N04", "type": "decision", "parent": "N02", "title": "Define QoE formally as deviation from Ideal Consumption Timeline", "body": "Decision: QoE = 1 - S_delay/S_whole, where S_delay measures cumulative delay relative to the ideal timeline and S_whole normalizes by the whole area under the actual timeline, diluting the weight of early delays as more tokens are generated. Alternatives considered and set aside: a simple startup-delay metric (TTFT only), an average-delay metric across all tokens (which ignores cascading delay), and percentile TPOT.", "thinking": "Once it was clear that TDS and TTFT alone were missing something, the next step was to design a metric that actually tracks the user's whole experience, not just one moment in it. The guiding evidence was twofold: N02 showed that every single token's timing matters, not just the first one, and four foundational cases sketched out on paper (Figure 5) exposed exactly which failure modes a good metric has to catch, especially delivery that looks fine on average but pauses badly in the middle. That pushed the design toward a normalization term, S_whole, that dilutes the weight of an early delay as more tokens stream in, rather than letting one bad moment dominate the whole score. TTFT-only, plain average delay, and percentile TPOT were all considered and rejected because each one collapses the full delivery timeline down to a single number that can hide exactly the failure the project cares about.", "support_level": "explicit", "isolated": false, "depends_on": [], "source_refs": ["Figure 5 (referenced, no evidence file indexed in this ARA)"], "why": [], "result": {"sources": [], "figures": [], "tables": [], "data": []}, "verified_by": [], "artifact": [{"name": "QoE metric implementation", "pointer": "src/execution/qoe.py", "what": "QoEComputer / RequestState — implements Equations 1-3 (S_delay, S_whole, QoE) exactly as decided here."}, {"name": "QoE mathematical formulation", "pointer": "logic/solution/algorithm.md § Mathematical Formulation → QoE Definition", "what": "recipe section (Equations 1-3)"}], "concepts": ["QoE", "Ideal Consumption Timeline"]}, {"id": "N05", "type": "decision", "parent": "N04", "title": "Design preemptive token-level scheduler to maximize QoE", "body": "Decision: schedule at token granularity with preemption, choosing which requests to interrupt mid-generation based on each request's QoE gain relative to the GPU resources it consumes. Alternatives considered and set aside: request-level preemption (too coarse to control QoE precisely), plain FCFS (already confirmed bad by N02/N03), and fairness-based scheduling like VTC (which does not account for how fast a user is actually consuming tokens).", "thinking": "With QoE defined, the natural next question is how to actually act on it. N02 had already shown that the server generates tokens faster than users consume them, which means there is slack in every request's delivery timeline. The insight here is to spend that slack deliberately: preempt a request mid-generation, exactly at the token level, whenever doing so lets the system serve a new or more urgent arrival without the preempted user ever noticing a pause. Coarser request-level preemption could not exploit this slack precisely enough, FCFS had already been ruled out, and fairness-based approaches like VTC optimize for something adjacent to QoE but not QoE itself, since they ignore each user's actual consumption speed.", "support_level": "explicit", "isolated": false, "depends_on": [], "source_refs": [], "why": [], "result": {"sources": [], "figures": [], "tables": [], "data": []}, "verified_by": [], "artifact": [{"name": "Token-level scheduler", "pointer": "src/execution/scheduler.py", "what": "AndesScheduler / PriorityGreedyScheduler / OverheadAwareRefiner — the scheduler this decision commits to building."}, {"name": "Scheduler architecture", "pointer": "logic/solution/architecture.md § Component: Token-Level Request Scheduler", "what": "recipe section describing the component this decision specifies"}], "concepts": ["QoE"]}, {"id": "N07", "type": "experiment", "parent": "N05", "title": "Attempt exact 3D Dynamic Programming solution", "body": "The exact solver (3D DP over requests, batch size, and memory) runs in O(MN^2) pseudo-polynomial time. With M in the thousands and N in the hundreds, each scheduling decision is prohibitively slow for a real-time system. The greedy solver that was tried alongside it is about 20x faster and, because it can be re-run more often, actually achieves slightly better QoE than the DP solution.", "thinking": "Before settling for an approximation, the obvious first move is to try to solve the scheduling problem exactly. The 3D DP formulation guarantees optimal packing for any fixed batch size, but its running time scales with both memory capacity and number of requests squared, which turns out to be far too slow to run at the pace live scheduling requires. The surprising twist is that being fast wins on more than just latency: because the cheaper greedy solver can be invoked far more frequently, it reacts to changing conditions sooner and ends up with slightly higher QoE than the theoretically optimal but sluggish DP solver.", "support_level": "explicit", "isolated": false, "depends_on": [], "source_refs": ["Appendix C (Algorithm 2) (referenced, no evidence file indexed in this ARA)"], "why": [{"id": "C06", "title": "The greedy knapsack solver achieves near-optimal QoE while being ~20x faster than 3D DP", "statement": "The O(N log N) greedy solver achieves slightly better average QoE than the optimal O(MN^2) 3D DP solver in real-time settings because its speed enables more frequent scheduling decisions. It runs approximately 20x faster than the DP solver.", "status": "supported", "conditions": "", "falsification": "The greedy solver achieves substantially lower QoE than the 3D DP solver, or the speed advantage is less than 2x.", "dependencies": ["C02"], "provenance": null}], "result": {"sources": [], "figures": [], "tables": [{"id": "Figure18", "caption": "Figure 18 (Sec. 6.4) — Knapsack solver comparison, greedy vs 3D DP (Llama 3.1 70B, 8xA100).", "markdown": "| Metric | Value |\n|---|---|\n| Greedy solver speedup over 3D DP | ~20x |\n| Greedy vs DP QoE at longer burst durations | Greedy slightly better |\n| Greedy vs DP QoE at higher burst intensities | Greedy slightly better |\n| Reason greedy outperforms DP | Faster per-decision runtime enables more frequent scheduling |"}], "data": []}, "verified_by": [{"id": "E05", "title": "Comparison of Greedy vs 3D Dynamic Programming Knapsack Solver", "run": "Implement both Algorithm 1 (greedy, O(N log N)) and Algorithm 2 (3D DP, O(MN^2)) inside Andes; run each across the burst-intensity and burst-duration sweeps; measure average QoE and per-scheduling-decision runtime for each.", "setup": "Model: Llama 3.1 70B; Hardware: 8x A100 SXM4 40GB; Dataset: Multi-Round ShareGPT; burst intensity in [1.5, 2.0, 2.5] (left panel), burst duration swept (right panel).", "metrics": "Average QoE, per-decision solver runtime (ms), speedup ratio (DP runtime / greedy runtime)."}], "artifact": [{"name": "3D DP baseline (not shipped)", "pointer": "logic/solution/algorithm.md § Algorithm 2: 3D Dynamic Programming (Optimal, Pseudo-Polynomial)", "what": "recipe section — the exact solver this experiment tested; no src/execution/ implementation exists (superseded by the greedy solver)."}], "built_on": [{"rw_id": "RW11", "name": "Kellerer et al., 2004 (Knapsack Problems)", "relation_raw": "imports"}], "concepts": ["QoE"]}, {"id": "N08", "type": "experiment", "parent": "N05", "title": "Implement LQSF (Least QoE Slack First) as intermediate baseline", "body": "LQSF prioritizes whichever requests are most at risk of QoE degradation, without weighting by how much GPU resource they consume. It shows a slight improvement over FCFS but is not sufficient on its own: because it ignores context length (resource usage), high-resource requests are free to starve out everyone else.", "thinking": "Before landing on the final priority function, it is worth checking whether urgency alone, without accounting for cost, is enough. LQSF tests exactly that: rank requests purely by how close they are to losing QoE, ignoring how much memory or compute each one occupies. It does beat plain FCFS, so urgency does matter, but it is not sufficient by itself. Because it never looks at context length, a handful of large, resource-hungry requests can dominate the schedule and starve smaller ones, which points directly at the need for a priority function that divides QoE gain by resource cost.", "support_level": "explicit", "isolated": false, "depends_on": [], "source_refs": ["§6.3"], "why": [{"id": "C02", "title": "Andes improves average QoE by up to 4.7x compared to vLLM under bursty load", "statement": "On synthetic cyclic burst traces across four model architectures and three datasets, Andes achieves up to 4.7x higher average QoE than vLLM (FCFS) when burst intensity is varied.", "status": "supported", "conditions": "", "falsification": "On the same hardware/models/traces, Andes achieves <=1x average QoE improvement relative to vLLM.", "dependencies": ["C01"], "provenance": null}], "result": {"sources": [], "figures": [], "tables": [{"id": "Figure15", "caption": "Figure 15 (Sec. 6.3) — Average QoE vs burst intensity, 4 models x 3 datasets, Andes/vLLM/LQSF/Sarathi-Serve.", "markdown": "| Metric | Value |\n|---|---|\n| Andes max QoE improvement vs vLLM | up to 4.7x |\n| Andes max burst intensity vs vLLM at QoE = 0.95 | up to 2.6x higher |\n| GPU savings (Andes vs vLLM at QoE = 0.95) | up to 61% |"}, {"id": "Figure16", "caption": "Figure 16 (Sec. 6.3) — Average QoE vs burst duration, 4 models x 3 datasets.", "markdown": "| Metric | Value |\n|---|---|\n| Andes max QoE improvement vs vLLM under varying burst duration | up to 3.5x |\n| Andes consistency | Higher average QoE across all models and datasets |"}], "data": []}, "verified_by": [{"id": "E02", "title": "QoE and Resource Savings Under Synthetic Cyclic Burst Load (Varying Intensity)", "run": "For each (model, dataset, burst intensity) combination, generate a one-cycle synthetic cyclic-burst trace and serve it with Andes, vLLM (FCFS), Sarathi-Serve, and LQSF; compute average QoE and the maximum sustainable burst intensity at QoE >= 0.95.", "setup": "Models: Phi-3-mini 3.8B (4xA100), Command R 32B (8xA100), Phi-3.5-MoE 16x3.8B (8xA100), Llama 3.1 70B (8xA100); Datasets: Multi-Round ShareGPT, ArXiv Summarization, Coding Challenges; cyclic burst load, default duration 35%, intensity in [1.5, 2.0, 2.5]; average request rate = no-burst system throughput; Poisson arrivals within each phase.", "metrics": "Average QoE per configuration, maximum sustainable burst intensity at QoE >= 0.95, GPU resource savings (%)."}], "artifact": [], "built_on": [{"rw_id": "RW01", "name": "Kwon et al., 2023 (vLLM)", "relation_raw": "baseline"}, {"rw_id": "RW02", "name": "Agrawal et al., 2024 (Sarathi-Serve)", "relation_raw": "baseline"}, {"rw_id": "RW03", "name": "Yu et al., 2022 (Orca)", "relation_raw": "imports"}, {"rw_id": "RW11", "name": "Kellerer et al., 2004 (Knapsack Problems)", "relation_raw": "imports"}], "rejected_here": [{"rw_id": "RW07", "name": "Sheng et al., 2024 (VTC — Fairness in LLM Serving)", "relation_raw": "bounds"}], "concepts": ["QoE"]}, {"id": "N06", "type": "decision", "parent": "N04", "title": "Formulate scheduling as knapsack problem", "body": "Decision: cast request selection as a 0/1 knapsack problem where items are requests, weights are context lengths (l_i), and values are QoE gains that themselves depend on the chosen batch size B; solve for every B in [B_min, B_max]. Alternatives considered and set aside: a simple priority queue with no memory constraint, an RL-based scheduler, and an LP relaxation of the knapsack.", "thinking": "Scheduling under a hard GPU-memory ceiling, where every request's value depends on how many other requests share the batch, is structurally a knapsack problem: the memory budget is the capacity, each request's KV-cache footprint is its weight, and its QoE gain is its value. What makes this variant novel is that the value itself is a function of the batch size B, since token latency changes with B, so the problem has to be solved across the whole feasible range of B rather than for one fixed capacity. A priority queue with no memory awareness would let the schedule blow past the GPU's memory, an RL-based scheduler was judged too complex and unpredictable for this setting, and a plain LP relaxation would not respect the strict 0/1 nature of admitting a whole request or not.", "support_level": "explicit", "isolated": false, "depends_on": [], "source_refs": [], "why": [], "result": {"sources": [], "figures": [], "tables": [], "data": []}, "verified_by": [], "artifact": [{"name": "Knapsack formulation", "pointer": "logic/solution/algorithm.md § Mathematical Formulation → Scheduling Problem (Equation 5)", "what": "recipe section formalizing the knapsack cast this decision commits to"}]}, {"id": "N09", "type": "decision", "parent": "N06", "title": "Approximate with greedy packing; add batch size search space pruning", "body": "Decision: use O(N log N) greedy packing with priority = QoE gain / context length l_i, and prune the batch size search space to [B_min, B_max]. Only trigger the scheduler when the KV cache watermark exceeds 90% or latency exceeds the most stringent user's required rate. Alternatives considered and set aside: exploring every B in [1, N] (too slow) and using a single fixed batch size (which throws away the QoE-versus-B tradeoff).", "thinking": "N07 already showed the exact DP solver is too slow for real-time use, so the practical path is a fast approximation. Dividing QoE gain by context length as the priority score naturally does two useful things at once: it preempts memory-heavy requests first, and it auto-deprioritizes any request that has already accumulated enough buffered tokens, which prevents starvation without any extra bookkeeping. Searching every possible batch size from 1 to N would defeat the purpose of being fast, so the search space is pruned to a realistic [B_min, B_max] window, and the whole scheduler is only invoked when the system is actually under memory or latency pressure rather than on every iteration.", "support_level": "explicit", "isolated": false, "depends_on": [], "source_refs": [], "why": [], "result": {"sources": [], "figures": [], "tables": [], "data": []}, "verified_by": [], "artifact": [{"name": "Priority-based greedy packer", "pointer": "src/execution/scheduler.py", "what": "PriorityGreedyScheduler.greedy_pack / compute_batch_size_bounds / should_trigger — implements the greedy algorithm and pruning decided here."}, {"name": "Greedy packing algorithm", "pointer": "logic/solution/algorithm.md § Algorithm 1: Priority-Based Greedy Packing", "what": "recipe section (pseudocode)"}, {"name": "Priority heuristic", "pointer": "logic/solution/heuristics.md § H01: Priority = QoE Gain per Memory Unit (l_i denominator)", "what": "recipe section"}, {"name": "Batch size pruning heuristic", "pointer": "logic/solution/heuristics.md § H03: Batch Size Search Space Pruning [B_min, B_max]", "what": "recipe section"}, {"name": "Selective triggering heuristic", "pointer": "logic/solution/heuristics.md § H02: Selective Triggering via KV Cache Watermark (90%) and Latency Threshold", "what": "recipe section"}], "concepts": ["QoE"]}, {"id": "N10", "type": "experiment", "parent": "N09", "depends_on": ["N07", "N08"], "title": "Discover excessive preemptions degrade QoE — need overhead awareness", "body": "Running the greedy scheduler without any awareness of preemption cost, as burst duration grows longer, it triggers many preemptions. Each one carries a real cost, hundreds of milliseconds to seconds, and that cumulative overhead ends up delaying token generation for every other ongoing request, significantly degrading QoE in aggregate even though each individual preemption decision looked locally correct.", "thinking": "With the greedy packer in place, the natural next check is to see how it behaves under sustained load. It reveals a blind spot: the greedy priority score is myopic, it only looks at the QoE gain from the preemption it is about to make, never at the cost that preemption imposes on everyone else already running. As bursts last longer, the scheduler keeps making individually reasonable swaps that add up to a lot of paused generation across the whole system, and aggregate QoE collapses. This directly draws on both earlier branches, the DP-vs-greedy comparison (N07) and the LQSF baseline (N08), both of which used a scheduler with no notion of preemption cost.", "support_level": "explicit", "isolated": false, "source_refs": [], "why": [{"id": "C05", "title": "The overhead-aware refiner is necessary for high QoE; removing it causes QoE collapse", "statement": "Andes without the overhead-aware refiner incurs excessive preemptions as burst duration increases, significantly degrading average QoE compared to Andes with the refiner.", "status": "supported", "conditions": "", "falsification": "Andes without overhead awareness achieves equivalent or higher average QoE compared to Andes with overhead awareness across all burst durations tested.", "dependencies": ["C02"], "provenance": null}], "result": {"sources": [], "figures": [], "tables": [{"id": "Figure17", "caption": "Figure 17 (Sec. 6.4) — Overhead-aware refiner ablation (Llama 3.1 70B, 8xA100, Multi-Round ShareGPT).", "markdown": "| Observation | Value |\n|---|---|\n| Burst duration range tested | 25%, 30%, 35%, 40%, 45% |\n| Andes without overhead: preemptions per request | Increases steeply with burst duration |\n| Andes with overhead: QoE | Consistently high across all durations |\n| Andes without overhead: QoE | Degrades significantly as burst duration increases |\n| vLLM: QoE | Low baseline across all durations |"}], "data": []}, "verified_by": [{"id": "E04", "title": "Ablation — Overhead-Aware Refiner vs No Overhead Awareness", "run": "Run Andes (with refiner), Andes-no-overhead (greedy scheduler only), and vLLM across burst durations [25%, 30%, 35%, 40%, 45%]; record average QoE and average preemptions per request for each.", "setup": "Model: Llama 3.1 70B; Hardware: 8x A100 SXM4 40GB; Dataset: Multi-Round ShareGPT; cyclic burst load, default intensity 2x.", "metrics": "Average QoE, average preemptions per request."}], "artifact": [{"name": "Greedy-only scheduler (overhead-unaware configuration under test)", "pointer": "src/execution/scheduler.py", "what": "PriorityGreedyScheduler run without OverheadAwareRefiner — the exact configuration whose failure this experiment documents."}], "concepts": ["QoE"]}, {"id": "N11", "type": "decision", "parent": "N10", "title": "Add Overhead-Aware Refiner to greedy scheduler", "body": "Decision: post-process every greedy (admit, preempt) pair by estimating its net QoE change, QoE gain from admitting minus the summed QoE loss the preemption's overhead latency inflicts on all currently running requests, and stop admitting as soon as that net change turns non-positive. Alternatives considered and set aside: a fixed preemption rate limit, a cooldown timer between preemptions, and simply not correcting for overhead at all.", "thinking": "N10 made the problem concrete: the greedy scheduler needs a way to know when a preemption is no longer worth its cost. The fix layered on top is a refiner that walks the greedy decision list in priority order and, for each candidate swap, weighs the QoE it would gain against the QoE it would cost every other running request during the preemption's overhead window, stopping the moment that trade turns unfavorable. This is workable because preemption overhead itself is predictable: offline profiling gives a reliable estimate of how long a recompute-or-swap operation takes, an idea grounded in prior work showing DNN-serving overhead is stable enough to predict ahead of time. A flat rate limit or a fixed cooldown were both rejected because neither adapts to how much QoE is actually at stake in a given moment; only estimating the real cost each time does that.", "support_level": "explicit", "isolated": false, "depends_on": [], "source_refs": [], "why": [], "result": {"sources": [], "figures": [], "tables": [], "data": []}, "verified_by": [], "artifact": [{"name": "Overhead-aware refiner", "pointer": "src/execution/overhead_refiner.py", "what": "refine_scheduling_decision / select_preemption_mechanism / lookup_preemption_overhead — the refiner this decision adds."}, {"name": "Overhead-aware refiner (scheduler-integrated)", "pointer": "src/execution/scheduler.py", "what": "OverheadAwareRefiner class, invoked from AndesScheduler.step()"}, {"name": "Refiner algorithm", "pointer": "logic/solution/algorithm.md § Overhead-Aware Refiner (Algorithm, Informal)", "what": "recipe section (pseudocode)"}, {"name": "Early-stopping heuristic", "pointer": "logic/solution/heuristics.md § H04: Overhead-Aware Refiner — Stop When Net QoE Change is Non-Positive", "what": "recipe section"}], "concepts": ["Overhead-Aware Refiner", "QoE"]}, {"id": "N12", "type": "experiment", "parent": "N11", "title": "Validate Andes end-to-end on BurstGPT + synthetic traces", "body": "With the full system assembled, Andes achieves up to 4.7x QoE improvement, 61% GPU savings, and 97% of requests at QoE >= 0.95 (versus 75% for vLLM); TTFT drops from 10.5s to 1.8s and peak queue length is reduced by 85%. These results hold across 4 model architectures, 3 datasets, varying burst intensity and duration, and Poisson arrivals.", "thinking": "This is the payoff step: every prior decision, from defining QoE through to the overhead-aware refiner, gets tested together as one system against the real BurstGPT trace and a battery of synthetic workloads. The result confirms the whole chain of reasoning holds up under load: not only does the headline QoE number improve substantially, but the system also uses meaningfully less GPU capacity to hit the same quality bar, first tokens arrive much sooner, and queues no longer pile up during surges. Testing across four different model architectures, three datasets, and multiple burst patterns (including plain Poisson arrivals with no burst structure at all) checks that none of this is an artifact of one specific setup.", "support_level": "explicit", "isolated": false, "depends_on": [], "source_refs": ["Figure 13 (referenced, no evidence file indexed in this ARA)"], "why": [{"id": "C02", "title": "Andes improves average QoE by up to 4.7x compared to vLLM under bursty load", "statement": "On synthetic cyclic burst traces across four model architectures and three datasets, Andes achieves up to 4.7x higher average QoE than vLLM (FCFS) when burst intensity is varied.", "status": "supported", "conditions": "", "falsification": "On the same hardware/models/traces, Andes achieves <=1x average QoE improvement relative to vLLM.", "dependencies": ["C01"], "provenance": null}, {"id": "C03", "title": "Andes saves up to 61% GPU resources while maintaining average QoE >= 0.95", "statement": "To maintain average QoE >= 0.95, Andes requires up to 61% fewer GPUs compared to vLLM, or equivalently handles up to 2.6x more burst intensity with the same GPU count.", "status": "supported", "conditions": "", "falsification": "Andes requires >=61% of vLLM's GPU resources (no savings) to maintain QoE >= 0.95 under the same load patterns.", "dependencies": ["C01", "C02"], "provenance": null}, {"id": "C04", "title": "Andes achieves QoE >= 0.95 for 97% of requests on real-world BurstGPT traces", "statement": "On a one-hour BurstGPT trace replay, 97% of requests served by Andes achieve QoE >= 0.95, compared to only 75% under vLLM. Andes raises average QoE from 0.88 to 0.99 and reduces average TTFT from 10.5s to 1.8s.", "status": "supported", "conditions": "", "falsification": "Fewer than 97% of Andes-served requests achieve QoE >= 0.95 on the BurstGPT one-hour trace, or average TTFT is not reduced to 1.8s.", "dependencies": ["C01", "C02"], "provenance": null}, {"id": "C07", "title": "Andes reduces peak queue length by 85% compared to vLLM on BurstGPT", "statement": "Under the one-hour BurstGPT trace, Andes reduces peak waiting queue length during load surges by 85% through token-level preemptive scheduling.", "status": "supported", "conditions": "", "falsification": "Peak queue length reduction is less than 85% under the same BurstGPT trace and hardware configuration.", "dependencies": ["C04"], "provenance": null}, {"id": "C08", "title": "Andes's QoE improvement is robust across model architectures, datasets, and arrival distributions", "statement": "Andes consistently outperforms vLLM, Sarathi-Serve, and LQSF in average QoE across Dense/MoE architectures, MHA/GQA attention, three input/output datasets, varying burst intensities, burst durations, and Poisson arrival patterns.", "status": "supported", "conditions": "", "falsification": "There exists a tested model/dataset/arrival-pattern combination where Andes does not outperform all baselines in average QoE.", "dependencies": ["C02", "C03"], "provenance": null}], "result": {"sources": [], "figures": [], "tables": [{"id": "Figure11", "caption": "Figure 11 (Sec. 6.2) — QoE / TTFT / TDS CDFs on the one-hour BurstGPT trace (Phi-3.5-MoE 16x3.8B, 8xA100).", "markdown": "| System | Average QoE | % requests QoE >= 0.95 | Average TTFT (s) | Average TDS (tokens/s) |\n|---|---|---|---|---|\n| Andes | 0.99 | 97% | 1.8 | 10.9 |\n| vLLM | 0.88 | 75% | 10.5 | 11.2 |"}, {"id": "Figure15", "caption": "Figure 15 (Sec. 6.3) — Average QoE vs burst intensity, 4 models x 3 datasets, Andes/vLLM/LQSF/Sarathi-Serve.", "markdown": "| Metric | Value |\n|---|---|\n| Andes max QoE improvement vs vLLM | up to 4.7x |\n| Andes max burst intensity vs vLLM at QoE = 0.95 | up to 2.6x higher |\n| GPU savings (Andes vs vLLM at QoE = 0.95) | up to 61% |"}, {"id": "Figure16", "caption": "Figure 16 (Sec. 6.3) — Average QoE vs burst duration, 4 models x 3 datasets.", "markdown": "| Metric | Value |\n|---|---|\n| Andes max QoE improvement vs vLLM under varying burst duration | up to 3.5x |\n| Andes consistency | Higher average QoE across all models and datasets |"}, {"id": "Figure19", "caption": "Figure 19 (Sec. 6.4) — Sensitivity of Andes to the QoE-gain look-ahead window Delta-t.", "markdown": "| Observation | Value |\n|---|---|\n| Andes QoE sensitivity to Delta-t | Roughly consistent for various Delta-t values |\n| Andes vs baselines | Significantly outperforms all baselines across all Delta-t values |\n| Tuning recommendation | Best Delta-t depends on model and I/O distribution; requires pre-deployment tuning |"}, {"id": "Figure20", "caption": "Figure 20 (Sec. 6.4) — Average QoE vs request rate under Poisson arrivals (Llama 3.1 70B, 8xA100).", "markdown": "| Request rate (req/s) | Andes | vLLM | LQSF | Sarathi-Serve |\n|---|---|---|---|---|\n| 1.0 | high | lower | lower | lower |\n| 1.2 | high | lower | lower | lower |\n| 1.4 | high | lower | lower | lower |"}, {"id": "Table1", "caption": "Table 1 (Sec. 6.1) — Models and hardware configurations.", "markdown": "| Model | Architecture | Memory | Hardware |\n|---|---|---|---|\n| Phi-3-mini 3.8B | Dense, MHA | 7 GB | A100x4 |\n| Command R 32B | Dense, GQA | 61 GB | A100x8 |\n| Phi-3.5-MoE 16x3.8B | MoE, GQA | 80 GB | A100x8 |\n| Llama 3.1 70B | Dense, GQA | 132 GB | A100x8 |"}, {"id": "Table2", "caption": "Table 2 (Sec. 6.1) — Request dataset statistics.", "markdown": "| Dataset | Input Length Mean (tokens) | Input Length Std (tokens) | Output Length Mean (tokens) | Output Length Std (tokens) |\n|---|---|---|---|---|\n| Multi-Round ShareGPT | 3171 | 7943 | Not specified in paper | Not specified in paper |\n| ArXiv Summarization | 17855 | 11401 | Not specified in paper | Not specified in paper |\n| Coding Challenges | 1552 | 5423 | 21293 | Not specified in paper |"}], "data": []}, "verified_by": [{"id": "E01", "title": "End-to-End QoE Improvement on Real-World BurstGPT Trace", "run": "Replay the one-hour BurstGPT trace through vLLM (FCFS) and through Andes; record per-request token delivery timestamps for both.", "setup": "Model: Phi-3.5-MoE 16x3.8B; Hardware: 8x NVIDIA A100 SXM4 40GB (AWS p4d.24xlarge, tensor parallelism); Dataset: Multi-Round ShareGPT + one-hour BurstGPT trace slice; target TTFT = max(input_length/5000, 1) s; baseline vLLM v0.6.1 (FCFS).", "metrics": "Average QoE, CDF of QoE at threshold 0.95, average TTFT (s), average TDS (tokens/s), peak waiting queue length, GPU memory utilization (%)."}, {"id": "E02", "title": "QoE and Resource Savings Under Synthetic Cyclic Burst Load (Varying Intensity)", "run": "For each (model, dataset, burst intensity) combination, generate a one-cycle synthetic cyclic-burst trace and serve it with Andes, vLLM (FCFS), Sarathi-Serve, and LQSF; compute average QoE and the maximum sustainable burst intensity at QoE >= 0.95.", "setup": "Models: Phi-3-mini 3.8B (4xA100), Command R 32B (8xA100), Phi-3.5-MoE 16x3.8B (8xA100), Llama 3.1 70B (8xA100); Datasets: Multi-Round ShareGPT, ArXiv Summarization, Coding Challenges; cyclic burst load, default duration 35%, intensity in [1.5, 2.0, 2.5]; average request rate = no-burst system throughput; Poisson arrivals within each phase.", "metrics": "Average QoE per configuration, maximum sustainable burst intensity at QoE >= 0.95, GPU resource savings (%)."}, {"id": "E03", "title": "QoE Under Synthetic Cyclic Burst Load (Varying Duration)", "run": "For each (model, dataset, burst duration) combination, generate a cyclic-burst synthetic trace and serve it with Andes, vLLM, Sarathi-Serve, LQSF; compute average QoE per configuration.", "setup": "Models/hardware/datasets as in E02; default burst intensity = 2x; burst duration varied.", "metrics": "Average QoE per configuration."}, {"id": "E06", "title": "Robustness Under Poisson Arrival Distribution", "run": "Generate traces with Poisson arrivals at request rates from 1.0 to 1.4 req/s over a 20-minute duration; serve with Andes, vLLM, Sarathi-Serve, LQSF; compute average QoE per system per rate.", "setup": "Model: Llama 3.1 70B; Hardware: 8x A100 SXM4 40GB; Dataset: Multi-Round ShareGPT; no burst pattern, pure Poisson arrivals.", "metrics": "Average QoE vs request rate (req/s)."}], "artifact": [{"name": "Top-level Andes scheduler", "pointer": "src/execution/scheduler.py", "what": "AndesScheduler.step() — combines the greedy packer and overhead-aware refiner into the system validated here."}, {"name": "Client-side token pacer", "pointer": "src/execution/token_pacer.py", "what": "TokenPacer — smooths delivery on the client side, part of the end-to-end system under test."}, {"name": "Request tracker", "pointer": "src/execution/request_tracker.py", "what": "RequestTracker / RequestInfo — maintains per-request state feeding the scheduler during evaluation."}, {"name": "System architecture", "pointer": "logic/solution/architecture.md § Request Lifecycle", "what": "recipe section describing the full pipeline exercised by this validation"}], "built_on": [{"rw_id": "RW01", "name": "Kwon et al., 2023 (vLLM)", "relation_raw": "baseline"}, {"rw_id": "RW02", "name": "Agrawal et al., 2024 (Sarathi-Serve)", "relation_raw": "baseline"}, {"rw_id": "RW03", "name": "Yu et al., 2022 (Orca)", "relation_raw": "imports"}, {"rw_id": "RW10", "name": "Wang et al., 2024 (BurstGPT)", "relation_raw": "imports"}, {"rw_id": "RW11", "name": "Kellerer et al., 2004 (Knapsack Problems)", "relation_raw": "imports"}, {"rw_id": "RW04", "name": "Patel et al., 2024 (Splitwise)", "relation_raw": "baseline"}, {"rw_id": "RW05", "name": "Zhong et al., 2024 (DistServe)", "relation_raw": "baseline"}, {"rw_id": "RW06", "name": "Wu et al., 2024 (LoongServe)", "relation_raw": "baseline"}], "rejected_here": [{"rw_id": "RW07", "name": "Sheng et al., 2024 (VTC — Fairness in LLM Serving)", "relation_raw": "bounds"}, {"rw_id": "RW08", "name": "Sun et al., 2024 (Llumnix)", "relation_raw": "bounds"}], "concepts": ["QoE"]}, {"id": "N03", "type": "dead_end", "parent": "N01", "title": "Can existing metrics (TTFT, P90/P99 TPOT) fully characterize user experience?", "body": "Hypothesis tested: TTFT together with average/P90/P99 TPOT is sufficient to capture user experience. It failed: TPOT misses mid-stream pauses (Figure 5d) where both TTFT and the last-token latency look completely normal even though the user experiences a long pause in the middle of the response, and cascading delays from early tokens are invisible to an average TPOT number. Lesson: a metric has to span the full token consumption timeline, not sample it at a few points, which is what motivated the QoE definition.", "thinking": "Before inventing a new metric, the cheaper option is to check whether the standard toolbox, TTFT plus average or tail-percentile TPOT, already covers what matters. It does not survive scrutiny: constructing a scenario with a pause in the middle of generation shows that TTFT and even the last token's latency can both look perfectly normal while the user still experiences an unacceptable stall, because none of these metrics look at the whole timeline, only isolated points on it. That failure is the direct reason the project moves to a metric spanning the entire consumption timeline rather than patching together more point-samples.", "support_level": "inferred", "isolated": false, "depends_on": [], "source_refs": [], "why": [], "result": {"sources": [], "figures": [], "tables": [], "data": []}, "verified_by": [], "artifact": [], "concepts": ["QoE"]}], "context": {"title": "Problem", "summary": "Because servers generate tokens faster than users can consume them, there exists a \"slack buffer\" in each request's token delivery timeline.", "sections": [{"role": "setting", "heading": "Setting", "present": false, "entries": []}, {"role": "observations", "heading": "Observations", "present": true, "entries": [{"ent_id": "O1", "inferred_id": false, "ent_title": "Token generation speed vastly exceeds user consumption speed", "text": "Statement: Under real BurstGPT traces, vLLM's average token delivery speed (TDS) is 11.2 tokens/s, while human reading speed is 4.8 tokens/s and listening speed is 3.3 tokens/s. TDS exceeds any reasonable user consumption speed even under severe load surges.\nEvidence: Figure 4b; Section 2.2; Figure 2 demographic data\nImplication: Compute is wasted over-generating tokens that users cannot consume, creating slack that could be redirected to reduce TTFT for other users.", "unstructured": false, "fields": [{"label": "Statement", "value": "Under real BurstGPT traces, vLLM's average token delivery speed (TDS) is 11.2 tokens/s, while human reading speed is 4.8 tokens/s and listening speed is 3.3 tokens/s. TDS exceeds any reasonable user consumption speed even under severe load surges."}, {"label": "Evidence", "value": "Figure 4b; Section 2.2; Figure 2 demographic data"}, {"label": "Implication", "value": "Compute is wasted over-generating tokens that users cannot consume, creating slack that could be redirected to reduce TTFT for other users."}], "refs": [{"raw": "Figure 4b", "kind": "figure", "target": null}, {"raw": "Figure 2", "kind": "figure", "target": null}]}, {"ent_id": "O2", "inferred_id": false, "ent_title": "FCFS scheduling causes severe head-of-line blocking and TTFT inflation", "text": "Statement: On a one-hour BurstGPT trace with vLLM serving Phi-3.5-MoE 16x3.8B on 8xA100 GPUs, average TTFT is 10.4 seconds, far exceeding the 1.3s web-page patience threshold recommended by Google.\nEvidence: Section 2.2; Figure 3; Figure 4a\nImplication: FCFS causes queuing delay during load surges; users abandon sessions before receiving any tokens.", "unstructured": false, "fields": [{"label": "Statement", "value": "On a one-hour BurstGPT trace with vLLM serving Phi-3.5-MoE 16x3.8B on 8xA100 GPUs, average TTFT is 10.4 seconds, far exceeding the 1.3s web-page patience threshold recommended by Google."}, {"label": "Evidence", "value": "Section 2.2; Figure 3; Figure 4a"}, {"label": "Implication", "value": "FCFS causes queuing delay during load surges; users abandon sessions before receiving any tokens."}], "refs": [{"raw": "Figure 3", "kind": "figure", "target": null}, {"raw": "Figure 4a", "kind": "figure", "target": null}]}, {"ent_id": "O3", "inferred_id": false, "ent_title": "GPU memory is underutilized during non-surge periods", "text": "Statement: vLLM's GPU memory utilization fluctuates significantly and remains underutilized during normal load even while building long queues during surges (Figure 3).\nEvidence: Figure 3 (GPU Mem. Util. row)\nImplication: The system lacks a mechanism to pre-emptively use idle memory to serve waiting requests at token granularity.", "unstructured": false, "fields": [{"label": "Statement", "value": "vLLM's GPU memory utilization fluctuates significantly and remains underutilized during normal load even while building long queues during surges (Figure 3)."}, {"label": "Evidence", "value": "Figure 3 (GPU Mem. Util. row)"}, {"label": "Implication", "value": "The system lacks a mechanism to pre-emptively use idle memory to serve waiting requests at token granularity."}], "refs": [{"raw": "Figure 3", "kind": "figure", "target": null}]}, {"ent_id": "O4", "inferred_id": false, "ent_title": "Existing metrics miss mid-stream pauses and cascading delays", "text": "Statement: TTFT captures only the first token; average/P90/P99 TPOT can miss long pauses in the middle of generation (Figure 5d) where both TTFT and last-token latency appear normal.\nEvidence: Section 3.1; Figure 5d\nImplication: A metric spanning the full token consumption timeline is needed.", "unstructured": false, "fields": [{"label": "Statement", "value": "TTFT captures only the first token; average/P90/P99 TPOT can miss long pauses in the middle of generation (Figure 5d) where both TTFT and last-token latency appear normal."}, {"label": "Evidence", "value": "Section 3.1; Figure 5d"}, {"label": "Implication", "value": "A metric spanning the full token consumption timeline is needed."}], "refs": [{"raw": "Figure 5d", "kind": "figure", "target": null}]}, {"ent_id": "O5", "inferred_id": false, "ent_title": "Conversational AI drives >60% of LLM applications and is growing rapidly", "text": "Statement: Conversational AI drives over 60% of LLM-backed applications; ChatGPT has 300 million weekly active users.\nEvidence: Section 1; citations [14], [13]\nImplication: Poor user experience at this scale has enormous business impact.", "unstructured": false, "fields": [{"label": "Statement", "value": "Conversational AI drives over 60% of LLM-backed applications; ChatGPT has 300 million weekly active users."}, {"label": "Evidence", "value": "Section 1; citations [14], [13]"}, {"label": "Implication", "value": "Poor user experience at this scale has enormous business impact."}], "refs": []}]}, {"role": "gaps", "heading": "Gaps", "present": true, "entries": [{"ent_id": "G1", "inferred_id": false, "ent_title": "No QoE metric for text streaming services exists", "text": "Statement: There is no formal, end-to-end QoE definition tailored to text streaming that captures TTFT, streaming pace, pauses, and cascading delays simultaneously.\nCaused by: O4\nExisting attempts: TTFT, average/P90/P99 TPOT, token generation throughput\nWhy they fail: They measure subsets of the timeline or server-centric aggregates, missing middle pauses (Figure 5d) and cascading effects of early delays.", "unstructured": false, "fields": [{"label": "Statement", "value": "There is no formal, end-to-end QoE definition tailored to text streaming that captures TTFT, streaming pace, pauses, and cascading delays simultaneously."}, {"label": "Caused by", "value": "O4"}, {"label": "Existing attempts", "value": "TTFT, average/P90/P99 TPOT, token generation throughput"}, {"label": "Why they fail", "value": "They measure subsets of the timeline or server-centric aggregates, missing middle pauses (Figure 5d) and cascading effects of early delays."}], "refs": [{"raw": "O4", "kind": "observation", "target": "O4"}]}, {"ent_id": "G2", "inferred_id": false, "ent_title": "Existing schedulers cannot exploit the TDS-consumption-speed gap", "text": "Statement: Existing LLM serving systems (vLLM, Sarathi-Serve, Orca) use FCFS and have no mechanism to preempt at token granularity based on user consumption state.\nCaused by: O1, O2, O3\nExisting attempts: Iteration-level batching (Orca), PagedAttention (vLLM), chunked-prefill (Sarathi-Serve)\nWhy they fail: Optimized for throughput/latency, not user-facing QoE; FCFS cannot redistribute compute to requests most in need.", "unstructured": false, "fields": [{"label": "Statement", "value": "Existing LLM serving systems (vLLM, Sarathi-Serve, Orca) use FCFS and have no mechanism to preempt at token granularity based on user consumption state."}, {"label": "Caused by", "value": "O1, O2, O3"}, {"label": "Existing attempts", "value": "Iteration-level batching (Orca), PagedAttention (vLLM), chunked-prefill (Sarathi-Serve)"}, {"label": "Why they fail", "value": "Optimized for throughput/latency, not user-facing QoE; FCFS cannot redistribute compute to requests most in need."}], "refs": [{"raw": "O1", "kind": "observation", "target": "O1"}, {"raw": "O2", "kind": "observation", "target": "O2"}, {"raw": "O3", "kind": "observation", "target": "O3"}]}, {"ent_id": "G3", "inferred_id": false, "ent_title": "Preemption overhead is unaccounted for in scheduling decisions", "text": "Statement: Naive token-level preemption (recomputation or KV-cache swapping) introduces hundreds of milliseconds to seconds of overhead. Without overhead awareness, excessive preemptions degrade aggregate QoE.\nCaused by: G2\nExisting attempts: None specifically address preemption overhead balancing for QoE.\nWhy they fail: Scheduling decisions are made without estimating cumulative overhead impact on all ongoing requests.", "unstructured": false, "fields": [{"label": "Statement", "value": "Naive token-level preemption (recomputation or KV-cache swapping) introduces hundreds of milliseconds to seconds of overhead. Without overhead awareness, excessive preemptions degrade aggregate QoE."}, {"label": "Caused by", "value": "G2"}, {"label": "Existing attempts", "value": "None specifically address preemption overhead balancing for QoE."}, {"label": "Why they fail", "value": "Scheduling decisions are made without estimating cumulative overhead impact on all ongoing requests."}], "refs": [{"raw": "G2", "kind": "gap", "target": "G2"}]}]}, {"role": "insight", "heading": "Key Insight", "present": true, "entries": [{"ent_id": "KeyInsight", "inferred_id": true, "ent_title": "Key Insight", "text": "Insight: Because servers generate tokens faster than users can consume them, there exists a \"slack buffer\" in each request's token delivery timeline. This slack can be exploited by a preemptive token-level scheduler to serve new or higher-priority requests without affecting the consuming user's perceived experience, as long as the pacer buffer does not run dry.\nDerived from: O1, O2, O3\nEnables: Token-level preemptive scheduling that maximizes QoE across all users, plus a client-side token pacer that absorbs generation bursts to maintain smooth delivery.", "unstructured": false, "fields": [{"label": "Insight", "value": "Because servers generate tokens faster than users can consume them, there exists a \"slack buffer\" in each request's token delivery timeline. This slack can be exploited by a preemptive token-level scheduler to serve new or higher-priority requests without affecting the consuming user's perceived experience, as long as the pacer buffer does not run dry."}, {"label": "Derived from", "value": "O1, O2, O3"}, {"label": "Enables", "value": "Token-level preemptive scheduling that maximizes QoE across all users, plus a client-side token pacer that absorbs generation bursts to maintain smooth delivery."}], "refs": [{"raw": "O1", "kind": "observation", "target": "O1"}, {"raw": "O2", "kind": "observation", "target": "O2"}, {"raw": "O3", "kind": "observation", "target": "O3"}]}]}, {"role": "assumptions", "heading": "Assumptions", "present": true, "entries": [{"ent_id": "A1", "inferred_id": false, "ent_title": "Users consume tokens at a fixed reading/listening speed that is known or estimable per request.", "text": "A1: Users consume tokens at a fixed reading/listening speed that is known or estimable per request.", "unstructured": false, "fields": [], "refs": []}, {"ent_id": "A2", "inferred_id": false, "ent_title": "Token generation latency is a predictable function of batch size (Pearson r = 0.997 between batch size and total context length).", "text": "A2: Token generation latency is a predictable function of batch size (Pearson r = 0.997 between batch size and total context length).", "unstructured": false, "fields": [], "refs": [{"raw": "Figure 21", "kind": "figure", "target": null}]}, {"ent_id": "A3", "inferred_id": false, "ent_title": "Preemption overhead (recomputation or KV-cache swapping) is offline-profilable and sufficiently stable to be used for runtime estimation.", "text": "A3: Preemption overhead (recomputation or KV-cache swapping) is offline-profilable and sufficiently stable to be used for runtime estimation.", "unstructured": false, "fields": [], "refs": []}, {"ent_id": "A4", "inferred_id": false, "ent_title": "The server is the primary bottleneck; network conditions are not the dominant source of text streaming degradation.", "text": "A4: The server is the primary bottleneck; network conditions are not the dominant source of text streaming degradation.", "unstructured": false, "fields": [], "refs": []}, {"ent_id": "A5", "inferred_id": false, "ent_title": "Request output lengths are not known in advance; scheduling decisions are made online.", "text": "A5: Request output lengths are not known in advance; scheduling decisions are made online.", "unstructured": false, "fields": [], "refs": []}]}]}, "glossary": {"title": "Concepts", "groups": [], "terms": [{"term_id": "G01", "name": "Quality-of-Experience", "aliases": ["QoE"], "group": "", "definition": "A scalar in [0, 1] measuring how closely a user's Actual Consumption Timeline follows their Ideal Consumption Timeline. `S_delay = Σᵢ(T_actual_i − T_ideal_i)` for all consumed tokens i=1..n, summing the area between the Actual and Ideal consumption timelines. `S_whole` covers `S_delay` plus the area below the Actual Consumption Timeline, always >= S_delay. QoE = 1 denotes perfect experience (no delays); QoE = 0 denotes worst experience (no tokens delivered).", "fields": [{"label": "Notation", "value": "QoE = 1 - S_delay / S_whole"}, {"label": "Boundary conditions", "value": "Defined only when at least one token has been delivered. QoE can be computed for queued, running, or finished requests. Delivering tokens earlier than ideal does NOT improve QoE (capped at the user's consumption speed). Delays only worsen QoE monotonically."}], "related": ["G02", "G03", "G04"], "refs": []}, {"term_id": "G02", "name": "Ideal Consumption Timeline", "aliases": ["T_ideal"], "group": "", "definition": "The timeline along which a user expects to receive tokens: the i-th token should arrive at the TTFT target plus `(i-1)` token intervals at the user's consumption speed `r_user` (tokens/s). The slope of the line equals the user's reading or listening speed.", "fields": [{"label": "Notation", "value": "T_ideal_i = T_target_TTFT + (i-1) / r_user"}, {"label": "Boundary conditions", "value": "Fixed per request once QoE parameters (target TTFT, consumption speed) are set at request submission. Does not change based on server state."}], "related": ["G01", "G03", "G04", "G06"], "refs": []}, {"term_id": "G03", "name": "Actual Consumption Timeline", "aliases": ["T_actual"], "group": "", "definition": "The timestamp at which the user actually consumes the i-th token. Equals `max(T_delivery_i, T_actual_{i-1} + 1/r_user)`, where `T_delivery_i` is when the token arrives. When delivery is ahead of schedule, T_actual follows the ideal; when delivery falls behind, T_actual lags, creating cascading delays on all subsequent tokens.", "fields": [{"label": "Notation", "value": "T_actual_i"}, {"label": "Boundary conditions", "value": "Always >= T_ideal_i when any delay has occurred (cascading). Equals T_ideal when delivery is ahead of schedule."}], "related": ["G02", "G01"], "refs": []}, {"term_id": "G04", "name": "Token Delivery Speed", "aliases": ["TDS"], "group": "", "definition": "The rate at which the server generates and pushes tokens to the client for a given request. Determined by the token generation latency, which is a function of batch size B. Generating TDS > r_user does not improve QoE but creates slack that can be exploited for preemption.", "fields": [{"label": "Notation", "value": "TDS (tokens/s)"}, {"label": "Boundary conditions", "value": "TDS > r_user is wasteful for QoE of that request but enables preemption slack. TDS < r_user degrades QoE. Modeled as a function of batch size B only (Pearson r = 0.997 between batch size and total context length)."}], "related": ["G02", "G01", "G06"], "refs": []}, {"term_id": "G05", "name": "Priority Score", "aliases": ["π_i"], "group": "", "definition": "The scheduling priority of request i, defined as its expected QoE gain if served (at batch size B) divided by its context length l_i. Q_serve,i(B) is the estimated QoE of request i if served in a batch of size B for the next Delta-t seconds; Q_wait,i is the estimated QoE if not served for Delta-t seconds. Dividing by l_i penalizes memory-heavy requests, implementing a QoE-per-memory-unit heuristic.", "fields": [{"label": "Notation", "value": "π_i = (Q_serve,i(B) − Q_wait,i) / l_i"}, {"label": "Boundary conditions", "value": "Priority is dynamic: increases as a request waits (growing QoE gain from waiting), decreases as context length grows (auto-deprioritization after sufficient tokens are buffered). Prevents starvation."}], "related": ["G01", "G09"], "refs": []}, {"term_id": "G06", "name": "Token Pacer", "aliases": [], "group": "", "definition": "A client-side component that receives tokens from the server via push-based streaming (potentially faster than consumption speed), buffers them, and delivers them to the user precisely at the user's Ideal Consumption Timeline rate r_user. Absorbs server-side generation bursts and pauses (during preemption) to provide smooth delivery.", "fields": [{"label": "Notation", "value": "Client-side buffer of size B_pacer(t) tokens"}, {"label": "Boundary conditions", "value": "If the pacer buffer drains to zero (no tokens buffered and server not generating), the user experiences a pause and QoE degrades. The server monitors pacer state and resumes preempted requests before the buffer runs out."}], "related": ["G02", "G04", "G01"], "refs": []}, {"term_id": "G07", "name": "Cyclic Burst Load Pattern", "aliases": [], "group": "", "definition": "A synthetic request arrival pattern alternating between burst and non-burst phases following a Poisson process. Default parameters: intensity = 2x, duration = 35% of cycle. The average request rate equals system throughput under no burstiness to prevent indefinite queue growth. Models real BurstGPT behavior (~3 bursts/hour, ~7 min avg duration, ~2x higher rate during bursts).", "fields": [{"label": "Notation", "value": "Characterized by intensity r (ratio of burst to average request rate) and duration d (fraction of time in burst phase)"}, {"label": "Boundary conditions", "value": "Valid when intensity > 1 and 0 < duration < 1. At intensity = 1 there is no burst. At duration = 1 the system is permanently overloaded."}], "related": ["G01"], "refs": []}, {"term_id": "G08", "name": "KV Cache Context Length", "aliases": ["l_i"], "group": "", "definition": "The total number of tokens (prompt + generated so far) occupying KV cache entries in GPU memory for request i. Each token in a request's context consumes one KV cache entry. Acts as the \"weight\" in the knapsack formulation; the memory constraint requires Sigma(l_i . x_i) <= M.", "fields": [{"label": "Notation", "value": "l_i (tokens)"}, {"label": "Boundary conditions", "value": "Grows over time as more tokens are generated, automatically increasing the memory cost and decreasing priority. GPU memory M bounds total feasible context."}], "related": ["G05"], "refs": []}, {"term_id": "G09", "name": "Overhead-Aware Refiner", "aliases": [], "group": "", "definition": "A post-processing step that iterates over the admission list A (sorted by priority descending) from the greedy scheduler and checks whether admitting request r_admit by preempting request r_preempt produces net positive QoE change. For each candidate admission, it estimates: QoE gain of admission minus QoE loss of overhead on all ongoing requests. Stops when net QoE change becomes non-positive.", "fields": [{"label": "Notation", "value": "Refines scheduling decision (A, P) -> (A', P') where A' subset A, P' subset P"}, {"label": "Boundary conditions", "value": "Operates after the greedy scheduler produces an initial decision. Preemption overhead (recomputation or KV-swap latency) is estimated from offline profiles. Becomes critical at high burst durations where many preemptions would otherwise be triggered."}], "related": ["G05", "G10"], "refs": []}, {"term_id": "G10", "name": "Preemption Mechanisms", "aliases": [], "group": "", "definition": "Two mechanisms for pausing a running request. Recomputation: drop the KV cache on preemption (zero preemption cost), recompute from scratch on resumption (overhead ~= one prefill). Swapping: copy KV cache to CPU RAM on preemption and back on resumption (overhead proportional to KV cache size). Andes offline-profiles both and selects the faster per context length.", "fields": [{"label": "Notation", "value": "Recomputation (drop KV cache, recompute on resumption) or Swapping (move KV cache GPU<->CPU)"}, {"label": "Boundary conditions", "value": "Overhead ranges from hundreds of milliseconds to seconds. Both mechanisms interrupt the entire token generation pipeline for all requests in the current batch. Overhead is predictable and stable enough for runtime estimation."}], "related": ["G09", "G08"], "refs": []}], "lexicon": {"quality-of-experience": "G01", "qoe": "G01", "ideal consumption timeline": "G02", "t_ideal": "G02", "actual consumption timeline": "G03", "t_actual": "G03", "token delivery speed": "G04", "tds": "G04", "priority score": "G05", "π_i": "G05", "token pacer": "G06", "cyclic burst load pattern": "G07", "kv cache context length": "G08", "l_i": "G08", "overhead-aware refiner": "G09", "preemption mechanisms": "G10"}}, "dependencies": {"title": "Related Work / Dependencies", "preamble": "", "legend": [{"type": "baseline", "gloss": "a system Andes is directly compared against"}, {"type": "imports", "gloss": "a technique or dataset Andes adopts/builds on"}, {"type": "bounds", "gloss": "a system that bounds/limits Andes's claimed scope (complementary or orthogonal)"}], "attribution": "", "entries": [{"rw_id": "RW01", "inferred_id": false, "name": "Kwon et al., 2023 (vLLM)", "relation_raw": "baseline", "relation_norm": "baseline", "delta": "What changed: Andes adds QoE-aware token-level preemptive scheduling on top of vLLM's continuous batching and PagedAttention.\nWhy: vLLM uses FCFS scheduling which causes head-of-line blocking and QoE degradation.", "adopted": "Continuous batching, PagedAttention KV cache management, preemption mechanisms (recomputation/swapping). Andes implemented as an alternative scheduler within vLLM v0.6.1.", "grounding": [], "claims": ["C02", "C03", "C04", "C07", "C08"], "cross_agent": false, "is_footprint": false}, {"rw_id": "RW02", "inferred_id": false, "name": "Agrawal et al., 2024 (Sarathi-Serve)", "relation_raw": "baseline", "relation_norm": "baseline", "delta": "What changed: Andes uses QoE-aware priority scheduling; Sarathi-Serve uses chunked prefill with FCFS.\nWhy: Sarathi-Serve optimizes throughput-latency tradeoff but not QoE; chunked prefill can interfere with prefill stage and increase TTFT.", "adopted": "Preemption overhead predictability insight; preemption mechanism characterization.", "grounding": [], "claims": ["C02", "C03", "C08"], "cross_agent": false, "is_footprint": false}, {"rw_id": "RW03", "inferred_id": false, "name": "Yu et al., 2022 (Orca)", "relation_raw": "imports", "relation_norm": "imports", "delta": "What changed: Andes adds token-level preemptive scheduling; Orca introduced iteration-level batching.\nWhy: Iteration-level batching is a prerequisite for token-level control.", "adopted": "Iteration-level (continuous) batching paradigm.", "grounding": [], "claims": ["C02"], "cross_agent": false, "is_footprint": false}, {"rw_id": "RW04", "inferred_id": false, "name": "Patel et al., 2024 (Splitwise)", "relation_raw": "baseline", "relation_norm": "baseline", "delta": "What changed: Splitwise optimizes prefill/decode separation; Andes focuses on QoE-aware scheduling without changing the prefill/decode split.\nWhy: Splitwise uses FCFS and does not optimize for user-facing QoE.", "adopted": "None directly.", "grounding": [], "claims": ["C08"], "cross_agent": false, "is_footprint": false}, {"rw_id": "RW05", "inferred_id": false, "name": "Zhong et al., 2024 (DistServe)", "relation_raw": "baseline", "relation_norm": "baseline", "delta": "What changed: DistServe disaggregates prefill and decoding; Andes is orthogonal, focusing on scheduling within a serving instance.\nWhy: DistServe optimizes goodput but not user QoE.", "adopted": "None directly.", "grounding": [], "claims": ["C08"], "cross_agent": false, "is_footprint": false}, {"rw_id": "RW06", "inferred_id": false, "name": "Wu et al., 2024 (LoongServe)", "relation_raw": "baseline", "relation_norm": "baseline", "delta": "What changed: LoongServe targets long-context sequences with elastic sequence parallelism; Andes targets QoE-aware scheduling for text streaming.\nWhy: Different optimization objective; LoongServe uses FCFS.", "adopted": "None directly.", "grounding": [], "claims": ["C08"], "cross_agent": false, "is_footprint": false}, {"rw_id": "RW07", "inferred_id": false, "name": "Sheng et al., 2024 (VTC — Fairness in LLM Serving)", "relation_raw": "bounds", "relation_norm": "bounds", "delta": "What changed: VTC proposes non-preemptive fairness-based scheduling; Andes uses preemptive QoE-based scheduling.\nWhy: Fairness != QoE; VTC does not account for user consumption speed or TTFT targets.", "adopted": "Insight that request scheduling beyond FCFS is valuable.", "grounding": [], "claims": ["C02"], "cross_agent": false, "is_footprint": false}, {"rw_id": "RW08", "inferred_id": false, "name": "Sun et al., 2024 (Llumnix)", "relation_raw": "bounds", "relation_norm": "bounds", "delta": "What changed: Llumnix proposes cluster-wide live migration for load balancing; Andes operates within a single instance.\nWhy: Complementary scope; Andes assumes cluster-level load balancing is handled externally.", "adopted": "Cluster-level concerns explicitly excluded from Andes scope.", "grounding": [], "claims": ["C08"], "cross_agent": false, "is_footprint": false}, {"rw_id": "RW09", "inferred_id": false, "name": "Liu et al., 2024 (CacheGen)", "relation_raw": "bounds", "relation_norm": "bounds", "delta": "What changed: CacheGen streams KV cache entries incrementally; Andes focuses on token generation scheduling.\nWhy: Orthogonal optimization; CacheGen addresses KV reuse, Andes addresses scheduling policy.", "adopted": "None.", "grounding": [], "claims": [], "cross_agent": false, "is_footprint": false}, {"rw_id": "RW10", "inferred_id": false, "name": "Wang et al., 2024 (BurstGPT)", "relation_raw": "imports", "relation_norm": "imports", "delta": "What changed: BurstGPT provides real-world LLM serving traces; Andes uses these traces for evaluation.\nWhy: Realistic workload characterization; validates that burst patterns (3/hour, 7 min avg, 2x rate) are realistic.", "adopted": "One-hour trace slice for end-to-end evaluation; burst statistics for cyclic burst load pattern design.", "grounding": [{"raw": "arXiv:2401.17644", "kind": "arxiv", "target": null}], "claims": ["C04", "C07"], "cross_agent": false, "is_footprint": false}, {"rw_id": "RW11", "inferred_id": false, "name": "Kellerer et al., 2004 (Knapsack Problems)", "relation_raw": "imports", "relation_norm": "imports", "delta": "What changed: Andes uses a variant of the 0/1 knapsack problem where item values depend on total items selected (batch size B); solves with greedy approximation.\nWhy: Standard knapsack is NP-Hard; the B-dependent variant is harder but still tractable via greedy.", "adopted": "Knapsack problem formulation; weak NP-hardness result; pseudo-polynomial DP solution concept.", "grounding": [], "claims": ["C02", "C06"], "cross_agent": false, "is_footprint": false}, {"rw_id": "RW12", "inferred_id": false, "name": "Video Streaming QoE (Dobrian et al. 2011, Jiang et al. 2016, et al.)", "relation_raw": "imports", "relation_norm": "imports", "delta": "What changed: Andes adapts QoE concepts from video streaming (startup time, buffering) to text streaming (TTFT, token consumption pacing). Key differences: video is network-constrained; text is GPU compute/memory constrained. Video QoE factors (bitrate, buffering ratio) differ from text QoE factors.\nWhy: Text streaming has unique QoE challenges not addressed by video streaming literature.", "adopted": "QoE as an optimization objective; inspiration for startup delay and buffering concepts.", "grounding": [], "claims": ["C01"], "cross_agent": false, "is_footprint": false}], "footprint": []}, "recipes": {"title": "Solution", "files": [{"file": "algorithm.md", "role": "algorithm", "file_title": "Algorithm", "sections": [{"sec_id": "qoe-def", "heading": "QoE Definition", "kind": "math", "markdown": "", "steps": [], "fields": [], "code": "S_delay (Eq. 1) = sum_{i=1}^{n} (T_actual_i - T_ideal_i)\nS_whole (Eq. 2) = sum_{i=1}^{n} (T_actual_i - T_ideal_start)\nQoE (Eq. 3) = 1 - S_delay / S_whole   [range: QoE in [0,1]; QoE=1 perfect; QoE=0 no tokens delivered]", "text": "S_delay (Equation 1): S_delay = sum_{i=1}^{n}(T_actual_i - T_ideal_i), where T_actual_i is the actual consumption timestamp of token i, T_ideal_i is the ideal consumption timestamp, and n is total tokens consumed. S_whole (Equation 2): S_whole = sum_{i=1}^{n}(T_actual_i - T_ideal_start), where T_ideal_start is the request submission time; S_whole covers both S_delay and the area below the Actual Consumption Timeline. QoE (Equation 3): QoE = 1 - S_delay/S_whole. Range: QoE in [0, 1]. QoE = 1: perfect. QoE = 0: no tokens delivered.", "warn": "", "refs": []}, {"sec_id": "qoe-gain", "heading": "QoE Gain (Equation 4)", "kind": "math", "markdown": "", "steps": [], "fields": [], "code": "Delta_Q_i = Q_serve,i(B) - Q_wait,i", "text": "Delta Q_i = Q_serve,i(B) - Q_wait,i, where Q_serve,i(B) is the estimated QoE of request i if served in batch size B for the next Delta-t seconds, and Q_wait,i is the estimated QoE if not served for Delta-t.", "warn": "", "refs": []}, {"sec_id": "sched-problem", "heading": "Scheduling Problem (Equation 5)", "kind": "math", "markdown": "", "steps": [], "fields": [], "code": "max_x sum_{i=1}^{N} (Q_serve,i(B) - Q_wait,i) . x_i\nsubject to: x_i in {0,1}; sum x_i = B; sum l_i x_i <= M", "text": "Solved for all B in [B_min, B_max]; the x achieving the maximum across all B is selected. Problem hardness: Weakly NP-Hard (variant of 0/1 knapsack where item values depend on total items selected).", "warn": "", "refs": []}, {"sec_id": "priority-score", "heading": "Priority Score (Equation 6)", "kind": "math", "markdown": "", "steps": [], "fields": [], "code": "pi_i = (Q_serve,i(B) - Q_wait,i) / l_i", "text": "Priority Score (Equation 6): pi_i = (Q_serve,i(B) - Q_wait,i) / l_i.", "warn": "", "refs": []}, {"sec_id": null, "heading": "Algorithm 1: Priority-Based Greedy Packing", "kind": "code", "markdown": "", "steps": [], "fields": [], "code": "for all i in [1, N]:\n    p[i] <- q[i] / l[i]           # priority = QoE gain per memory unit\n\nM_current <- 0\nN_current <- 0\nx[N] <- all zeros\n\nfor all i in [1, N] sorted by p[i] descending:\n    if M_current + l[i] <= M and N_current + 1 <= B:\n        x[i] <- 1\n        M_current <- M_current + l[i]\n        N_current <- N_current + 1\n    else:\n        break\n\nreturn x", "text": "Input: N (number of requests), M (memory capacity), l[N] (context lengths), q[N] (QoE gains), B (target batch size). Output: x[N] (scheduling decision: 1=serve, 0=wait). Complexity: O(N log N). Run for all B in [B_min, B_max]; select x* achieving maximum total QoE gain across all B.", "warn": "", "refs": []}, {"sec_id": null, "heading": "Algorithm 2: 3D Dynamic Programming (Optimal, Pseudo-Polynomial)", "kind": "code", "markdown": "", "steps": [], "fields": [], "code": "Initialize dp[N+1][B+1][M+1] <- -inf\nInitialize choice[N+1][B+1][M+1] <- 0\ndp[0][0][0] <- 0\n\nfor i = 1 to N:\n    for b = 0 to min(i, B):\n        for m = 0 to M:\n            if dp[i][b][m] < dp[i-1][b][m]:\n                dp[i][b][m] <- dp[i-1][b][m]; choice[i][b][m] <- 0\n            if b >= 1 and m >= l[i]:\n                if dp[i-1][b-1][m-l[i]] + q[i] > dp[i][b][m]:\n                    dp[i][b][m] <- dp[i-1][b-1][m-l[i]] + q[i]; choice[i][b][m] <- 1\n\nQ_max <- max(dp[N][B][:])\n... backtrack via choice[][][] ...\nreturn x[1:]", "text": "Input: N, M, l[N], q[N], B. Output: x[N]. Complexity: O(M . N^2) (pseudo-polynomial; N^2 from solving for all B in [1, N]).", "warn": "", "refs": []}, {"sec_id": null, "heading": "Overhead-Aware Refiner (Algorithm, Informal)", "kind": "code", "markdown": "", "steps": [], "fields": [], "code": "for r_admit in A_proposed (highest priority first):\n    find r_preempt in P_proposed with minimum resources to accommodate r_admit\n    overhead <- estimate_latency(preempt r_preempt, admit r_admit)\n    QoE_gain <- Q_serve(r_admit) - Q_wait(r_admit)\n    QoE_loss <- sum over all ongoing r of QoE_loss(r, overhead)\n    if QoE_gain > QoE_loss:\n        A' <- A' + {r_admit}; P' <- P' + {r_preempt}\n    else:\n        break\nreturn (A', P')", "text": "Input: greedy decision (A_proposed, P_proposed) sorted by priority. Output: refined decision (A', P').", "warn": "", "refs": []}, {"sec_id": null, "heading": "Alternative Objective Functions (Appendix A)", "kind": "math", "markdown": "", "steps": [], "fields": [], "code": "Max-min QoE (Eq. 7): item value = max(Q_min - Q_wait,i, 0)\nMaximize requests with perfect QoE (Eq. 8): item value = [1(Q_serve,i=1) - 1(Q_wait,i=1)] . 1(Q_current,i=1)", "text": "Max-min QoE (Equation 7): Item value for request i = max(Q_min - Q_wait,i, 0). Maximize requests with perfect QoE (Equation 8): Item value = [1(Q_serve,i=1) - 1(Q_wait,i=1)] . 1(Q_current,i=1).", "warn": "", "refs": []}, {"sec_id": null, "heading": "Token Generation Latency Model", "kind": "prose", "markdown": "", "steps": [], "fields": [], "code": "", "text": "Token generation latency modeled as function of batch size B only, justified by Pearson correlation coefficient of 0.997 between batch size and total context length in a batch (Figure 21, Multi-Round ShareGPT dataset). Eliminates need to track total context length separately.", "warn": "", "refs": [{"raw": "Figure 21", "kind": "figure", "target": null}]}]}, {"file": "architecture.md", "role": "architecture", "file_title": "Architecture", "sections": [{"sec_id": null, "heading": "System Overview", "kind": "code", "markdown": "", "steps": [], "fields": [], "code": "[User] <-> [Token Pacer (Client)] <-> [Server]\n                                       |-- Request Tracker\n                                       |-- Token-Level Request Scheduler\n                                       |     |-- Priority-Based Greedy Packer\n                                       |     +-- Overhead-Aware Refiner\n                                       |-- Executor (LLM Inference Engine)\n                                       +-- KV Cache", "text": "Andes co-designs the LLM inference server and the application client. The server handles all scheduling and token generation; the client smooths token delivery to users.", "warn": "", "refs": []}, {"sec_id": null, "heading": "Component: Request Tracker", "kind": "kv", "markdown": "", "steps": [], "fields": [{"label": "Purpose", "value": "Maintains the complete control state for each active request (waiting or running)."}, {"label": "Inputs", "value": "Request arrival events (prompt, QoE parameters), token generation events from Executor, preemption/admit decisions from Scheduler."}, {"label": "Outputs", "value": "Per-request state to the Scheduler (context length, accumulated QoE state, token timestamps, QoE parameters)."}, {"label": "State per request", "value": "QoE parameters (target TTFT, r_user); prompt and partial response text; timestamps of each generated token (T_delivery array); current context length l_i; current resource usage; current QoE value (recomputed incrementally)."}, {"label": "Design choices", "value": "Continuously updated on every token generation event; enables real-time QoE gain estimation for scheduler."}, {"label": "Code ref", "value": "src/execution/qoe.py (QoE computation, RequestState class)"}], "code": "", "text": "", "warn": "", "refs": []}, {"sec_id": null, "heading": "Component: Token-Level Request Scheduler", "kind": "kv", "markdown": "", "steps": [], "fields": [{"label": "Purpose", "value": "At each scheduling quantum, decides which requests to admit/resume and which to preempt to maximize aggregate QoE."}, {"label": "Inputs", "value": "Full request state from Request Tracker (context lengths, QoE gains, resource usage), token generation latency profile (function of batch size B), preemption overhead profiles."}, {"label": "Outputs", "value": "Admit/resume set A', Preempt set P' for the Executor."}, {"label": "Subcomponents", "value": "1. Priority-Based Greedy Packer (Sec. 4.2): assigns priority pi_i = (Q_serve,i(B) - Q_wait,i)/l_i, sorts descending, greedily packs respecting memory constraint M and batch size B; run for all B in [B_min, B_max], O(N log N) per B value. 2. Overhead-Aware Refiner (Sec. 4.3): post-processes the greedy decision, iterates over (admit, preempt) pairs in priority order, estimates net QoE change, prunes pairs with non-positive net QoE."}, {"label": "Selective Triggering", "value": "Algorithm only invoked when GPU KV cache occupancy > 90% (memory-bound) or token generation latency exceeds the most stringent user consumption speed requirement (compute-bound)."}, {"label": "Batch size search space", "value": "B in [B_min, B_max]; B_max = max feasible batch by context length; B_min = largest batch generating tokens faster than most stringent r_user."}, {"label": "Design choices", "value": "Approximate greedy over exact DP because greedy is ~20x faster and achieves slightly better real-time QoE. Overhead-aware refiner is critical (ablation in Sec. 6.4)."}, {"label": "Code ref", "value": "src/execution/scheduler.py"}], "code": "", "text": "", "warn": "", "refs": []}, {"sec_id": null, "heading": "Component: Executor", "kind": "kv", "markdown": "", "steps": [], "fields": [{"label": "Purpose", "value": "Executes LLM inference using continuous batching; generates one token per iteration for each request in the current batch."}, {"label": "Inputs", "value": "Admit/preempt decisions from Scheduler, KV cache state."}, {"label": "Outputs", "value": "Generated tokens (pushed immediately to client Token Pacer via push-based streaming); updated KV cache."}, {"label": "Design choices", "value": "Push-based streaming (not pull) because tokens for a single user are streamed only to that user, and the server needs to deallocate request state quickly to free memory."}, {"label": "Interactions", "value": "Reads/writes KV Cache; sends tokens to Token Pacer via server-push streaming."}], "code": "", "text": "", "warn": "", "refs": []}, {"sec_id": null, "heading": "Component: KV Cache", "kind": "kv", "markdown": "", "steps": [], "fields": [{"label": "Purpose", "value": "Stores key-value attention tensors for all tokens in the context of running requests."}, {"label": "Inputs", "value": "Requests admitted by Scheduler; preemption events (trigger eviction or swap)."}, {"label": "Outputs", "value": "KV tensors to Executor during inference; swapped data to/from CPU RAM during preemption."}, {"label": "Memory constraint", "value": "Total KV cache entries across all running requests <= M (GPU memory capacity)."}, {"label": "Preemption modes", "value": "Recomputation (drop cache, recompute on resumption) or Swapping (copy GPU<->CPU RAM, restore on resumption). Andes offline-profiles both and selects the faster."}, {"label": "Design choices", "value": "Managed by the Scheduler via context length tracking; no modification needed to standard KV cache implementations."}], "code": "", "text": "", "warn": "", "refs": []}, {"sec_id": null, "heading": "Component: Token Pacer (Client-Side)", "kind": "kv", "markdown": "", "steps": [], "fields": [{"label": "Purpose", "value": "Buffers tokens received from the server (potentially in bursts faster than r_user) and delivers them to the user precisely at the Ideal Consumption Timeline rate."}, {"label": "Inputs", "value": "Tokens pushed from server; QoE parameters (target TTFT, r_user) set at request submission."}, {"label": "Outputs", "value": "Token stream to user at rate r_user aligned to Ideal Consumption Timeline."}, {"label": "State", "value": "Buffer of received-but-not-yet-delivered tokens; current pacer size B_pacer(t)."}, {"label": "Server awareness", "value": "Server monitors pacer buffer state (inferred from token timestamps and consumption speed) and resumes preempted requests before the buffer runs dry."}, {"label": "Design choices", "value": "Client-side buffering allows server to preempt more aggressively without the user perceiving pauses. Absorbs generation fluctuations and preemption gaps."}, {"label": "Code ref", "value": "src/execution/token_pacer.py"}], "code": "", "text": "", "warn": "", "refs": []}, {"sec_id": null, "heading": "Request Lifecycle", "kind": "steps", "markdown": "", "steps": ["User submits request through application client; Token Pacer is initialized with QoE parameters.", "Request enters server queue; Request Tracker initializes state.", "Scheduler admits request when resources are available; Executor generates tokens.", "Server pushes tokens immediately to Token Pacer (push-based streaming).", "Token Pacer buffers excess tokens; delivers at r_user aligned to Ideal Consumption Timeline.", "If Scheduler preempts request: KV cache is saved (swap) or dropped (recompute); Token Pacer continues delivering buffered tokens to user.", "When Scheduler resumes request: KV cache is restored; Executor resumes token generation.", "Request completes when all output tokens are generated and delivered."], "fields": [], "code": "", "text": "", "warn": "", "refs": []}]}, {"file": "constraints.md", "role": "constraints", "file_title": "Constraints", "sections": [{"sec_id": "BC1", "heading": "BC1: Memory Constraint", "kind": "prose", "markdown": "", "steps": [], "fields": [], "code": "", "text": "The sum of context lengths (KV cache entries) for all concurrently served requests must not exceed the GPU's KV cache capacity M: Sigma(l_i . x_i) <= M. Batch size is also bounded by memory: B_max is the largest batch achievable before M is exceeded when filling with shortest-context requests.", "warn": "", "refs": []}, {"sec_id": "BC2", "heading": "BC2: Compute Constraint", "kind": "prose", "markdown": "", "steps": [], "fields": [], "code": "", "text": "Larger batch size B increases token generation latency. B_min is set as the largest B where all served requests still generate tokens faster than the most stringent user consumption speed r_user_min across all requests. If B > some threshold, TDS drops below r_user, causing QoE degradation for served requests.", "warn": "", "refs": []}, {"sec_id": "BC3", "heading": "BC3: Online Setting — No Future Knowledge", "kind": "prose", "markdown": "", "steps": [], "fields": [], "code": "", "text": "Andes operates in a fully online setting: request arrival times, input lengths, output lengths, and QoE parameters are not known in advance. QoE gain estimation uses a look-ahead window Delta-t; the best Delta-t depends on model and workload and requires pre-deployment tuning.", "warn": "", "refs": []}, {"sec_id": "BC4", "heading": "BC4: QoE = 0 is Worst Case (No Tokens)", "kind": "prose", "markdown": "", "steps": [], "fields": [], "code": "", "text": "QoE is undefined when S_whole = 0 (no tokens expected). When no tokens are delivered at all, S_delay = S_whole and QoE = 0. QoE cannot be computed before any tokens have been consumed.", "warn": "", "refs": []}, {"sec_id": "BC5", "heading": "BC5: Token Pacer Buffer Depletion", "kind": "prose", "markdown": "", "steps": [], "fields": [], "code": "", "text": "If the server fails to resume a preempted request before the client-side pacer buffer drains, the user experiences a pause and QoE degrades. The server must track pacer buffer state to avoid this.", "warn": "", "refs": []}, {"sec_id": "BC6", "heading": "BC6: Cluster-Level Concerns Out of Scope", "kind": "prose", "markdown": "", "steps": [], "fields": [], "code": "", "text": "Andes's scheduler manages requests within a single vLLM instance. Cluster-level load balancing and fault tolerance are assumed to be handled separately.", "warn": "", "refs": []}, {"sec_id": "BC7", "heading": "BC7: Preemption Overhead Predictability Assumption", "kind": "prose", "markdown": "", "steps": [], "fields": [], "code": "", "text": "The overhead-aware refiner assumes preemption overhead is predictable from offline profiles. If hardware or load conditions cause overhead to be highly variable, refiner estimates may be inaccurate.", "warn": "If hardware or load conditions cause overhead to be highly variable, refiner estimates may be inaccurate.", "refs": []}, {"sec_id": "L1", "heading": "L1: Output Length Unknown", "kind": "prose", "markdown": "", "steps": [], "fields": [], "code": "", "text": "Since output lengths are unknown a priori, QoE gain estimation (Q_serve,i(B)) can only project forward by Delta-t, introducing uncertainty. The choice of Delta-t affects performance and must be tuned per deployment.", "warn": "", "refs": []}, {"sec_id": "L2", "heading": "L2: Single-Instance Scope", "kind": "prose", "markdown": "", "steps": [], "fields": [], "code": "", "text": "Andes does not address multi-instance load balancing or cross-machine scheduling. It assumes the system receiving requests is a single serving unit.", "warn": "", "refs": []}, {"sec_id": "L3", "heading": "L3: Greedy Solver Sub-Optimality", "kind": "prose", "markdown": "", "steps": [], "fields": [], "code": "", "text": "The greedy solver is an approximation to the NP-Hard knapsack problem. While empirically it matches or exceeds the 3D DP solver due to real-time speed advantages, it does not provide optimality guarantees.", "warn": "", "refs": []}, {"sec_id": "L4", "heading": "L4: QoE Parameters Must Be Known at Request Time", "kind": "prose", "markdown": "", "steps": [], "fields": [], "code": "", "text": "Target TTFT and user consumption speed must be specified at request submission. In real deployments, these may need to be inferred or set via API tiers.", "warn": "", "refs": []}, {"sec_id": "L5", "heading": "L5: Preemption Mechanism Availability", "kind": "prose", "markdown": "", "steps": [], "fields": [], "code": "", "text": "Andes requires the underlying serving system to support continuous batching and at least one preemption mechanism (swapping or recomputation). Systems lacking these cannot integrate Andes's scheduler.", "warn": "", "refs": []}, {"sec_id": "L6", "heading": "L6: Context Length as Sole Memory Proxy", "kind": "prose", "markdown": "", "steps": [], "fields": [], "code": "", "text": "The memory constraint uses context length as the proxy for KV cache size. Actual memory usage also includes model weights and intermediate tensors, which are treated as fixed overhead.", "warn": "", "refs": []}]}, {"file": "heuristics.md", "role": "heuristics", "file_title": "Heuristics", "sections": [{"sec_id": "H01", "heading": "H01: Priority = QoE Gain per Memory Unit (l_i denominator)", "kind": "kv", "markdown": "", "steps": [], "fields": [{"label": "Rationale", "value": "Dividing QoE gain by context length l_i balances QoE improvement against GPU memory cost. A request with large l_i consuming much memory but small QoE gain should yield to requests with smaller l_i and larger QoE gain. This also means long-context requests are naturally preempted first, freeing enough memory to potentially admit multiple new short-context requests (more efficient than preempting multiple short ones)."}, {"label": "Sensitivity", "value": "high — the denominator l_i directly controls preemption decisions for memory-heavy requests."}, {"label": "Bounds", "value": "pi_i > 0 when the request would gain QoE from being served; pi_i <= 0 when already ahead of ideal timeline (no gain from serving)."}, {"label": "Code ref", "value": "src/execution/scheduler.py"}, {"label": "Source", "value": "Section 4.2, Equation 6"}], "code": "", "text": "", "warn": "", "refs": []}, {"sec_id": "H02", "heading": "H02: Selective Triggering via KV Cache Watermark (90%) and Latency Threshold", "kind": "kv", "markdown": "", "steps": [], "fields": [{"label": "Rationale", "value": "Under normal load, running the knapsack solver every iteration is unnecessary overhead. Triggering only when the system is resource-constrained (memory occupancy > 90% or token latency exceeds the most stringent r_user) avoids wasted computation while ensuring the scheduler acts exactly when QoE is at risk."}, {"label": "Sensitivity", "value": "medium — a lower watermark triggers more frequently (more overhead), a higher watermark risks missing early QoE degradation."}, {"label": "Bounds", "value": "Memory watermark set at 90% of KV cache capacity. Latency threshold = 1/r_user_min for the most stringent request."}, {"label": "Code ref", "value": "src/execution/scheduler.py"}, {"label": "Source", "value": "Section 4.2, \"Selective Triggering\""}], "code": "", "text": "", "warn": "", "refs": []}, {"sec_id": "H03", "heading": "H03: Batch Size Search Space Pruning [B_min, B_max]", "kind": "kv", "markdown": "", "steps": [], "fields": [{"label": "Rationale", "value": "Exploring all B in [1, N] is unnecessary. B_max is set by packing the shortest-context requests until memory M is reached (maximum feasible batch). B_min is set as the largest B that still generates tokens faster than the most stringent user consumption speed — below B_min, TDS > r_user for all requests and serving fewer requests only wastes potential concurrency without QoE benefit."}, {"label": "Sensitivity", "value": "medium — incorrect B_min/B_max bounds can exclude the optimal batch size."}, {"label": "Bounds", "value": "1 <= B_min <= B_max <= N; B_max determined by memory capacity; B_min determined by token generation latency profile."}, {"label": "Code ref", "value": "src/execution/scheduler.py"}, {"label": "Source", "value": "Section 4.2, \"Batch Size Search Space Pruning\""}], "code": "", "text": "", "warn": "", "refs": []}, {"sec_id": "H04", "heading": "H04: Overhead-Aware Refiner — Stop When Net QoE Change is Non-Positive", "kind": "kv", "markdown": "", "steps": [], "fields": [{"label": "Rationale", "value": "The greedy scheduler's admission list is sorted by priority. Once a lower-priority (admit, preempt) pair produces non-positive net QoE (gain < overhead cost), all subsequent pairs in priority order will also fail (since they have lower gain). This allows early termination, making the refiner efficient."}, {"label": "Sensitivity", "value": "high — without this stopping criterion, the refiner could admit preemptions that net-degrade QoE."}, {"label": "Bounds", "value": "Net QoE threshold = 0. If QoE_gain(r_admit) − QoE_loss_all_ongoing(overhead) <= 0, stop."}, {"label": "Code ref", "value": "src/execution/scheduler.py"}, {"label": "Source", "value": "Section 4.3, \"Balancing QoE Gain and Overhead\""}], "code": "", "text": "", "warn": "", "refs": []}, {"sec_id": "H05", "heading": "H05: Token Pacer — Server-Side Buffer Awareness for Preemption Timing", "kind": "kv", "markdown": "", "steps": [], "fields": [{"label": "Rationale", "value": "The server pushes tokens as they are generated. When a request has accumulated sufficient tokens in the pacer buffer (actual delivery timeline well above ideal), the server can afford to preempt it. The server tracks pacer state via token delivery timestamps and consumption speed, resuming preempted requests before the buffer depletes to zero."}, {"label": "Sensitivity", "value": "high — if the server resumes too late, the user experiences a pause (QoE degradation). Too early, and the preemption benefit is lost."}, {"label": "Bounds", "value": "Resume request when estimated pacer buffer < safety margin (enough tokens for overhead duration at r_user). Safety margin = preemption/resumption latency x r_user."}, {"label": "Code ref", "value": "src/execution/token_pacer.py"}, {"label": "Source", "value": "Section 5, Figure 10"}], "code": "", "text": "", "warn": "", "refs": []}]}]}}
+/* __ARA_DATA_END__ */
+</script>
+
+<script>
+"use strict";
+(function () {
+  const GLYPH = { question:"Q", experiment:"✦", decision:"→", dead_end:"✗", pivot:"↻", insight:"!", default:"•" };
+  const TYPES = ["question","experiment","decision","dead_end","pivot","insight"];
+
+  let DATA;
+  try {
+    // The payload sits between the BEGIN/END marker comments (kept in-file so the
+    // skill can re-inject). Strip ONLY those two named markers before parsing; the
+    // rest of textContent is pure JSON. (Marker text is not written literally here,
+    // so it stays a single injection site.)
+    var raw = document.getElementById("ara-data").textContent
+                .replace(/\/\*\s*__ARA_DATA_(?:BEGIN|END)__\s*\*\//g, "");
+    DATA = JSON.parse(raw);
+  } catch (e) {
+    document.getElementById("detail").innerHTML =
+      '<div class="none">Could not parse embedded ARA data: ' + String(e) + '</div>';
+    return;
+  }
+
+  const nodes = DATA.nodes || [];
+  const byId = new Map(nodes.map(n => [n.id, n]));
+  const kids = new Map();
+  nodes.forEach(n => kids.set(n.id, []));
+  let roots = [];
+  nodes.forEach(n => {
+    if (n.parent && byId.has(n.parent)) kids.get(n.parent).push(n.id);
+    else roots.push(n.id);
+  });
+  // Traversal order: explicit DATA.order if given, else DFS from roots.
+  let order = Array.isArray(DATA.order) && DATA.order.length ? DATA.order.filter(id => byId.has(id)) : [];
+  if (!order.length) { const seen=new Set(); const dfs=id=>{if(seen.has(id))return;seen.add(id);order.push(id);(kids.get(id)||[]).forEach(dfs)}; roots.forEach(dfs); }
+
+  const esc = s => String(s==null?"":s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  const glyph = t => GLYPH[t] || GLYPH.default;
+  const cls = t => TYPES.includes(t) ? t : "default";
+
+  // ---- header ----
+  const m = DATA.meta || {};
+  document.getElementById("h-title").textContent = m.title || "ARA Trajectory";
+  document.getElementById("h-sub").textContent =
+    [ (m.authors||[]).join(", "), m.venue, m.year ].filter(Boolean).join(" · ");
+  if (m.abstract) document.getElementById("h-abstract").textContent = m.abstract;
+  else document.getElementById("h-abstract-wrap").style.display = "none";
+
+  const ftype = document.getElementById("ftype");
+  const present = [...new Set(nodes.map(n => n.type))];
+  TYPES.concat(present.filter(t=>!TYPES.includes(t))).filter(t=>present.includes(t))
+    .forEach(t => { const o=document.createElement("option"); o.value=t; o.textContent=t; ftype.appendChild(o); });
+
+  // ---- minimal markdown-table renderer ----
+  function renderMd(md){
+    if(!md) return "";
+    const lines = String(md).split("\n");
+    let out=[], i=0;
+    while(i<lines.length){
+      if(/^\s*\|/.test(lines[i]) && i+1<lines.length && /^\s*\|?[\s:|-]+\|?\s*$/.test(lines[i+1])){
+        const row = l => l.replace(/^\s*\|/,"").replace(/\|\s*$/,"").split("|").map(c=>c.trim());
+        const head = row(lines[i]); i+=2; const body=[];
+        while(i<lines.length && /^\s*\|/.test(lines[i])){ body.push(row(lines[i])); i++; }
+        out.push('<table class="md"><thead><tr>'+head.map(h=>"<th>"+esc(h)+"</th>").join("")+
+          '</tr></thead><tbody>'+body.map(r=>"<tr>"+r.map(c=>"<td>"+esc(c)+"</td>").join("")+"</tr>").join("")+"</tbody></table>");
+      } else { if(lines[i].trim()) out.push("<div>"+esc(lines[i])+"</div>"); i++; }
+    }
+    return out.join("");
+  }
+
+  // ---- detail pane ----
+  function block(title, tag, inner, open, cls){
+    return '<details class="block'+(cls?" "+cls:"")+'"'+(open?" open":"")+'><summary>'+esc(title)+
+      (tag?'<span class="tag">'+esc(tag)+'</span>':'')+'</summary><div class="body">'+inner+'</div></details>';
+  }
+  function chips(arr, klass){ return arr&&arr.length ? '<div class="chips">'+arr.map(x=>'<span class="chip '+(klass||"")+'">'+esc(x)+'</span>').join("")+'</div>' : ""; }
+
+  function renderDetail(n){
+    const d = document.getElementById("detail");
+    let h = '<div class="dhead"><span class="badge '+cls(n.type)+'">'+esc(n.type)+'</span>'+
+      '<span class="did">'+esc(n.id)+'</span>'+
+      (n.support_level?'<span class="pill '+esc(n.support_level)+'">'+esc(n.support_level)+'</span>':'')+
+      (n.isolated?'<span class="pill iso">isolated</span>':'')+'</div>';
+    h += '<div class="dtitle">'+esc(n.title||"(untitled)")+'</div>';
+
+    // reasoning (primary, always open) — the agent's thinking IS the content of a step
+    let reason="";
+    if(n.thinking){
+      reason += '<div class="lead">'+esc(n.thinking)+'</div>';
+      if(n.body) reason += '<div class="didwhat">what it did</div><div>'+esc(n.body)+'</div>';
+    } else {
+      reason += n.body ? '<div class="lead">'+esc(n.body)+'</div>' : '<div class="empty">No description.</div>';
+    }
+    if(n.depends_on&&n.depends_on.length) reason += chips(n.depends_on.map(x=>"⇠ depends on "+x));
+    if(n.source_refs&&n.source_refs.length) reason += chips(n.source_refs, "ext");
+    if(n.built_on&&n.built_on.length) reason += chipRow("built on", n.built_on, "chip-built");
+    if(n.rejected_here&&n.rejected_here.length) reason += chipRow("rejected here", n.rejected_here, "chip-rej");
+    if(n.recipe_refs&&n.recipe_refs.length) reason += recipeChips(n.recipe_refs);
+    h += block(n.thinking?"reasoning":"what", n.type, reason, true, "reason");
+
+    // result (the grounded payload) — open
+    const r = n.result||{};
+    if((r.sources&&r.sources.length)||(r.figures&&r.figures.length)||(r.tables&&r.tables.length)||(r.data&&r.data.length)){
+      let s="";
+      (r.figures||[]).forEach(f=>{ s+='<figure><img src="'+esc(f.img)+'" alt="'+esc(f.caption||f.id)+'"/>'+
+        (f.caption?'<figcaption>'+esc(f.caption)+'</figcaption>':'')+'</figure>'; });
+      (r.tables||[]).forEach(t=>{ s+=(t.caption?'<div class="empty">'+esc(t.caption)+'</div>':'')+renderMd(t.markdown); });
+      (r.sources||[]).forEach(q=>{ s+='<div class="quote">'+esc(q.quote)+(q.ref?'<div class="ref">← '+esc(q.ref)+'</div>':'')+'</div>'; });
+      (r.data||[]).forEach(x=>{ s+='<div class="ptr">⛁ <span class="path">'+esc(x.path)+'</span>'+(x.note?' — '+esc(x.note):'')+'</div>'; });
+      h += block("result", "", s, true);
+    }
+
+    // why (claims) — supporting detail, collapsed
+    if(n.why&&n.why.length){
+      const w = n.why.map(c=>{
+        let s='<div class="claim"><h4>'+esc(c.id)+(c.title?' — '+esc(c.title):'')+'</h4>';
+        if(c.statement) s+='<div class="kv">'+esc(c.statement)+'</div>';
+        if(c.status) s+='<div class="kv"><b>status</b> <span class="status '+esc(String(c.status).toLowerCase())+'">'+esc(c.status)+'</span></div>';
+        if(c.conditions) s+='<div class="kv"><b>conditions</b> '+esc(c.conditions)+'</div>';
+        if(c.falsification) s+='<div class="kv"><b>falsified if</b> '+esc(c.falsification)+'</div>';
+        if(c.dependencies&&c.dependencies.length) s+='<div class="kv"><b>depends on</b> '+esc(c.dependencies.join(", "))+'</div>';
+        if(c.provenance) s+='<div class="kv"><span class="prov">provenance: '+esc(c.provenance)+'</span></div>';
+        return s+'</div>';
+      }).join("");
+      h += block("why", n.why.map(c=>c.id).join(" · "), w);
+    }
+
+    // how verified (experiments) — supporting detail, collapsed
+    if(n.verified_by&&n.verified_by.length){
+      const v = n.verified_by.map(e=>'<div class="claim"><h4>'+esc(e.id)+(e.title?' — '+esc(e.title):'')+'</h4>'+
+        (e.run?'<div class="kv"><b>run</b> <span class="path mono">'+esc(e.run)+'</span></div>':'')+
+        (e.setup?'<div class="kv"><b>setup</b> '+esc(e.setup)+'</div>':'')+
+        (e.metrics?'<div class="kv"><b>metrics</b> '+esc(e.metrics)+'</div>':'')+'</div>').join("");
+      h += block("how verified", n.verified_by.map(e=>e.id).join(" · "), v);
+    }
+
+    // artifact pointers (src/artifacts.md) — collapsed
+    if(n.artifact&&n.artifact.length){
+      const a = n.artifact.map(x=>'<div class="ptr">▸ <b>'+esc(x.name)+'</b> — <span class="path">'+esc(x.pointer)+'</span>'+
+        (x.what?'<div class="empty">'+esc(x.what)+'</div>':'')+'</div>').join("");
+      h += block("artifact", "pointer", a);
+    }
+
+    d.innerHTML = h;
+    if(typeof LEX!=="undefined" && LEX) linkifyConcepts(d);
+    d.scrollTop = 0;
+  }
+
+  // ---- map ----
+  let selected = null;
+  function selectNode(id){
+    if(!byId.has(id)) return;
+    selected = id;
+    document.querySelectorAll(".node").forEach(el=>el.classList.toggle("sel", el.dataset.id===id));
+    const el = document.querySelector('.node[data-id="'+CSS.escape(id)+'"]');
+    if(el) el.scrollIntoView({block:"nearest"});
+    renderDetail(byId.get(id));
+    rstat();
+  }
+
+  function nodeRow(n){
+    const row = document.createElement("div");
+    row.className = "node "+(n.type==="dead_end"?"dead":"");
+    row.dataset.id = n.id; row.dataset.type = n.type;
+    // calmer than before: one glyph + id + (quiet) cross-edge marker; the ⊕/⊘ count soup is gone.
+    row.innerHTML = '<span class="glyph '+cls(n.type)+'">'+glyph(n.type)+'</span>'+
+      '<span><span class="meta"><span class="nid">'+esc(n.id)+'</span>'+
+      (n.depends_on&&n.depends_on.length?'<span class="dep" title="depends on '+esc(n.depends_on.join(", "))+'">⇠ '+esc(n.depends_on.join(","))+'</span>':'')+
+      '</span><div class="ntitle">'+esc(n.title||n.body||"(untitled)")+'</div></span>';
+    row.addEventListener("click", ()=>selectNode(n.id));
+    // hover a node to highlight its cross-edge targets (gentler than always-on connectors)
+    if(n.depends_on&&n.depends_on.length){
+      row.addEventListener("mouseenter", ()=>n.depends_on.forEach(t=>{ const el=document.querySelector('.node[data-id="'+CSS.escape(t)+'"]'); if(el) el.classList.add("deptarget"); }));
+      row.addEventListener("mouseleave", ()=>document.querySelectorAll(".node.deptarget").forEach(el=>el.classList.remove("deptarget")));
+    }
+    return row;
+  }
+  function renderSubtree(id, container){
+    const n = byId.get(id); if(!n) return;
+    container.appendChild(nodeRow(n));
+    const cs = kids.get(id)||[];
+    if(cs.length){ const wrap=document.createElement("div"); wrap.className="kid"; cs.forEach(c=>renderSubtree(c,wrap)); container.appendChild(wrap); }
+  }
+  function renderMap(){
+    const map = document.getElementById("map"); map.innerHTML="";
+    const normalRoots = roots.filter(id=>!byId.get(id).isolated);
+    const isoRoots = roots.filter(id=>byId.get(id).isolated);
+    normalRoots.forEach(id=>renderSubtree(id, map));
+    if(isoRoots.length){
+      const box=document.createElement("div"); box.className="isobox";
+      const hdr=document.createElement("div"); hdr.className="isohdr"; hdr.textContent="isolated subtree"; box.appendChild(hdr);
+      isoRoots.forEach(id=>renderSubtree(id, box)); map.appendChild(box);
+    }
+  }
+
+  // ---- filter / search ----
+  function applyFilters(){
+    const q = document.getElementById("q").value.trim().toLowerCase();
+    const ty = document.getElementById("ftype").value;
+    const deadOnly = document.getElementById("fdead").checked;
+    let shown=0;
+    document.querySelectorAll(".node").forEach(el=>{
+      const n = byId.get(el.dataset.id);
+      const text = (n.id+" "+(n.title||"")+" "+(n.body||"")).toLowerCase();
+      const ok = (!q||text.includes(q)) && (!ty||n.type===ty) && (!deadOnly||n.type==="dead_end");
+      el.classList.toggle("dim", !ok);
+      if(ok) shown++;
+    });
+    document.getElementById("rstat").textContent = shown+" / "+nodes.length+" steps";
+  }
+  function rstat(){
+    const i = selected?order.indexOf(selected):-1;
+    document.getElementById("rstat").textContent = (i>=0?("step "+(i+1)+" / "+order.length):(nodes.length+" steps"));
+  }
+
+  // ---- replay ----
+  let timer=null;
+  function step(delta){
+    let i = selected?order.indexOf(selected):-1;
+    i = Math.max(0, Math.min(order.length-1, i+delta));
+    selectNode(order[i]);
+  }
+  function play(){
+    if(timer){ stop(); return; }
+    if(!selected) selectNode(order[0]);
+    document.getElementById("rplay").textContent="⏸ Pause";
+    timer = setInterval(()=>{
+      const i = selected?order.indexOf(selected):-1;
+      if(i>=order.length-1){ stop(); return; }
+      step(1);
+    }, 1300);
+  }
+  function stop(){ if(timer){clearInterval(timer);timer=null;} document.getElementById("rplay").textContent="▶ Replay"; }
+
+  // ======================= v1.1 enrichment layers (all inert unless present) =======================
+  const CTX = DATA.context, GLO = DATA.glossary, DEP = DATA.dependencies, REC = DATA.recipes;
+  const LAYERS = { context:CTX, glossary:GLO, dependencies:DEP, recipes:REC };
+
+  // ---- indexes (built once) ----
+  const claimToNodes = new Map();
+  nodes.forEach(n => (n.why||[]).forEach(c => { if(c&&c.id){ if(!claimToNodes.has(c.id)) claimToNodes.set(c.id,[]); claimToNodes.get(c.id).push(n.id); } }));
+  const firstNodeForClaim = id => (claimToNodes.get(id)||[])[0] || null;
+  const rwById   = new Map(((DEP&&DEP.entries)||[]).map(e => [e.rw_id, e]));
+  const termById = new Map(((GLO&&GLO.terms)||[]).map(t => [t.term_id, t]));
+  // concept "used by" (inferred) from each node's name-matched concepts[]
+  if(GLO){
+    const nameToTerm = new Map();
+    (GLO.terms||[]).forEach(t => { if(t.name) nameToTerm.set(String(t.name).toLowerCase(), t); (t.aliases||[]).forEach(a=>nameToTerm.set(String(a).toLowerCase(), t)); });
+    nodes.forEach(n => (n.concepts||[]).forEach(cn => { const t=nameToTerm.get(String(cn).toLowerCase()); if(t){ (t._used=t._used||[]).push(n.id); } }));
+  }
+
+  // ---- tiny inline-math fallback (no CDN; operates on already-escaped text, adds only safe tags) ----
+  const GK={alpha:"α",beta:"β",gamma:"γ",delta:"δ",epsilon:"ε",eta:"η",theta:"θ",kappa:"κ",lambda:"λ",mu:"μ",nu:"ν",pi:"π",rho:"ρ",sigma:"σ",tau:"τ",phi:"φ",chi:"χ",psi:"ψ",omega:"ω",Delta:"Δ",Sigma:"Σ",Omega:"Ω",Phi:"Φ",Theta:"Θ",Lambda:"Λ",Gamma:"Γ",nabla:"∇",partial:"∂",times:"×",cdot:"·",infty:"∞",approx:"≈",leq:"≤",geq:"≥",neq:"≠",to:"→",in:"∈",sum:"Σ",prod:"Π",sqrt:"√",mathbb:"",mathcal:"",mathbf:"",mathrm:"",left:"",right:""};
+  function texInner(s){
+    s=s.replace(/\\(?:mathbb|mathcal|mathbf|mathrm)\{([^{}]*)\}/g,"$1");
+    s=s.replace(/\\frac\{([^{}]*)\}\{([^{}]*)\}/g,"($1)/($2)");
+    s=s.replace(/\\([A-Za-z]+)/g,(m,w)=>GK[w]!==undefined?GK[w]:m);
+    s=s.replace(/\^\{([^{}]*)\}/g,"<sup>$1</sup>").replace(/\^([\w()+\-])/g,"<sup>$1</sup>");
+    s=s.replace(/_\{([^{}]*)\}/g,"<sub>$1</sub>").replace(/_([\w()+\-])/g,"<sub>$1</sub>");
+    return s;
+  }
+  function mathPass(escaped){
+    if(escaped.indexOf("$")<0) return escaped;
+    return escaped.replace(/\$\$([^$]+)\$\$/g,(m,x)=>'<span class="math">'+texInner(x)+'</span>')
+                  .replace(/\$([^$]+)\$/g,(m,x)=>'<span class="math">'+texInner(x)+'</span>');
+  }
+  function mtext(v){ const e=esc(v); try{ return mathPass(e); }catch(_){ return e; } }
+
+  // ---- typed-ref rendering (off-ARA pointers stay inert; in-ARA targets become jump chips) ----
+  function refUrl(rf){
+    const raw=rf.raw||"";
+    if(rf.kind==="url"){ const m=raw.match(/https?:\/\/\S+/); return m?m[0]:""; }
+    if(rf.kind==="arxiv"){ const m=raw.match(/(\d{4}\.\d{4,5})/); return m?("https://arxiv.org/abs/"+m[1]):""; }
+    if(rf.kind==="doi"){ const m=raw.match(/(10\.\d{4,}\/\S+)/); return m?("https://doi.org/"+m[1]):""; }
+    return "";
+  }
+  function refChip(rf){
+    const raw=esc(rf.raw||""), url=refUrl(rf);
+    if(url) return '<a class="chip ext" href="'+esc(url)+'" target="_blank" rel="noopener">'+raw+'</a>';
+    if(rf.target){
+      if(rf.kind==="claim")        return '<span class="chip jump" data-jump-claim="'+esc(rf.target)+'">'+raw+'</span>';
+      if(rf.kind==="node")         return '<span class="chip jump" data-jump-node="'+esc(rf.target)+'">'+raw+'</span>';
+      if(rf.kind==="concept")      return '<span class="chip jump" data-open-term="'+esc(rf.target)+'">'+raw+'</span>';
+      if(rf.kind==="related_work") return '<span class="chip jump" data-open-panel="dependencies" data-anchor="ov-'+esc(rf.target)+'">'+raw+'</span>';
+      return '<span class="chip jump" data-scroll="ov-'+esc(rf.target)+'">'+raw+'</span>';
+    }
+    const dangle=(rf.kind==="claim"||rf.kind==="related_work"||rf.kind==="concept");
+    return '<span class="chip '+(dangle?'dangle" title="referenced but not found in this ARA':'ext')+'">'+raw+'</span>';
+  }
+  function refRow(refs){ return refs&&refs.length ? '<div class="chips">'+refs.map(refChip).join("")+'</div>' : ""; }
+
+  // ---- per-node provenance chips (consumed by renderDetail) ----
+  function chipRow(label, arr, klass){
+    const cs=arr.map(x=>{
+      const txt=[x.rw_id,x.name].filter(Boolean).join(" · ")||"?";
+      const tip=x.relation_raw?(' title="'+esc(x.relation_raw)+'"'):'';
+      const op =x.rw_id?(' data-open-panel="dependencies" data-anchor="ov-'+esc(x.rw_id)+'"'):'';
+      return '<span class="chip '+klass+(x.rw_id?' jump':'')+'"'+tip+op+'>'+esc(txt)+'</span>';
+    }).join("");
+    return '<div class="chiplabel">'+esc(label)+'</div><div class="chips">'+cs+'</div>';
+  }
+  function recipeChips(arr){
+    const cs=arr.map(x=>{
+      const anchor="ov-sec-"+(x.file||"")+"-"+(x.sec_id||"");
+      return '<span class="chip chip-recipe jump" data-open-panel="recipes" data-anchor="'+esc(anchor)+'" title="'+esc((x.file||"")+(x.role?(" · "+x.role):""))+'">▦ '+esc(x.heading||x.file||"recipe")+'</span>';
+    }).join("");
+    return '<div class="chiplabel">recipe</div><div class="chips">'+cs+'</div>';
+  }
+
+  // ---- the four overlay renderers (reuse block/chips/renderMd) ----
+  function renderContext(){
+    let h=""; if(CTX.summary) h+='<div class="ribbon">'+esc(CTX.summary)+'</div>';
+    (CTX.sections||[]).forEach(sec=>{
+      let inner="";
+      if(sec.present===false){ inner='<div class="muted grey">(not specified in this ARA)</div>'; }
+      else (sec.entries||[]).forEach(en=>{
+        let c='<div class="card" id="ov-'+esc(en.ent_id||"")+'"><h4>'+(en.ent_id?'<span class="did">'+esc(en.ent_id)+'</span> ':'')+esc(en.ent_title||"")+(en.inferred_id?' <span class="sub">(pos.)</span>':'')+'</h4>';
+        if(!en.unstructured && en.fields && en.fields.length) en.fields.forEach(f=>c+='<div class="kv"><b>'+esc(f.label)+'</b> '+mtext(f.value)+'</div>');
+        else if(en.text) c+='<div class="kv">'+mtext(en.text)+'</div>';
+        if(en.unstructured) c+='<div class="sub">unstructured</div>';
+        c+=refRow(en.refs)+'</div>'; inner+=c;
+      });
+      h+=block(sec.heading||sec.role||"section", sec.role||"", inner, sec.role==="insight");
+    });
+    return h || '<div class="muted">No problem context.</div>';
+  }
+  function renderGlossary(filter){
+    const f=(filter||"").trim().toLowerCase();
+    const match=t=>!f||((t.name||"")+" "+(t.aliases||[]).join(" ")+" "+(t.definition||"")).toLowerCase().includes(f);
+    function card(t){
+      let c='<div class="card" id="ov-'+esc(t.term_id)+'"><h4>'+esc(t.name)+(t.group?' <span class="sub">'+esc(t.group)+'</span>':'')+'</h4>';
+      if(t.aliases&&t.aliases.length) c+='<div class="chips">'+t.aliases.map(a=>'<span class="chip">'+esc(a)+'</span>').join("")+'</div>';
+      if(t.definition) c+='<div class="kv">'+mtext(t.definition)+'</div>';
+      (t.fields||[]).forEach(fl=>c+='<div class="kv"><b>'+esc(fl.label)+'</b> '+mtext(fl.value)+'</div>');
+      if(t.related&&t.related.length) c+='<div class="kv"><b>related</b> '+t.related.map(r=>{const rt=termById.get(r);return '<span class="chip jump" data-open-term="'+esc(r)+'">'+esc(rt?rt.name:r)+'</span>';}).join(" ")+'</div>';
+      if(t._used&&t._used.length) c+='<div class="kv"><b>mentions</b> '+[...new Set(t._used)].map(nid=>'<span class="chip jump" data-jump-node="'+esc(nid)+'">'+esc(nid)+'</span>').join(" ")+' <span class="sub">(inferred)</span></div>';
+      return c+refRow(t.refs)+'</div>';
+    }
+    const groups=GLO.groups&&GLO.groups.length?GLO.groups:null; let h="";
+    if(groups){
+      const grouped=new Set();
+      groups.forEach(g=>{ (g.term_ids||[]).forEach(id=>grouped.add(id)); const ts=(g.term_ids||[]).map(id=>termById.get(id)).filter(Boolean).filter(match); if(ts.length) h+=block(g.name||"group", String(ts.length), ts.map(card).join(""), true); });
+      const rest=(GLO.terms||[]).filter(t=>!grouped.has(t.term_id)).filter(match);
+      if(rest.length) h+=block("other", String(rest.length), rest.map(card).join(""), true);
+    } else { const ts=(GLO.terms||[]).filter(match); h=ts.map(card).join(""); }
+    return h || '<div class="muted">No matching terms.</div>';
+  }
+  function renderDeps(filter){
+    const f=(filter||"").trim().toLowerCase(); let h="";
+    if(DEP.preamble) h+='<div class="muted">'+esc(DEP.preamble)+'</div>';
+    if(DEP.attribution) h+='<div class="ribbon">'+esc(DEP.attribution)+'</div>';
+    const ents=(DEP.entries||[]).filter(e=>!e.is_footprint).filter(e=>!f||(((e.rw_id||"")+" "+(e.name||"")+" "+(e.relation_raw||"")+" "+(e.delta||"")).toLowerCase().includes(f)));
+    ents.forEach(e=>{
+      const rn=e.relation_norm, relc=["baseline","imports","extends","bounds","refutes"].includes(rn)?rn:"neutral";
+      let c='<div class="card" id="ov-'+esc(e.rw_id||"")+'"><h4>'+(e.rw_id?'<span class="did">'+esc(e.rw_id)+'</span> ':'')+esc(e.name||"")+'</h4>';
+      c+='<div class="chips"><span class="rel '+relc+'">'+esc(e.relation_raw||rn||"related")+'</span>'+(e.cross_agent?'<span class="chip" title="other-agent provenance">↔ other-agent</span>':'')+'</div>';
+      if(e.delta) c+='<div class="kv">'+mtext(e.delta)+'</div>';
+      if(e.adopted) c+='<div class="kv"><b>adopted</b> '+esc(e.adopted)+'</div>';
+      let prov=(e.grounding||[]).map(refChip).join("");
+      (e.claims||[]).filter(id=>claimToNodes.has(id)).forEach(id=>prov+='<span class="chip jump" data-jump-claim="'+esc(id)+'">'+esc(id)+'</span>');
+      c+= prov?('<div class="kv"><b>grounding</b> '+prov+'</div>'):'<div class="muted">ungrounded</div>';
+      h+=c+'</div>';
+    });
+    if(!ents.length) h+='<div class="muted">No matching dependencies.</div>';
+    const fp=DEP.footprint||[];
+    if(fp.length) h+=block("Citation footprint", String(fp.length), fp.map(x=>'<div class="ptr"><span class="muted">'+esc(x.ref_id||"")+'</span> '+esc(x.citation||"")+'</div>').join(""), false);
+    return h;
+  }
+  function renderRecipes(){
+    let h="";
+    (REC.files||[]).forEach(file=>{
+      let inner="";
+      (file.sections||[]).forEach(sec=>{
+        let c='<div class="card" id="ov-sec-'+esc((file.file||"")+"-"+(sec.sec_id||""))+'"><h4>'+(sec.sec_id?'<span class="did">'+esc(sec.sec_id)+'</span> ':'')+esc(sec.heading||"")+'</h4>';
+        if(sec.kind==="table"&&sec.markdown) c+=renderMd(sec.markdown);
+        else if(sec.kind==="steps"&&sec.steps&&sec.steps.length) c+='<ol>'+sec.steps.map(s=>'<li>'+mtext(String(s).replace(/^\s*\d+\.\s*/,""))+'</li>').join("")+'</ol>';
+        else if(sec.kind==="kv"&&sec.fields&&sec.fields.length) sec.fields.forEach(fl=>c+='<div class="kv"><b>'+esc(fl.label)+'</b> '+mtext(fl.value)+'</div>');
+        else if(sec.kind==="code"&&sec.code) c+='<pre class="snip">'+esc(sec.code)+'</pre>';
+        else if(sec.kind==="math"&&sec.code) c+='<div class="kv math">'+mtext(sec.code)+'</div>';
+        else if(sec.text) c+='<div class="kv">'+mtext(sec.text)+'</div>';
+        if(sec.warn) c+='<div class="warn">'+esc(sec.warn)+'</div>';
+        inner+=c+refRow(sec.refs)+'</div>';
+      });
+      h+=block((file.file_title||file.file||"recipe")+(file.role?("  ·  "+file.role):""), String((file.sections||[]).length), inner, true);
+    });
+    return h || '<div class="muted">No recipe content.</div>';
+  }
+
+  // ---- overlay open/close + layerbar wiring ----
+  const ov=document.getElementById("overlay");
+  let lastTrigger=null;
+  const PANEL_RENDER={ context:renderContext, glossary:()=>renderGlossary(""), dependencies:()=>renderDeps(""), recipes:renderRecipes };
+  function hasContent(name){ const L=LAYERS[name]; if(!L) return false;
+    if(name==="context") return (L.sections||[]).length>0;
+    if(name==="glossary") return (L.terms||[]).length>0;
+    if(name==="dependencies") return (L.entries||[]).length>0||(L.footprint||[]).length>0;
+    if(name==="recipes") return (L.files||[]).length>0; return false; }
+  function panelTitle(name){ const L=LAYERS[name]||{}; return L.title || ({context:"Context",glossary:"Concepts",dependencies:"Dependencies",recipes:"Solution"}[name]); }
+  function panelCount(name){ const L=LAYERS[name]||{};
+    if(name==="glossary") return (L.terms||[]).length;
+    if(name==="dependencies") return (L.entries||[]).length;
+    if(name==="recipes") return (L.files||[]).reduce((a,f)=>a+(f.sections||[]).length,0); return 0; }
+  function openPanel(name, anchor){
+    if(!hasContent(name)) return;
+    stop(); lastTrigger=document.activeElement;
+    document.getElementById("ov-title").textContent=panelTitle(name);
+    const body=document.getElementById("ov-body"); body.innerHTML=PANEL_RENDER[name]();
+    if(LEX) linkifyConcepts(body);
+    const q=document.getElementById("ov-q");
+    if(name==="glossary"||name==="dependencies"){ q.hidden=false; q.value=""; q.dataset.panel=name; } else { q.hidden=true; }
+    ov.hidden=false;
+    if(anchor){ const el=document.getElementById(anchor); if(el) el.scrollIntoView({block:"center"}); } else body.scrollTop=0;
+    (q.hidden?document.getElementById("ov-close"):q).focus();
+  }
+  function closePanel(){ ov.hidden=true; if(lastTrigger&&lastTrigger.focus) lastTrigger.focus(); }
+  document.querySelectorAll(".lbtn").forEach(b=>{ const name=b.dataset.panel;
+    if(hasContent(name)){ b.hidden=false; const c=b.querySelector(".cnt"); if(c){ const n=panelCount(name); if(n) c.textContent=n; } b.addEventListener("click",()=>openPanel(name)); } });
+  document.getElementById("ov-q").addEventListener("input", e=>{ const p=e.target.dataset.panel, body=document.getElementById("ov-body");
+    body.innerHTML = p==="glossary"?renderGlossary(e.target.value):renderDeps(e.target.value); if(LEX) linkifyConcepts(body); });
+
+  // ---- glossary lexicon + popover ----
+  const LEX=(GLO&&GLO.lexicon&&Object.keys(GLO.lexicon).length)?(function(){
+    const surf=Object.keys(GLO.lexicon).filter(s=>s.length>=3).sort((a,b)=>b.length-a.length);
+    if(!surf.length) return null;
+    const re=s=>s.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+    return { re:new RegExp("\\b("+surf.map(re).join("|")+")\\b","i"), map:GLO.lexicon };
+  })():null;
+  const SKIP_TAGS={A:1,CODE:1,PRE:1,BUTTON:1,SCRIPT:1,STYLE:1,H4:1,H5:1,SUMMARY:1};
+  function linkifyConcepts(root){
+    if(!LEX) return;
+    const walker=document.createTreeWalker(root, NodeFilter.SHOW_TEXT, { acceptNode(t){
+      if(!t.nodeValue||!t.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+      let p=t.parentNode; while(p&&p!==root){ if(p.classList&&p.classList.contains("gterm")) return NodeFilter.FILTER_REJECT; if(SKIP_TAGS[p.tagName]) return NodeFilter.FILTER_REJECT; p=p.parentNode; }
+      return NodeFilter.FILTER_ACCEPT; } });
+    const seen=new Set(), hits=[]; let t;
+    while((t=walker.nextNode())){ const m=LEX.re.exec(t.nodeValue); if(!m) continue; const tid=LEX.map[m[1].toLowerCase()]; if(!tid||seen.has(tid)) continue; seen.add(tid); hits.push({node:t,index:m.index,len:m[1].length,tid}); }
+    hits.forEach(hp=>{ const tn=hp.node, txt=tn.nodeValue, par=tn.parentNode; if(!par) return;
+      const span=document.createElement("span"); span.className="gterm"; span.dataset.term=hp.tid; span.tabIndex=0; span.textContent=txt.slice(hp.index,hp.index+hp.len);
+      const after=document.createTextNode(txt.slice(hp.index+hp.len));
+      par.replaceChild(after,tn); par.insertBefore(span,after); par.insertBefore(document.createTextNode(txt.slice(0,hp.index)),span); });
+  }
+  const gpop=document.getElementById("gpop");
+  function gpopShow(span){ const t=termById.get(span.dataset.term); if(!t) return;
+    const def=t.definition||""; gpop.innerHTML='<h5>'+esc(t.name)+'</h5><div>'+mtext(def.slice(0,240))+(def.length>240?'…':'')+'</div><span class="gp-open" data-open-term="'+esc(t.term_id)+'">open in glossary →</span>';
+    gpop.style.display="block"; const r=span.getBoundingClientRect();
+    gpop.style.left=Math.max(6,Math.min(r.left, window.innerWidth-372))+"px"; gpop.style.top=(r.bottom+6)+"px"; }
+  function gpopHide(){ gpop.style.display="none"; }
+
+  // ---- delegated interactions for the new layers ----
+  document.addEventListener("click", e=>{
+    const el=e.target.closest&&e.target.closest("[data-close],[data-jump-node],[data-jump-claim],[data-open-panel],[data-open-term],[data-scroll]");
+    if(!el) return;
+    if(el.hasAttribute("data-close")){ closePanel(); return; }
+    if(el.dataset.jumpNode){ closePanel(); selectNode(el.dataset.jumpNode); return; }
+    if(el.dataset.jumpClaim){ const nid=firstNodeForClaim(el.dataset.jumpClaim); if(nid){ closePanel(); selectNode(nid); } return; }
+    if(el.dataset.openTerm){ openPanel("glossary","ov-"+el.dataset.openTerm); return; }
+    if(el.hasAttribute("data-open-panel")){ openPanel(el.dataset.openPanel, el.dataset.anchor||null); return; }
+    if(el.dataset.scroll){ const t=document.getElementById(el.dataset.scroll); if(t) t.scrollIntoView({block:"center"}); return; }
+  });
+  document.addEventListener("mouseover", e=>{ const g=e.target.closest&&e.target.closest(".gterm"); if(g) gpopShow(g); });
+  document.addEventListener("mouseout",  e=>{ const g=e.target.closest&&e.target.closest(".gterm"); if(g) gpopHide(); });
+  document.addEventListener("focusin",   e=>{ const g=e.target.closest&&e.target.closest(".gterm"); if(g) gpopShow(g); });
+  document.addEventListener("focusout",  e=>{ const g=e.target.closest&&e.target.closest(".gterm"); if(g) gpopHide(); });
+  window.addEventListener("scroll", gpopHide, true);
+
+  document.getElementById("q").addEventListener("input", applyFilters);
+  document.getElementById("ftype").addEventListener("change", applyFilters);
+  document.getElementById("fdead").addEventListener("change", applyFilters);
+  document.getElementById("rplay").addEventListener("click", play);
+  document.getElementById("rprev").addEventListener("click", ()=>{stop();step(-1);});
+  document.getElementById("rnext").addEventListener("click", ()=>{stop();step(1);});
+  document.addEventListener("keydown", e=>{
+    if(e.key==="Escape"){ if(!ov.hidden){ closePanel(); return; } gpopHide(); }
+    if(e.target.tagName==="INPUT"||e.target.tagName==="SELECT") return;
+    if(e.key==="ArrowLeft"){stop();step(-1);} else if(e.key==="ArrowRight"){stop();step(1);}
+    else if(e.key==="c"||e.key==="g"||e.key==="d"||e.key==="r"){ const p={c:"context",g:"glossary",d:"dependencies",r:"recipes"}[e.key]; if(hasContent(p)) openPanel(p); }
+  });
+
+  renderMap();
+  rstat();
+})();
+</script>
+</body>
+</html>

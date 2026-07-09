@@ -1,0 +1,2576 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ARA Trajectory</title>
+<!--
+  ARA Trajectory Viewer — canonical self-contained scaffold for the `research-visualizer` skill.
+
+  HOW THE SKILL USES THIS FILE
+  ----------------------------
+  The rendering logic below is FIXED. The agent does NOT rewrite it. The agent only:
+    1. Parses the ARA into one ARA_DATA object (schema in references/binding.md).
+    2. base64-inlines every referenced figure .png into node.result.figures[].img.
+    3. Replaces ONLY the JSON between the BEGIN/END markers in the <script id="ara-data"> block.
+    4. Writes the result to <ara>/trajectory.html (or --output).
+  Everything is inline (no CDN, no fetch, no server) so the output is one portable file.
+
+  INJECTION CONTRACT
+  ------------------
+  - Replace exactly the lines between  __ARA_DATA_BEGIN__  and  __ARA_DATA_END__.
+  - The payload MUST be valid JSON (it is read with JSON.parse).
+  - JSON must not contain the literal substring "</script>"; escape any "<" in inlined
+    markdown/text as "<" to be safe.
+  - The demo payload shipped here renders a 3-node sample so the bare template opens and
+    shows every node state (experiment, dead_end, isolated). The skill overwrites it.
+-->
+<style>
+  /* Research Visualizer — "field notebook of a machine scientist".
+     Cool archival vellum + ink; monospace is the machine-readout voice for
+     structure / IDs / data, a humanist serif carries the reasoning prose. The
+     signature is a traced trajectory spine that forks at branches and is struck
+     through at dead ends. Type is read from glyph + label; colour is reserved
+     for true epistemic status (teal = chrome, green = supported, amber =
+     tentative, clay-red = dead end) — never decoration. */
+  :root{
+    /* paper & ink — deliberately cool vellum, NOT warm cream */
+    --bg:#e9ece4; --panel:#f4f6f0; --panel2:#e3e7dd; --line:#ccd3c7; --ink:#1b2420;
+    --muted:#67726a; --faint:#8a948b; --accent:#0e6b62; --accent-ink:#0a4f48; --chip:#e6eae0;
+    --ok:#3a6a39; --warn:#a6402c; --tentative:#8a6310; --glyph-bg:#e0e5da; --glyph-ink:#4a544c;
+    --sel-bg:#e3ede7; --code-bg:#eaeee6; --reason-bg:#f4f6f0;
+    --iso-line:#b7c0ae; --iso-bg:#e5eadf; --iso-ink:#5f6b58;
+    --scrim:rgba(20,28,24,.42); --shadow:rgba(20,28,24,.16);
+    --add-bg:#e0ebdb; --add-ink:#2f5a2e; --del-bg:#f1e0da; --del-ink:#8c3623; --hunk:#67726a;
+    --spine:#c3ccbd; --grid:rgba(27,36,32,.05);
+    /* legacy type vars retained so any leftover hooks resolve */
+    --q:var(--glyph-bg); --exp:var(--glyph-bg); --dec:var(--glyph-bg); --piv:var(--glyph-bg); --ins:var(--glyph-bg); --def:var(--glyph-bg); --dead:var(--warn);
+    /* type roles: a serif reads the prose, monospace reads the machine */
+    --serif:ui-serif,"New York","Iowan Old Style",Palatino,Georgia,serif;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--bg);color:var(--ink);font:14px/1.65 var(--sans);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  code,pre,.mono{font-family:var(--mono)}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+
+  /* ---- masthead ---- */
+  header{padding:20px 24px 14px;border-bottom:1px solid var(--line);background:var(--panel)}
+  header .title{font-family:var(--serif);font-size:23px;font-weight:600;margin:0;letter-spacing:-.012em}
+  header .sub{font-family:var(--mono);color:var(--muted);font-size:11.5px;margin-top:5px;letter-spacing:.01em}
+  header details{margin-top:10px;color:var(--ink)}
+  header summary{cursor:pointer;color:var(--accent-ink);font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em}
+  .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:16px}
+  .toolbar input[type=search],.toolbar select{background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:6px 10px;font-size:13px;font-family:var(--sans)}
+  .toolbar input[type=search]{min-width:230px}
+  .toolbar input[type=search]:focus,.toolbar select:focus{border-color:var(--accent);outline:none}
+  .toolbar label{color:var(--muted);font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.06em;display:flex;gap:6px;align-items:center}
+  .btn{background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:6px 11px;font-size:12.5px;font-family:var(--mono);cursor:pointer;transition:border-color .12s,color .12s,background .12s}
+  .btn:hover{border-color:var(--accent);color:var(--accent-ink)}
+  .btn.primary{border-color:var(--accent);color:#fff;background:var(--accent)}
+  .btn.primary:hover{background:var(--accent-ink)}
+  .spacer{flex:1}
+  .count{color:var(--muted);font-family:var(--mono);font-size:11px;letter-spacing:.04em;padding-left:10px;border-left:1px solid var(--line)}
+
+  main{display:grid;grid-template-columns:minmax(300px,36%) 1fr;height:calc(100% - 0px);min-height:0}
+  #map{overflow:auto;border-right:1px solid var(--line);padding:18px 12px 56px;background:var(--bg);
+    background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+    background-size:24px 24px;background-position:-1px -1px}
+  #detail{overflow:auto;padding:26px 32px 80px;background:var(--bg)}
+
+  /* ---- process map: the trajectory spine is the signature ---- */
+  .node{position:relative;display:flex;gap:10px;align-items:flex-start;padding:7px 9px;border-radius:6px;cursor:pointer;border:1px solid transparent}
+  .node:hover{background:var(--panel2)}
+  .node.sel{background:var(--sel-bg);border-color:var(--accent)}
+  .node.deptarget{background:var(--sel-bg);outline:1px dashed var(--accent);outline-offset:-1px}
+  .node.dim{opacity:.32}
+  .node .glyph{flex:none;width:20px;height:20px;border-radius:5px;display:grid;place-items:center;font-family:var(--mono);font-size:11px;font-weight:700;color:var(--glyph-ink);background:var(--glyph-bg);border:1px solid var(--line);margin-top:1px}
+  .node.sel .glyph{border-color:var(--accent);color:var(--accent-ink)}
+  .node .nid{color:var(--muted);font-size:10.5px;font-family:var(--mono);letter-spacing:.02em}
+  .node .ntitle{font-size:13px;line-height:1.45}
+  .node.dead .ntitle{color:var(--warn);text-decoration:line-through;text-decoration-color:rgba(166,64,44,.45)}
+  .node .meta{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  /* the spine + branch connectors: nested steps trace back to their parent */
+  .kid{margin-left:19px;border-left:2px solid var(--spine);padding-left:14px}
+  .kid>.node::before{content:"";position:absolute;left:-14px;top:14px;width:10px;height:2px;background:var(--spine)}
+  .kid>.node.sel::before{background:var(--accent)}
+  .isobox{border:1px dashed var(--iso-line);border-radius:8px;margin:12px 2px;padding:6px 4px;background:var(--iso-bg)}
+  .isobox .isohdr{color:var(--iso-ink);font-family:var(--mono);font-size:10px;padding:3px 8px 7px;text-transform:uppercase;letter-spacing:.1em}
+  .dep{color:var(--muted);font-size:10px;font-family:var(--mono);border:1px solid var(--line);border-radius:4px;padding:0 5px}
+
+  .glyph.dead_end{background:var(--warn);color:#fff;border-color:var(--warn)}
+
+  /* ---- detail pane ---- */
+  .dhead{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-bottom:2px}
+  .badge{font-family:var(--mono);font-size:10px;font-weight:700;border-radius:4px;padding:3px 9px;color:var(--glyph-ink);background:var(--glyph-bg);border:1px solid var(--line);text-transform:uppercase;letter-spacing:.08em}
+  .badge.dead_end{background:var(--warn);color:#fff;border-color:var(--warn)}
+  .pill{font-family:var(--mono);font-size:10px;border:1px solid var(--line);border-radius:20px;padding:2px 9px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+  .pill.explicit{border-color:var(--ok);color:var(--ok)} .pill.inferred{border-color:var(--tentative);color:var(--tentative)}
+  .pill.iso{border-color:var(--iso-line);color:var(--iso-ink)}
+  .dtitle{font-family:var(--serif);font-size:25px;font-weight:600;margin:12px 0 6px;letter-spacing:-.012em;line-height:1.28}
+  .did{color:var(--muted);font-family:var(--mono);font-size:11.5px}
+
+  .block{border:1px solid var(--line);border-radius:7px;margin:15px 0;background:var(--panel)}
+  .block>summary{cursor:pointer;padding:11px 15px;font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);list-style:none;display:flex;align-items:center;gap:8px}
+  .block>summary::-webkit-details-marker{display:none}
+  .block>summary:hover{color:var(--accent-ink)}
+  .block>summary .tag{margin-left:auto;color:var(--faint);font-size:10.5px;font-weight:400;font-family:var(--mono);text-transform:none;letter-spacing:0}
+  .block .body{padding:4px 16px 16px}
+  /* the primary reasoning block: the agent's thinking, set as typeset prose */
+  .block.reason{border-left:3px solid var(--accent);background:var(--reason-bg)}
+  .block.reason>summary{color:var(--accent-ink)}
+  .block.reason .lead{font-family:var(--serif);font-size:17px;line-height:1.7;color:var(--ink)}
+  .didwhat{color:var(--muted);font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.09em;margin:16px 0 4px}
+  .lead{font-family:var(--serif);color:#2a322c;font-size:16px;line-height:1.7}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:11px}
+  .chip{background:var(--chip);border:1px solid var(--line);border-radius:4px;padding:2px 8px;font-size:11px;color:#46504a;font-family:var(--mono)}
+  .chip.ext{color:var(--muted)}
+
+  .claim{border:1px solid var(--line);border-left:2px solid var(--accent);border-radius:0 6px 6px 0;padding:11px 13px;margin:11px 0;background:var(--panel2)}
+  .claim h4{margin:0 0 6px;font-family:var(--mono);font-size:12px}
+  .claim .kv{font-size:13px;line-height:1.6;margin:4px 0;color:#3a423c}
+  .claim .kv b{color:var(--muted);font-weight:600;font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em}
+  .status{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.05em;border-radius:4px;padding:1px 7px;border:1px solid var(--line)}
+  .status.supported{color:var(--ok);border-color:var(--ok)}
+  .status.refuted{color:var(--warn);border-color:var(--warn)}
+  .status.hypothesis{color:var(--tentative);border-color:var(--tentative)}
+  .prov{font-size:11px;color:var(--iso-ink);font-family:var(--mono)}
+
+  .quote{border-left:3px solid var(--accent);background:var(--panel);border-radius:0 6px 6px 0;padding:9px 13px;margin:9px 0;font-size:13.5px;line-height:1.6;color:#2a322c}
+  .quote .ref{color:var(--muted);font-size:10.5px;font-family:var(--mono);margin-top:5px}
+  figure{margin:14px 0}
+  figure img{max-width:100%;border:1px solid var(--line);border-radius:5px;background:#fff;padding:6px}
+  figcaption{color:var(--muted);font-family:var(--mono);font-size:11px;margin-top:7px}
+
+  table.md{border-collapse:collapse;width:100%;font-family:var(--mono);font-size:12px;margin:10px 0}
+  table.md th,table.md td{border:1px solid var(--line);padding:5px 9px;text-align:left}
+  table.md th{background:var(--panel2);color:var(--ink);font-weight:700;text-transform:uppercase;font-size:10.5px;letter-spacing:.04em}
+  pre.snip{background:var(--code-bg);border:1px solid var(--line);border-radius:6px;padding:10px 12px;overflow:auto;font-size:12px;color:var(--ink);white-space:pre-wrap}
+
+  .ptr{font-size:13px;margin:7px 0}
+  .ptr .path{font-family:var(--mono);color:#46504a}
+  .truncated{color:var(--muted);font-size:11.5px;font-style:italic}
+  .empty{color:var(--muted);font-size:13px}
+  .none{color:var(--muted);padding:40px 24px;text-align:center;font-family:var(--mono);font-size:12px;letter-spacing:.02em}
+  kbd{background:var(--panel2);border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 5px;font-family:var(--mono);font-size:11px}
+
+  /* ---- enrichment layers (all inert unless the data is present) ---- */
+  .layerbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+  .lbtn .cnt{color:var(--muted);font-size:10.5px}
+  .chiplabel{color:var(--muted);font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.08em;margin:12px 0 3px}
+  .chip.jump{cursor:pointer}
+  .chip.jump:hover{border-color:var(--accent);color:var(--accent-ink)}
+  .chip.dangle{color:#9aa49b;text-decoration:line-through;cursor:not-allowed}
+  .chip.infer{border-style:dashed}
+  .chip-built{border-color:var(--ok);color:var(--ok)}
+  .chip-rej{border-color:var(--warn);color:var(--warn)}
+  .chip-recipe{border-color:var(--accent);color:var(--accent-ink)}
+  .nmark{color:var(--muted);font-size:10px;margin-left:5px;font-family:var(--mono)}
+  .rel{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.05em;border-radius:4px;padding:2px 8px;color:var(--glyph-ink);background:var(--glyph-bg);font-weight:700}
+  .rel.bounds,.rel.refutes{background:var(--warn);color:#fff}
+  .rel.neutral{background:var(--chip);color:var(--ink);border:1px solid var(--line);font-weight:400}
+  .ribbon{border-left:3px solid var(--accent);background:var(--panel2);border-radius:0 6px 6px 0;padding:9px 13px;margin:9px 0;color:#3a423c;font-size:13px;line-height:1.6}
+  .warn{border-left:3px solid var(--warn);background:var(--del-bg);border-radius:0 6px 6px 0;padding:9px 13px;margin:9px 0;font-size:13px;line-height:1.6}
+  .muted{color:var(--muted);font-size:11.5px}
+  .math{font-family:var(--serif);font-style:italic}
+  .gterm{border-bottom:1px dashed var(--accent);cursor:help}
+  #gpop{position:fixed;max-width:360px;background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:11px 13px;z-index:60;box-shadow:0 8px 28px var(--shadow);font-size:13px;line-height:1.55;display:none}
+  #gpop h5{margin:0 0 5px;font-family:var(--mono);font-size:12px;text-transform:uppercase;letter-spacing:.05em}
+  #gpop .gp-open{color:var(--accent);cursor:pointer;font-family:var(--mono);font-size:11px;margin-top:7px;display:inline-block}
+  .ov{position:fixed;inset:0;z-index:50}
+  .ov[hidden]{display:none}
+  .ov-scrim{position:absolute;inset:0;background:var(--scrim)}
+  .ov-sheet{position:relative;margin:5vh auto;max-width:920px;max-height:86vh;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 16px 48px var(--shadow)}
+  .ov-head{position:sticky;top:0;display:flex;gap:10px;align-items:center;padding:13px 17px;border-bottom:1px solid var(--line);background:var(--panel);z-index:1}
+  .ov-head #ov-title{font-family:var(--mono);font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.09em;color:var(--accent-ink)}
+  .ov-head input[type=search]{flex:1;max-width:260px;background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:5px 10px;font-size:13px}
+  .ov-body{padding:10px 17px 26px}
+  .ov-body .spacer{flex:1}
+  .card{border:1px solid var(--line);border-radius:6px;padding:11px 13px;margin:11px 0;background:var(--panel2)}
+  .card h4{margin:0 0 6px;font-family:var(--mono);font-size:12px}
+  .card .sub{color:var(--muted);font-family:var(--mono);font-size:10.5px}
+  .grey{opacity:.5}
+
+  /* responsive: stack the two panes on a narrow screen */
+  @media (max-width:720px){
+    main{grid-template-columns:1fr;grid-template-rows:42vh 1fr}
+    #map{border-right:none;border-bottom:1px solid var(--line)}
+    #detail{padding:20px 18px 64px}
+    .dtitle{font-size:21px}
+  }
+  /* honour reduced-motion */
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<header>
+  <h1 class="title" id="h-title">ARA Trajectory</h1>
+  <div class="sub" id="h-sub"></div>
+  <details id="h-abstract-wrap"><summary>Abstract</summary><div class="lead" id="h-abstract"></div></details>
+  <div class="toolbar">
+    <input type="search" id="q" placeholder="search steps…" autocomplete="off" />
+    <label>type
+      <select id="ftype"><option value="">all</option></select>
+    </label>
+    <label><input type="checkbox" id="fdead" /> dead ends only</label>
+    <span class="spacer"></span>
+    <button class="btn" id="rprev" title="previous (←)">‹</button>
+    <button class="btn primary" id="rplay">▶ Replay</button>
+    <button class="btn" id="rnext" title="next (→)">›</button>
+    <span class="count" id="rstat"></span>
+  </div>
+  <div class="layerbar" id="layerbar">
+    <button class="btn lbtn" data-panel="context" hidden>◧ Context</button>
+    <button class="btn lbtn" data-panel="glossary" hidden>▤ Glossary <span class="cnt"></span></button>
+    <button class="btn lbtn" data-panel="dependencies" hidden>⇄ Dependencies <span class="cnt"></span></button>
+    <button class="btn lbtn" data-panel="recipes" hidden>▦ Recipes <span class="cnt"></span></button>
+  </div>
+</header>
+
+<main>
+  <aside id="map"></aside>
+  <section id="detail"><div class="none">Select a step on the left, or press <kbd>▶ Replay</kbd>.</div></section>
+</main>
+
+<!-- v1.1: one shared modal overlay for the Context/Glossary/Dependencies/Recipes panels, + a glossary popover. Both inert unless their data is present. -->
+<div id="overlay" class="ov" hidden role="dialog" aria-modal="true">
+  <div class="ov-scrim" data-close></div>
+  <div class="ov-sheet">
+    <div class="ov-head"><span id="ov-title"></span>
+      <input type="search" id="ov-q" placeholder="filter…" hidden autocomplete="off" />
+      <span class="spacer"></span>
+      <button class="btn" id="ov-close" data-close>✕ <kbd>Esc</kbd></button>
+    </div>
+    <div class="ov-body" id="ov-body"></div>
+  </div>
+</div>
+<div id="gpop"></div>
+
+<!-- The skill replaces ONLY the JSON between the two markers below. -->
+<script id="ara-data" type="application/json">
+/* __ARA_DATA_BEGIN__ */
+{
+  "meta": {
+    "title": "What Will My Model Forget? Forecasting Forgotten Examples in Language Model Refinement",
+    "authors": [
+      "Xisen Jin",
+      "Xiang Ren"
+    ],
+    "year": "2024",
+    "venue": "ICML 2024",
+    "ara_dir": "what-will-my-model-forget",
+    "abstract": "Language models deployed in the wild make errors. However, simply updating the model with the corrected error instances causes catastrophic forgetting---the updated model makes errors on instances learned during the instruction tuning or upstream training phase. Randomly replaying upstream data yields unsatisfactory performance and often comes with high variance and poor controllability. To this end, we try to forecast upstream examples that will be forgotten due to a model update for improved controllability of the replay process and interpretability. We train forecasting models given a collection of online learned examples and corresponding forgotten upstream pre-training examples. We propose a partially interpretable forecasting model based on the observation that changes in pre-softmax logit scores of pretraining examples resemble that of online learned examples, which performs decently on BART but fails on T5 models. We further show a black-box classifier based on inner products of example representations achieves better forecasting performance over a series of setups. Finally, we show that we reduce forgetting of upstream pretraining examples by replaying examples that are forecasted to be forgotten, demonstrating the practical utility of forecasting example forgetting."
+  },
+  "order": [
+    "N01",
+    "N02",
+    "N03",
+    "N04",
+    "N05",
+    "N06",
+    "N07",
+    "N08",
+    "N09",
+    "N10",
+    "N11",
+    "N12"
+  ],
+  "nodes": [
+    {
+      "id": "N01",
+      "type": "question",
+      "parent": null,
+      "title": "Can we predict which upstream examples will be forgotten during model refinement?",
+      "body": "When fine-tuning a PTLM on a single error, can we forecast which upstream pretraining examples will lose correct predictions, without running expensive inference on all upstream examples with the updated model?",
+      "thinking": "This paper opens with the core practical problem: when a deployed pretrained language model (PTLM) makes a mistake and is fine-tuned on the correction, that same update often makes it forget things it used to get right elsewhere. Checking exactly what gets broken normally means re-running inference on every one of the model's original training examples after every single fix, which is far too expensive to do routinely. So the founding question is whether the set of examples that will be forgotten can be forecast ahead of time, without paying that full inference cost.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [],
+      "built_on": [],
+      "rejected_here": [],
+      "concepts": [
+        "Model Refinement"
+      ],
+      "recipe_refs": []
+    },
+    {
+      "id": "N02",
+      "type": "experiment",
+      "parent": "N01",
+      "title": "Examine what happens to logit scores during model refinement",
+      "body": "Logit changes in the online learning example partially transfer to upstream examples via the NTK; found 'logit-change transfer' phenomenon empirically (Figure 2a)",
+      "thinking": "As a first step toward an answer, the researchers looked directly at what happens to the model's raw output scores, the pre-softmax logits, when it is fine-tuned on one corrected example. They found that part of the logit shift on the example being learned shows up as a proportional shift in the logits of completely unrelated upstream examples, a pattern they call 'logit-change transfer.' This transfer can be explained through the Neural Tangent Kernel (NTK), a mathematical object that describes how a gradient update on one input propagates to affect predictions on another. The finding matters because it suggests forgetting is not random: it has a traceable, mechanistic cause.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [
+        "Section 3.2",
+        "§2.2"
+      ],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [
+        {
+          "name": "what-will-my-model-forget implementation",
+          "pointer": "src/execution/ (6 files): data_pipeline.py, evaluation.py, forecasting.py, logit_forecasting.py, model_refinement.py, representation_forecasting.py",
+          "what": "transcribed source code pointer index (not an external run-store pointer)"
+        }
+      ],
+      "built_on": [],
+      "rejected_here": [],
+      "concepts": [
+        "Model Refinement",
+        "Logit-Change Transfer",
+        "Neural Tangent Kernel (NTK)"
+      ],
+      "recipe_refs": []
+    },
+    {
+      "id": "N03",
+      "type": "decision",
+      "parent": "N02",
+      "title": "Use NTK-based derivation to formalize logit-change transfer",
+      "body": "Derive Equation 2: logit change of xj ≈ Θ(xj,xi)Θ⁻¹(xi,xi) × logit change of xi, using first-order Taylor expansion\n\nAlternatives considered: Empirically fit a regression from logit change of xi to xj without theoretical backing; Use gradient inner products directly (computationally expensive)",
+      "thinking": "Having observed logit-change transfer empirically, the next move is to pin it down mathematically rather than leave it as an informal pattern. Using a first-order Taylor expansion, they derive a formula (Equation 2) expressing the logit change of an upstream example as the logit change of the online-learned example, scaled by a ratio of NTK terms between the two examples. They explicitly rejected two alternatives: fitting an atheoretical regression between the two logit changes, which would have no principled backing, and computing raw gradient inner products directly, which is computationally expensive. The NTK-based derivation was chosen because it is both theoretically grounded and, in the special case of tuning only the output layer, actually tractable to compute.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [
+        "NTK theory (Lee et al. 2019) provides exact formulation; gradients for LM heads are just representations, making it tractable"
+      ],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [],
+      "built_on": [],
+      "rejected_here": [],
+      "concepts": [
+        "Logit-Change Transfer",
+        "Neural Tangent Kernel (NTK)"
+      ],
+      "recipe_refs": []
+    },
+    {
+      "id": "N04",
+      "type": "experiment",
+      "parent": "N03",
+      "title": "Test exact NTK-based forecasting (Fixed Logit) for head-only fine-tuning",
+      "body": "Fixed logit-based forecasting (Eqn. 2) achieves F1=69.57 on BART0/Head and 68.37 on FLAN-T5/Head — competitive with representation-based on FLAN-T5/Head",
+      "thinking": "This step puts the exact NTK-based formula to the test in the one setting where it is cheap to compute: fine-tuning only the model's output head. The resulting 'Fixed Logit' forecasting method reaches an F1 score (a metric combining precision and recall for the binary task of predicting whether an example is forgotten) of 69.57 on BART0 and 68.37 on FLAN-T5 under head-only tuning, competitive with the strongest method in that specific setting. This confirms the theory has real predictive power, at least when fine-tuning is restricted to the head, and sets up the harder question of whether it can be extended to more realistic fine-tuning regimes.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [
+        "§5.1"
+      ],
+      "why": [
+        {
+          "id": "C03",
+          "title": "Logit-Change Transfer Enables Partially Interpretable Forecasting on BART0 but Fails on FLAN-T5",
+          "statement": "A trainable logit-based forecasting model that approximates NTK-based logit-change transfer achieves higher F1 than threshold-based forecasting on BART0Large (57.15 vs. 55.75 F1 under Full FT), but fails to outperform threshold on FLAN-T5Large under LoRA or Full FT (36.54 vs. 43.93, 40.91 vs. 48.43).",
+          "status": "supported",
+          "conditions": "",
+          "falsification": "Trainable logit-based forecasting outperforms threshold on FLAN-T5 under LoRA or Full FT fine-tuning.",
+          "dependencies": [],
+          "provenance": null
+        }
+      ],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [
+          {
+            "id": "figure3_sequential_metrics",
+            "caption": "F1, Precision, and Recall of representation-based (Rep), threshold-based (Thres), and trainable logit-based forecasting models averaged up to a given time step (in x-axis) when continually refining the LM. For all forecasting methods, recall drops over time (as more examples being forgotten), while precision remains stable. Representation-based forecasting achieves best F1 and precision at the end of the sequence.",
+            "markdown": "| Approximate Time Step | Rep (F1) | Thres (F1) | Logit (F1) |\n|----------------------|----------|------------|------------|\n| Early (~0.1) | ≈0.50 | ≈0.50 | ≈0.45 |\n| Middle (~0.5) | ≈0.45 | ≈0.42 | ≈0.38 |\n| End (~1.0) | ≈0.40 | ≈0.37 | ≈0.33 |"
+          },
+          {
+            "id": "figure2a_logit_transfer",
+            "caption": "Transfer of logit changes of first output tokens on an upstream pretraining example ⟨xj, yj⟩ when fixing prediction errors of an online learning example ⟨xi, yi⟩. After fixing the error, the logit scores of the tokens 'not' and 'duplicates' in ⟨xi, yi⟩ changes significantly, despite that their token probabilities after normalization are both close to 0. The logit change has no effect on the prediction of ⟨xi, yi⟩; however, the predictions of the upstream pretraining example ⟨xj, yj⟩ flips as the logit change partially transfers to ⟨xj, yj⟩.",
+            "markdown": "| Token | Logit Before | Logit After | Change |\n|-------|-------------|-------------|--------|\n| Behavior | -2.56 | -1.72 | +0.84 ↑ |\n| Media | -2.03 | -2.18 | -0.15 ↓ |\n| Not | -6.05 | -9.43 | **-3.38 ↓** |\n| Duplicates | -6.24 | -10.02 | **-3.78 ↓** |"
+          },
+          {
+            "id": "table1_forecasting_f1",
+            "caption": "Average F1-score of forecasting example forgetting when fixing one error in DTest at a time. When fixing errors of base PTLMs, we either fine-tune LM heads only (Head), learn low-rank parameter updates (LoRA), or fine-tune entire model parameters (Full FT). Forgotten examples are minority among all pretraining examples. Bold numbers indicate the forecasting method that achieves the best performance.\"\n| Language Model | BART0Large | BART0Large | FLAN-T5Large | FLAN-T5Large | FLAN-T5Large | FLAN-T53B | FLAN-T53B |\n|----------------|-----------|-----------|-------------|-------------|-------------|----------|----------|\n| Dataset DR | P3-Test | P3-Test | MMLU | MMLU | MMLU | MMLU | MMLU |\n| LM Tuning Setup | Head | Full FT | Head | LoRA | Full FT | Head | LoRA |\n| Threshold | 62.96 | 55.75 | 59.95 | 43.93 | 48.43 | 63.64 | 41.42 |\n| Fixed Logit | 69.57 | 43.26 | 68.37 | 19.54 | 12.74 | 59.03 | 17.50 |\n| Trainable Logit | 73.39 | 57.15 | 61.09 | 36.54 | 40.91 | 55.07 | 31.40 |\n| Representation | **79.32** | **67.19** | 67.81 | **48.66** | **51.51** | **65.93** | **42.99** |\n| w/o Prior | 77.92 | 66.53 | **67.21** | 47.11 | 50.38 | 63.98 | 41.60 |\nNote: Bold indicates best performance per column. For FLAN-T5Large/Head, Fixed Logit (68.37) achieves highest F1, but Representation (67.81) is close. The paper text states representation achieves best in 7/8 configurations.",
+            "markdown": "| Language Model | BART0Large | BART0Large | FLAN-T5Large | FLAN-T5Large | FLAN-T5Large | FLAN-T53B | FLAN-T53B |\n|----------------|-----------|-----------|-------------|-------------|-------------|----------|----------|\n| Dataset DR | P3-Test | P3-Test | MMLU | MMLU | MMLU | MMLU | MMLU |\n| LM Tuning Setup | Head | Full FT | Head | LoRA | Full FT | Head | LoRA |\n| Threshold | 62.96 | 55.75 | 59.95 | 43.93 | 48.43 | 63.64 | 41.42 |\n| Fixed Logit | 69.57 | 43.26 | 68.37 | 19.54 | 12.74 | 59.03 | 17.50 |\n| Trainable Logit | 73.39 | 57.15 | 61.09 | 36.54 | 40.91 | 55.07 | 31.40 |\n| Representation | **79.32** | **67.19** | 67.81 | **48.66** | **51.51** | **65.93** | **42.99** |\n| w/o Prior | 77.92 | 66.53 | **67.21** | 47.11 | 50.38 | 63.98 | 41.60 |"
+          }
+        ],
+        "data": []
+      },
+      "verified_by": [
+        {
+          "id": "E01",
+          "title": "Forecasting Forgetting Performance (Table 1)",
+          "run": "",
+          "setup": "Model: BART0Large (400M), FLAN-T5Large (780M), FLAN-T53B (3B)\nHardware: Not specified in paper (GPU with sufficient memory for each model)\nDataset: DPT = 36 P3 tasks (train split), 100 examples per task; DR = P3-Test (8 tasks) for BART0, MMLU validation (57 tasks) for FLAN-T5; DR split 60/40 train/test\nSystem: Each online example is fine-tuned separately; 30 steps for LoRA/Full FT, 100 steps for head-only",
+          "metrics": "Binary F1 score for forgetting prediction; evaluated per (model, dataset, fine-tuning setup) combination"
+        },
+        {
+          "id": "E02",
+          "title": "Logit-Change Transfer Visualization",
+          "run": "",
+          "setup": "Model: FLAN-T5Large\nHardware: Not specified\nDataset: A specific pair of examples: online example about public relations (FLAN-T5 prediction error) and upstream example about paraphrase detection from P3\nSystem: Single gradient step or 100-step head fine-tuning",
+          "metrics": "Absolute logit change per output token for both xi and xj; whether prediction of xj flips (forgetting indicator)"
+        }
+      ],
+      "artifact": [
+        {
+          "name": "what-will-my-model-forget implementation",
+          "pointer": "src/execution/ (6 files): data_pipeline.py, evaluation.py, forecasting.py, logit_forecasting.py, model_refinement.py, representation_forecasting.py",
+          "what": "transcribed source code pointer index (not an external run-store pointer)"
+        }
+      ],
+      "built_on": [
+        {
+          "rw_id": "RW01",
+          "name": "Toneva et al., 2018",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW02",
+          "name": "Maini et al., 2022",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW05",
+          "name": "Lee et al., 2019 (NTK)",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW06",
+          "name": "Ramasesh et al., 2020",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW10",
+          "name": "Chung et al., 2022 (FLAN-T5)",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW11",
+          "name": "Lin et al., 2022a (BART0)",
+          "relation_raw": "imports"
+        }
+      ],
+      "rejected_here": [],
+      "concepts": [
+        "Logit-Change Transfer",
+        "Neural Tangent Kernel (NTK)",
+        "Trainable Logit-Based Forecasting Model",
+        "Threshold-Based Forecasting"
+      ],
+      "recipe_refs": []
+    },
+    {
+      "id": "N05",
+      "type": "dead_end",
+      "parent": "N04",
+      "title": "Attempt to apply full NTK for LoRA/Full FT settings",
+      "body": "Hypothesis: The full NTK Θ(xj,xi) can be computed efficiently for LoRA/Full FT to improve forecasting\n\nFailure mode: Requires TV backward passes per example — prohibitively expensive (TV ≈ 50K × 50 = 2.5M dimensions); Novak et al. 2022 confirms this is intractable for large LMs\n\nLesson: Must approximate the NTK with a trainable low-rank kernel to handle LoRA/Full FT settings",
+      "thinking": "Encouraged by the head-only result, the researchers tried to extend the exact NTK formula to the more realistic settings of LoRA (a low-rank adapter fine-tuning method) and full fine-tuning, where all or most of the model's parameters change. This attempt failed: computing the full NTK exactly requires a backward pass for every combination of output token and vocabulary entry, on the order of 2.5 million dimensions per example, which is computationally prohibitive for large language models. The lesson from this dead end is that the exact kernel cannot be used directly outside the head-only case; some form of approximation is unavoidable if the interpretable, logit-based approach is to be pushed further.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [],
+      "built_on": [],
+      "rejected_here": [],
+      "concepts": [
+        "Neural Tangent Kernel (NTK)"
+      ],
+      "recipe_refs": []
+    },
+    {
+      "id": "N06",
+      "type": "decision",
+      "parent": "N04",
+      "title": "Approximate full NTK with trainable low-rank kernel h(xj,yj)h(xi,yi)^T",
+      "body": "Replace Θ(xj,xi)Θ⁻¹(xi,xi) with trainable kernel Θ̃ = h(xj,yj)h(xi,yi)^T ∈ R^{T×T}, where h is a PTLM + 2-layer MLP\n\nAlternatives considered: Use gradient checkpointing to compute full NTK (still O(TV) per example); Skip logit-based forecasting entirely and go straight to representation-based",
+      "thinking": "In response to the previous dead end, the team decides to replace the intractable exact NTK with a trainable, low-rank stand-in: a small kernel built from a learned encoder (a pretrained language model followed by a two-layer network) applied to each example. They considered two other paths, using gradient checkpointing to make the exact NTK computation cheaper (it would still scale poorly) and abandoning the logit-based, interpretable approach altogether in favor of a black-box method, but chose the low-rank approximation first because it preserves some interpretability while sidestepping the cost problem.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [
+        "Low-dimensional gradient subspace assumption (consistent with Farajtabar et al. 2020, Saha et al. 2021)"
+      ],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [],
+      "built_on": [],
+      "rejected_here": [],
+      "concepts": [
+        "Neural Tangent Kernel (NTK)"
+      ],
+      "recipe_refs": []
+    },
+    {
+      "id": "N07",
+      "type": "experiment",
+      "parent": "N06",
+      "title": "Test trainable logit-based forecasting on BART0 Full FT",
+      "body": "Trainable logit F1=57.15 vs threshold 55.75 on BART0/Full FT — improves over threshold, suggesting kernel approximation captures some dynamics",
+      "thinking": "The approximate, trainable kernel from the previous decision is tested on BART0 under full fine-tuning, the hardest setting where all parameters move. It reaches an F1 of 57.15, edging out the simple threshold baseline's 55.75, showing the learned low-rank kernel captures at least some of the real logit dynamics even when the exact NTK is out of reach. This is a modest but real validation that the approximation strategy was worth pursuing, at least for this model.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [
+        "§5.1"
+      ],
+      "why": [
+        {
+          "id": "C03",
+          "title": "Logit-Change Transfer Enables Partially Interpretable Forecasting on BART0 but Fails on FLAN-T5",
+          "statement": "A trainable logit-based forecasting model that approximates NTK-based logit-change transfer achieves higher F1 than threshold-based forecasting on BART0Large (57.15 vs. 55.75 F1 under Full FT), but fails to outperform threshold on FLAN-T5Large under LoRA or Full FT (36.54 vs. 43.93, 40.91 vs. 48.43).",
+          "status": "supported",
+          "conditions": "",
+          "falsification": "Trainable logit-based forecasting outperforms threshold on FLAN-T5 under LoRA or Full FT fine-tuning.",
+          "dependencies": [],
+          "provenance": null
+        }
+      ],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [
+          {
+            "id": "figure3_sequential_metrics",
+            "caption": "F1, Precision, and Recall of representation-based (Rep), threshold-based (Thres), and trainable logit-based forecasting models averaged up to a given time step (in x-axis) when continually refining the LM. For all forecasting methods, recall drops over time (as more examples being forgotten), while precision remains stable. Representation-based forecasting achieves best F1 and precision at the end of the sequence.",
+            "markdown": "| Approximate Time Step | Rep (F1) | Thres (F1) | Logit (F1) |\n|----------------------|----------|------------|------------|\n| Early (~0.1) | ≈0.50 | ≈0.50 | ≈0.45 |\n| Middle (~0.5) | ≈0.45 | ≈0.42 | ≈0.38 |\n| End (~1.0) | ≈0.40 | ≈0.37 | ≈0.33 |"
+          },
+          {
+            "id": "figure2a_logit_transfer",
+            "caption": "Transfer of logit changes of first output tokens on an upstream pretraining example ⟨xj, yj⟩ when fixing prediction errors of an online learning example ⟨xi, yi⟩. After fixing the error, the logit scores of the tokens 'not' and 'duplicates' in ⟨xi, yi⟩ changes significantly, despite that their token probabilities after normalization are both close to 0. The logit change has no effect on the prediction of ⟨xi, yi⟩; however, the predictions of the upstream pretraining example ⟨xj, yj⟩ flips as the logit change partially transfers to ⟨xj, yj⟩.",
+            "markdown": "| Token | Logit Before | Logit After | Change |\n|-------|-------------|-------------|--------|\n| Behavior | -2.56 | -1.72 | +0.84 ↑ |\n| Media | -2.03 | -2.18 | -0.15 ↓ |\n| Not | -6.05 | -9.43 | **-3.38 ↓** |\n| Duplicates | -6.24 | -10.02 | **-3.78 ↓** |"
+          },
+          {
+            "id": "table1_forecasting_f1",
+            "caption": "Average F1-score of forecasting example forgetting when fixing one error in DTest at a time. When fixing errors of base PTLMs, we either fine-tune LM heads only (Head), learn low-rank parameter updates (LoRA), or fine-tune entire model parameters (Full FT). Forgotten examples are minority among all pretraining examples. Bold numbers indicate the forecasting method that achieves the best performance.\"\n| Language Model | BART0Large | BART0Large | FLAN-T5Large | FLAN-T5Large | FLAN-T5Large | FLAN-T53B | FLAN-T53B |\n|----------------|-----------|-----------|-------------|-------------|-------------|----------|----------|\n| Dataset DR | P3-Test | P3-Test | MMLU | MMLU | MMLU | MMLU | MMLU |\n| LM Tuning Setup | Head | Full FT | Head | LoRA | Full FT | Head | LoRA |\n| Threshold | 62.96 | 55.75 | 59.95 | 43.93 | 48.43 | 63.64 | 41.42 |\n| Fixed Logit | 69.57 | 43.26 | 68.37 | 19.54 | 12.74 | 59.03 | 17.50 |\n| Trainable Logit | 73.39 | 57.15 | 61.09 | 36.54 | 40.91 | 55.07 | 31.40 |\n| Representation | **79.32** | **67.19** | 67.81 | **48.66** | **51.51** | **65.93** | **42.99** |\n| w/o Prior | 77.92 | 66.53 | **67.21** | 47.11 | 50.38 | 63.98 | 41.60 |\nNote: Bold indicates best performance per column. For FLAN-T5Large/Head, Fixed Logit (68.37) achieves highest F1, but Representation (67.81) is close. The paper text states representation achieves best in 7/8 configurations.",
+            "markdown": "| Language Model | BART0Large | BART0Large | FLAN-T5Large | FLAN-T5Large | FLAN-T5Large | FLAN-T53B | FLAN-T53B |\n|----------------|-----------|-----------|-------------|-------------|-------------|----------|----------|\n| Dataset DR | P3-Test | P3-Test | MMLU | MMLU | MMLU | MMLU | MMLU |\n| LM Tuning Setup | Head | Full FT | Head | LoRA | Full FT | Head | LoRA |\n| Threshold | 62.96 | 55.75 | 59.95 | 43.93 | 48.43 | 63.64 | 41.42 |\n| Fixed Logit | 69.57 | 43.26 | 68.37 | 19.54 | 12.74 | 59.03 | 17.50 |\n| Trainable Logit | 73.39 | 57.15 | 61.09 | 36.54 | 40.91 | 55.07 | 31.40 |\n| Representation | **79.32** | **67.19** | 67.81 | **48.66** | **51.51** | **65.93** | **42.99** |\n| w/o Prior | 77.92 | 66.53 | **67.21** | 47.11 | 50.38 | 63.98 | 41.60 |"
+          }
+        ],
+        "data": []
+      },
+      "verified_by": [
+        {
+          "id": "E01",
+          "title": "Forecasting Forgetting Performance (Table 1)",
+          "run": "",
+          "setup": "Model: BART0Large (400M), FLAN-T5Large (780M), FLAN-T53B (3B)\nHardware: Not specified in paper (GPU with sufficient memory for each model)\nDataset: DPT = 36 P3 tasks (train split), 100 examples per task; DR = P3-Test (8 tasks) for BART0, MMLU validation (57 tasks) for FLAN-T5; DR split 60/40 train/test\nSystem: Each online example is fine-tuned separately; 30 steps for LoRA/Full FT, 100 steps for head-only",
+          "metrics": "Binary F1 score for forgetting prediction; evaluated per (model, dataset, fine-tuning setup) combination"
+        },
+        {
+          "id": "E02",
+          "title": "Logit-Change Transfer Visualization",
+          "run": "",
+          "setup": "Model: FLAN-T5Large\nHardware: Not specified\nDataset: A specific pair of examples: online example about public relations (FLAN-T5 prediction error) and upstream example about paraphrase detection from P3\nSystem: Single gradient step or 100-step head fine-tuning",
+          "metrics": "Absolute logit change per output token for both xi and xj; whether prediction of xj flips (forgetting indicator)"
+        }
+      ],
+      "artifact": [
+        {
+          "name": "what-will-my-model-forget implementation",
+          "pointer": "src/execution/ (6 files): data_pipeline.py, evaluation.py, forecasting.py, logit_forecasting.py, model_refinement.py, representation_forecasting.py",
+          "what": "transcribed source code pointer index (not an external run-store pointer)"
+        }
+      ],
+      "built_on": [
+        {
+          "rw_id": "RW01",
+          "name": "Toneva et al., 2018",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW02",
+          "name": "Maini et al., 2022",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW05",
+          "name": "Lee et al., 2019 (NTK)",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW06",
+          "name": "Ramasesh et al., 2020",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW10",
+          "name": "Chung et al., 2022 (FLAN-T5)",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW11",
+          "name": "Lin et al., 2022a (BART0)",
+          "relation_raw": "imports"
+        }
+      ],
+      "rejected_here": [],
+      "concepts": [
+        "Logit-Change Transfer",
+        "Neural Tangent Kernel (NTK)",
+        "Trainable Logit-Based Forecasting Model",
+        "Threshold-Based Forecasting"
+      ],
+      "recipe_refs": []
+    },
+    {
+      "id": "N08",
+      "type": "dead_end",
+      "parent": "N07",
+      "title": "Apply trainable logit-based forecasting to FLAN-T5 LoRA/Full FT",
+      "body": "Hypothesis: The trainable kernel Θ̃ will generalize from BART0 to FLAN-T5 since both are instruction-tuned seq2seq models\n\nFailure mode: F1 drops to 36.54 (LoRA) and 40.91 (Full FT) vs threshold 43.93 and 48.43 — significantly below threshold. FLAN-T5's logit dynamics are too complex for the simplified kernel.\n\nLesson: Logit-change transfer cannot be captured by a simplified kernel for all model types. Need a model-agnostic approach.",
+      "thinking": "The next natural test is whether the trainable logit-based kernel, having worked reasonably on BART0, also works on FLAN-T5, another instruction-tuned sequence-to-sequence model, under LoRA and full fine-tuning. It does not: F1 drops to 36.54 (LoRA) and 40.91 (full fine-tuning), both worse than the naive threshold baseline's 43.93 and 48.43. The failure shows that FLAN-T5's logit dynamics are too complicated for the simplified kernel to fit, and that the interpretable, logit-based line of attack does not transfer safely across model families, which is the trigger for rethinking the whole approach.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [],
+      "built_on": [],
+      "rejected_here": [],
+      "concepts": [
+        "Logit-Change Transfer"
+      ],
+      "recipe_refs": []
+    },
+    {
+      "id": "N09",
+      "type": "pivot",
+      "parent": "N01",
+      "title": "Trainable logit-based model fails on FLAN-T5; need a method that works across model families without relying on logit dynamics",
+      "body": "From: Interpretable logit-based forecasting (model-specific)\n\nTo: Black-box representation-based forecasting (model-agnostic)",
+      "thinking": "After two rounds of the logit-based approach breaking down, first needing an intractable exact kernel, then a trainable approximation that failed to generalize past BART0 to FLAN-T5, the research pivots at its root. From: an interpretable, logit-based forecasting model that tries to model the actual mechanism of forgetting but is tied to the quirks of a specific model's logit dynamics. To: a black-box, representation-based forecasting model that instead learns a similarity function over example encodings, giving up on explaining why forgetting happens in exchange for a method that should hold up across different model architectures and fine-tuning strategies.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [],
+      "built_on": [],
+      "rejected_here": [],
+      "concepts": [],
+      "recipe_refs": []
+    },
+    {
+      "id": "N10",
+      "type": "experiment",
+      "parent": "N09",
+      "title": "Test representation-based forecasting with inner products of learned encodings",
+      "body": "Representation-based forecasting achieves best F1 in 7/8 configurations: 79.32 (BART0/Head), 67.19 (BART0/Full FT), 67.81 (FLAN-T5Large/Head), 48.66 (LoRA), 51.51 (Full FT), 65.93 (T53B/Head), 42.99 (T53B/LoRA)",
+      "thinking": "The representation-based approach from the pivot is now tested across every model and fine-tuning combination the paper studies. It achieves the best F1 in 7 of 8 configurations: 79.32 on BART0 with head-only tuning, 67.19 on BART0 with full fine-tuning, 67.81, 48.66, and 51.51 on FLAN-T5Large across head-only, LoRA, and full fine-tuning respectively, and 65.93 and 42.99 on the larger FLAN-T5 3B model. This result validates the pivot directly: the model-agnostic similarity approach not only avoids the FLAN-T5 failure that killed the logit-based line, it comes out ahead almost everywhere.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [
+        "N08"
+      ],
+      "source_refs": [
+        "§5.1"
+      ],
+      "why": [
+        {
+          "id": "C01",
+          "title": "Representation-Based Forecasting Achieves Best Overall Forecasting Performance",
+          "statement": "A black-box forecasting model based on inner products of learned example representations (with frequency prior) achieves the highest binary F1 score for predicting forgotten upstream examples across all three PTLMs and nearly all fine-tuning configurations (7 of 8 model/dataset/tuning settings in Table 1).",
+          "status": "supported",
+          "conditions": "",
+          "falsification": "A different method (threshold, fixed logit, or trainable logit) achieves higher average F1 than representation-based forecasting across the Table 1 configurations.",
+          "dependencies": [
+            "C02",
+            "C03"
+          ],
+          "provenance": null
+        }
+      ],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [
+          {
+            "id": "figure3_sequential_metrics",
+            "caption": "F1, Precision, and Recall of representation-based (Rep), threshold-based (Thres), and trainable logit-based forecasting models averaged up to a given time step (in x-axis) when continually refining the LM. For all forecasting methods, recall drops over time (as more examples being forgotten), while precision remains stable. Representation-based forecasting achieves best F1 and precision at the end of the sequence.",
+            "markdown": "| Approximate Time Step | Rep (F1) | Thres (F1) | Logit (F1) |\n|----------------------|----------|------------|------------|\n| Early (~0.1) | ≈0.50 | ≈0.50 | ≈0.45 |\n| Middle (~0.5) | ≈0.45 | ≈0.42 | ≈0.38 |\n| End (~1.0) | ≈0.40 | ≈0.37 | ≈0.33 |"
+          },
+          {
+            "id": "table1_forecasting_f1",
+            "caption": "Average F1-score of forecasting example forgetting when fixing one error in DTest at a time. When fixing errors of base PTLMs, we either fine-tune LM heads only (Head), learn low-rank parameter updates (LoRA), or fine-tune entire model parameters (Full FT). Forgotten examples are minority among all pretraining examples. Bold numbers indicate the forecasting method that achieves the best performance.\"\n| Language Model | BART0Large | BART0Large | FLAN-T5Large | FLAN-T5Large | FLAN-T5Large | FLAN-T53B | FLAN-T53B |\n|----------------|-----------|-----------|-------------|-------------|-------------|----------|----------|\n| Dataset DR | P3-Test | P3-Test | MMLU | MMLU | MMLU | MMLU | MMLU |\n| LM Tuning Setup | Head | Full FT | Head | LoRA | Full FT | Head | LoRA |\n| Threshold | 62.96 | 55.75 | 59.95 | 43.93 | 48.43 | 63.64 | 41.42 |\n| Fixed Logit | 69.57 | 43.26 | 68.37 | 19.54 | 12.74 | 59.03 | 17.50 |\n| Trainable Logit | 73.39 | 57.15 | 61.09 | 36.54 | 40.91 | 55.07 | 31.40 |\n| Representation | **79.32** | **67.19** | 67.81 | **48.66** | **51.51** | **65.93** | **42.99** |\n| w/o Prior | 77.92 | 66.53 | **67.21** | 47.11 | 50.38 | 63.98 | 41.60 |\nNote: Bold indicates best performance per column. For FLAN-T5Large/Head, Fixed Logit (68.37) achieves highest F1, but Representation (67.81) is close. The paper text states representation achieves best in 7/8 configurations.",
+            "markdown": "| Language Model | BART0Large | BART0Large | FLAN-T5Large | FLAN-T5Large | FLAN-T5Large | FLAN-T53B | FLAN-T53B |\n|----------------|-----------|-----------|-------------|-------------|-------------|----------|----------|\n| Dataset DR | P3-Test | P3-Test | MMLU | MMLU | MMLU | MMLU | MMLU |\n| LM Tuning Setup | Head | Full FT | Head | LoRA | Full FT | Head | LoRA |\n| Threshold | 62.96 | 55.75 | 59.95 | 43.93 | 48.43 | 63.64 | 41.42 |\n| Fixed Logit | 69.57 | 43.26 | 68.37 | 19.54 | 12.74 | 59.03 | 17.50 |\n| Trainable Logit | 73.39 | 57.15 | 61.09 | 36.54 | 40.91 | 55.07 | 31.40 |\n| Representation | **79.32** | **67.19** | 67.81 | **48.66** | **51.51** | **65.93** | **42.99** |\n| w/o Prior | 77.92 | 66.53 | **67.21** | 47.11 | 50.38 | 63.98 | 41.60 |"
+          }
+        ],
+        "data": []
+      },
+      "verified_by": [
+        {
+          "id": "E01",
+          "title": "Forecasting Forgetting Performance (Table 1)",
+          "run": "",
+          "setup": "Model: BART0Large (400M), FLAN-T5Large (780M), FLAN-T53B (3B)\nHardware: Not specified in paper (GPU with sufficient memory for each model)\nDataset: DPT = 36 P3 tasks (train split), 100 examples per task; DR = P3-Test (8 tasks) for BART0, MMLU validation (57 tasks) for FLAN-T5; DR split 60/40 train/test\nSystem: Each online example is fine-tuned separately; 30 steps for LoRA/Full FT, 100 steps for head-only",
+          "metrics": "Binary F1 score for forgetting prediction; evaluated per (model, dataset, fine-tuning setup) combination"
+        }
+      ],
+      "artifact": [
+        {
+          "name": "what-will-my-model-forget implementation",
+          "pointer": "src/execution/ (6 files): data_pipeline.py, evaluation.py, forecasting.py, logit_forecasting.py, model_refinement.py, representation_forecasting.py",
+          "what": "transcribed source code pointer index (not an external run-store pointer)"
+        }
+      ],
+      "built_on": [
+        {
+          "rw_id": "RW01",
+          "name": "Toneva et al., 2018",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW10",
+          "name": "Chung et al., 2022 (FLAN-T5)",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW11",
+          "name": "Lin et al., 2022a (BART0)",
+          "relation_raw": "imports"
+        }
+      ],
+      "rejected_here": [],
+      "concepts": [
+        "Frequency Prior"
+      ],
+      "recipe_refs": []
+    },
+    {
+      "id": "N11",
+      "type": "experiment",
+      "parent": "N10",
+      "title": "Ablate frequency prior from representation-based forecasting",
+      "body": "Removing frequency prior consistently reduces F1 across all 8 configurations (e.g., 79.32→77.92 on BART0/Head, 51.51→50.38 on FLAN-T5Large/Full FT)",
+      "thinking": "With representation-based forecasting established as the strongest method, the next question is which of its ingredients actually matter. The model includes a 'frequency prior,' a bias term reflecting how often a given upstream example has been forgotten across many different online fixes, independent of which specific fix is being applied. Removing that prior consistently lowers F1 across all 8 configurations, for example from 79.32 to 77.92 on BART0 with head-only tuning and from 51.51 to 50.38 on FLAN-T5Large with full fine-tuning, showing that some examples are just intrinsically more forgettable than others and that this baseline information is a real, separate contributor to accuracy.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [
+        "w/o Prior rows",
+        "§5.1"
+      ],
+      "why": [
+        {
+          "id": "C02",
+          "title": "Frequency Prior Improves Representation-Based Forecasting",
+          "statement": "Adding a frequency prior bias term bj = log(forgetting odds) to the representation-based forecasting model consistently improves F1 compared to the same model without the prior (w/o Prior), for all 8 configurations in Table 1.",
+          "status": "supported",
+          "conditions": "",
+          "falsification": "Removing the frequency prior does not consistently reduce F1, or improves it on some configurations.",
+          "dependencies": [
+            "C01"
+          ],
+          "provenance": null
+        }
+      ],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [
+          {
+            "id": "table1_forecasting_f1",
+            "caption": "Average F1-score of forecasting example forgetting when fixing one error in DTest at a time. When fixing errors of base PTLMs, we either fine-tune LM heads only (Head), learn low-rank parameter updates (LoRA), or fine-tune entire model parameters (Full FT). Forgotten examples are minority among all pretraining examples. Bold numbers indicate the forecasting method that achieves the best performance.\"\n| Language Model | BART0Large | BART0Large | FLAN-T5Large | FLAN-T5Large | FLAN-T5Large | FLAN-T53B | FLAN-T53B |\n|----------------|-----------|-----------|-------------|-------------|-------------|----------|----------|\n| Dataset DR | P3-Test | P3-Test | MMLU | MMLU | MMLU | MMLU | MMLU |\n| LM Tuning Setup | Head | Full FT | Head | LoRA | Full FT | Head | LoRA |\n| Threshold | 62.96 | 55.75 | 59.95 | 43.93 | 48.43 | 63.64 | 41.42 |\n| Fixed Logit | 69.57 | 43.26 | 68.37 | 19.54 | 12.74 | 59.03 | 17.50 |\n| Trainable Logit | 73.39 | 57.15 | 61.09 | 36.54 | 40.91 | 55.07 | 31.40 |\n| Representation | **79.32** | **67.19** | 67.81 | **48.66** | **51.51** | **65.93** | **42.99** |\n| w/o Prior | 77.92 | 66.53 | **67.21** | 47.11 | 50.38 | 63.98 | 41.60 |\nNote: Bold indicates best performance per column. For FLAN-T5Large/Head, Fixed Logit (68.37) achieves highest F1, but Representation (67.81) is close. The paper text states representation achieves best in 7/8 configurations.",
+            "markdown": "| Language Model | BART0Large | BART0Large | FLAN-T5Large | FLAN-T5Large | FLAN-T5Large | FLAN-T53B | FLAN-T53B |\n|----------------|-----------|-----------|-------------|-------------|-------------|----------|----------|\n| Dataset DR | P3-Test | P3-Test | MMLU | MMLU | MMLU | MMLU | MMLU |\n| LM Tuning Setup | Head | Full FT | Head | LoRA | Full FT | Head | LoRA |\n| Threshold | 62.96 | 55.75 | 59.95 | 43.93 | 48.43 | 63.64 | 41.42 |\n| Fixed Logit | 69.57 | 43.26 | 68.37 | 19.54 | 12.74 | 59.03 | 17.50 |\n| Trainable Logit | 73.39 | 57.15 | 61.09 | 36.54 | 40.91 | 55.07 | 31.40 |\n| Representation | **79.32** | **67.19** | 67.81 | **48.66** | **51.51** | **65.93** | **42.99** |\n| w/o Prior | 77.92 | 66.53 | **67.21** | 47.11 | 50.38 | 63.98 | 41.60 |"
+          }
+        ],
+        "data": []
+      },
+      "verified_by": [
+        {
+          "id": "E01",
+          "title": "Forecasting Forgetting Performance (Table 1)",
+          "run": "",
+          "setup": "Model: BART0Large (400M), FLAN-T5Large (780M), FLAN-T53B (3B)\nHardware: Not specified in paper (GPU with sufficient memory for each model)\nDataset: DPT = 36 P3 tasks (train split), 100 examples per task; DR = P3-Test (8 tasks) for BART0, MMLU validation (57 tasks) for FLAN-T5; DR split 60/40 train/test\nSystem: Each online example is fine-tuned separately; 30 steps for LoRA/Full FT, 100 steps for head-only",
+          "metrics": "Binary F1 score for forgetting prediction; evaluated per (model, dataset, fine-tuning setup) combination"
+        }
+      ],
+      "artifact": [
+        {
+          "name": "what-will-my-model-forget implementation",
+          "pointer": "src/execution/ (6 files): data_pipeline.py, evaluation.py, forecasting.py, logit_forecasting.py, model_refinement.py, representation_forecasting.py",
+          "what": "transcribed source code pointer index (not an external run-store pointer)"
+        }
+      ],
+      "built_on": [],
+      "rejected_here": [],
+      "concepts": [
+        "Representation-Based Forecasting Model",
+        "Frequency Prior"
+      ],
+      "recipe_refs": []
+    },
+    {
+      "id": "N12",
+      "type": "experiment",
+      "parent": "N10",
+      "title": "Validate practical utility via targeted replay (Tables 3, 4)",
+      "body": "Representation-based replay reduces EM Drop from 9.274% to 1.634% on BART0/Full FT and from 5.463% to 0.301% on FLAN-T5Large/LoRA — significantly better than random replay and competitive CL baselines MIR, OCS",
+      "thinking": "The final step checks whether accurate forecasting actually helps in practice, not just as a classification exercise. Using the representation-based model's predictions to choose which upstream examples to replay during fine-tuning cuts the exact-match (EM) drop, the relative loss in correct predictions on upstream data, from 9.274% to 1.634% on BART0 under full fine-tuning and from 5.463% to 0.301% on FLAN-T5Large under LoRA. This beats both random replay and established continual-learning replay baselines (MIR and OCS), closing the loop from the original question: forecasting forgetting is not just possible, it is useful for actually preventing it.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [
+        "N10"
+      ],
+      "source_refs": [
+        "§5.2"
+      ],
+      "why": [
+        {
+          "id": "C04",
+          "title": "Replaying Forecasted-Forgotten Examples Reduces Catastrophic Forgetting vs. Random Replay",
+          "statement": "Replaying examples predicted to be forgotten by the representation-based forecasting model achieves lower EM Drop Ratio than replaying random examples across all model/tuning configurations in sequential error-fixing (Table 3), achieving 1.634% vs. 5.769% on BART0Large Full FT and 0.301% vs. 3.267% on FLAN-T5Large LoRA.",
+          "status": "supported",
+          "conditions": "",
+          "falsification": "Random replay achieves lower or equal EM Drop Ratio compared to forecasting-guided replay in any primary configuration.",
+          "dependencies": [
+            "C01"
+          ],
+          "provenance": null
+        }
+      ],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [
+          {
+            "id": "table3_sequential_refinement",
+            "caption": "Edit success rate (Succ.) and Exact Match Drop Ratio (EM Drop %) of model refinement while sequentially fixing errors in DTest_R. Lower EM Drop % indicates reduced forgetting. Bold numbers indicate lowest forgetting achieved by methods other than utilizing ground truth forgetting (GT Forget), which is computationally inefficient in practice.\"\n## BART0Large — Full FT / P3-Test\n| Methods | Succ. (%) | EM Drop (%) |\n|---------|-----------|------------|\n| Vanilla FT | 90.4 | 9.274 |\n| Replay w/ Random | 91.7 | 5.769 |\n| Replay w/ Threshold | 91.3 | 4.646 |\n| Replay w/ Trainable Logit | 91.4 | 1.826 |\n| **Replay w/ Representation** | **91.7** | **1.634** |\n| Replay w/ GT Forget | 92.2 | 0.895 |\n| MIR | 91.4 | 5.024 |\n| OCS | 91.8 | 3.573 |\n## FLAN-T5Large — LoRA / MMLU\n| Methods | Succ. (%) | EM Drop (%) |\n|---------|-----------|------------|\n| Vanilla FT | 67.4 | 5.463 |\n| Replay w/ Random | 71.7 | 3.267 |\n| Replay w/ Threshold | 78.3 | 1.489 |\n| Replay w/ Trainable Logit | 76.1 | 2.565 |\n| **Replay w/ Representation** | **73.9** | **0.301** |\n| Replay w/ GT Forget | 76.1 | 0.189 |\n| MIR | 69.6 | 2.656 |\n| OCS | 71.7 | 0.984 |\n## FLAN-T5Large — Full FT / MMLU\n| Methods | Succ. (%) | EM Drop (%) |\n|---------|-----------|------------|\n| Vanilla FT | 82.6 | 3.302 |\n| Replay w/ Random | 82.6 | 1.129 |\n| Replay w/ Threshold | 82.6 | 0.631 |\n| Replay w/ Trainable Logit | 82.6 | 0.898 |\n| **Replay w/ Representation** | **82.6** | **0.582** |\n| Replay w/ GT Forget | 82.6 | 0.560 |\n| MIR | 82.6 | 1.117 |\n| OCS | 82.6 | 0.675 |\n## FLAN-T53B — LoRA / MMLU\n| Methods | Succ. (%) | EM Drop (%) |\n|---------|-----------|------------|\n| Vanilla FT | 78.3 | 4.384 |\n| Replay w/ Random | 80.0 | 1.910 |\n| Replay w/ Threshold | 81.7 | 1.198 |\n| Replay w/ Trainable Logit | 82.5 | 1.516 |\n| **Replay w/ Representation** | **83.3** | **0.138** |\n| Replay w/ GT Forget | 85.0 | 0.030 |\n| MIR | 80.0 | 1.681 |\n| OCS | 81.7 | 1.435 |",
+            "markdown": "| Methods | Succ. (%) | EM Drop (%) |\n|---------|-----------|------------|\n| Vanilla FT | 90.4 | 9.274 |\n| Replay w/ Random | 91.7 | 5.769 |\n| Replay w/ Threshold | 91.3 | 4.646 |\n| Replay w/ Trainable Logit | 91.4 | 1.826 |\n| **Replay w/ Representation** | **91.7** | **1.634** |\n| Replay w/ GT Forget | 92.2 | 0.895 |\n| MIR | 91.4 | 5.024 |\n| OCS | 91.8 | 3.573 |"
+          },
+          {
+            "id": "table4_single_error",
+            "caption": "Exact Match Drop ratio (%) when separately fixing single errors in DTest_R. Bold numbers indicate lowest forgetting.\"\n| Model | BART0Large | FLAN-T5Large | FLAN-T5Large | FLAN-T53B |\n|-------|-----------|-------------|-------------|----------|\n| Dataset DR | P3-Test | MMLU | MMLU | MMLU |\n| Tuning | Full FT | LoRA | Full FT | LoRA |\n| Vanilla FT | 8.045 | 0.099 | 0.149 | 0.030 |\n| Replay w/ Random | 3.938 | 0.105 | 0.068 | −0.018 |\n| Replay w/ Threshold | 2.649 | 0.100 | 0.024 | 0.001 |\n| Replay w/ Trainable Logit | 2.250 | 0.113 | 0.081 | 0.004 |\n| **Replay w/ Representation** | **2.191** | **0.079** | **−0.026** | **−0.020** |\n| Replay w/ GT Forget | 0.401 | 0.075 | −0.056 | −0.011 |",
+            "markdown": "| Model | BART0Large | FLAN-T5Large | FLAN-T5Large | FLAN-T53B |\n|-------|-----------|-------------|-------------|----------|\n| Dataset DR | P3-Test | MMLU | MMLU | MMLU |\n| Tuning | Full FT | LoRA | Full FT | LoRA |\n| Vanilla FT | 8.045 | 0.099 | 0.149 | 0.030 |\n| Replay w/ Random | 3.938 | 0.105 | 0.068 | −0.018 |\n| Replay w/ Threshold | 2.649 | 0.100 | 0.024 | 0.001 |\n| Replay w/ Trainable Logit | 2.250 | 0.113 | 0.081 | 0.004 |\n| **Replay w/ Representation** | **2.191** | **0.079** | **−0.026** | **−0.020** |\n| Replay w/ GT Forget | 0.401 | 0.075 | −0.056 | −0.011 |"
+          },
+          {
+            "id": "table6_mend_comparison",
+            "caption": "Comparison of edit success rate and EM Drop % between replay-based model refinement and MEND on FLAN-T5Large with LoRA fine-tuning when fixing a single error.\"\n| Method | Edit Succ. (%) | EM Drop (%) |\n|--------|---------------|------------|\n| Vanilla FT | 95.7 | 0.099 |\n| Replay w/ Random | 95.7 | 0.105 |\n| Replay w/ Representation | 95.7 | 0.079 |\n| Replay w/ GT Forget | 95.7 | 0.075 |\n| MEND | 93.1 | 0.060 |\n| MEND w/o Forget Objective | 93.1 | 0.610 |\nNote: MEND achieves lower EM Drop than all replay methods, but at a cost of lower edit success rate (93.1% vs. 95.7%). The forget objective in MEND is crucial — removing it causes EM Drop to increase to 0.610%.",
+            "markdown": "| Method | Edit Succ. (%) | EM Drop (%) |\n|--------|---------------|------------|\n| Vanilla FT | 95.7 | 0.099 |\n| Replay w/ Random | 95.7 | 0.105 |\n| Replay w/ Representation | 95.7 | 0.079 |\n| Replay w/ GT Forget | 95.7 | 0.075 |\n| MEND | 93.1 | 0.060 |\n| MEND w/o Forget Objective | 93.1 | 0.610 |"
+          }
+        ],
+        "data": []
+      },
+      "verified_by": [
+        {
+          "id": "E03",
+          "title": "Practical Utility via Targeted Replay (Tables 3 and 4)",
+          "run": "",
+          "setup": "Model: BART0Large (Full FT), FLAN-T5Large (Full FT and LoRA), FLAN-T53B (LoRA)\nHardware: Not specified\nDataset: Same as E01; sequential fixing of all examples in D^Test_R for Table 3; single-error fixing for Table 4\nSystem: Replay mini-batches from D̂PT every 10 steps (every 5 for FLAN-T53B)",
+          "metrics": "Edit Success Rate (%), EM Drop Ratio (%); lower EM Drop is better while maintaining high edit success rate"
+        }
+      ],
+      "artifact": [
+        {
+          "name": "what-will-my-model-forget implementation",
+          "pointer": "src/execution/ (6 files): data_pipeline.py, evaluation.py, forecasting.py, logit_forecasting.py, model_refinement.py, representation_forecasting.py",
+          "what": "transcribed source code pointer index (not an external run-store pointer)"
+        }
+      ],
+      "built_on": [
+        {
+          "rw_id": "RW03",
+          "name": "Aljundi et al., 2019a (MIR)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW07",
+          "name": "De Cao et al., 2021 (EDITS)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW08",
+          "name": "Mitchell et al., 2021 (MEND)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW09",
+          "name": "Yoon et al., 2022 (OCS)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW10",
+          "name": "Chung et al., 2022 (FLAN-T5)",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW11",
+          "name": "Lin et al., 2022a (BART0)",
+          "relation_raw": "imports"
+        }
+      ],
+      "rejected_here": [],
+      "concepts": [
+        "Representation-Based Forecasting Model",
+        "EM Drop Ratio"
+      ],
+      "recipe_refs": []
+    }
+  ],
+  "context": {
+    "title": "Problem",
+    "summary": "- **Insight**: The change in pre-softmax logit scores of an online-learned example (after one gradient step) is linearly related to the logit change in any upstream example through the Neural Tangent Kernel: Δf̂i(xj) ≈…",
+    "sections": [
+      {
+        "role": "setting",
+        "heading": "Setting",
+        "present": false,
+        "entries": []
+      },
+      {
+        "role": "observations",
+        "heading": "Observations",
+        "present": true,
+        "entries": [
+          {
+            "ent_id": "O1",
+            "inferred_id": false,
+            "ent_title": "Model Refinement Causes Catastrophic Forgetting",
+            "text": "- **Statement**: Fine-tuning a pretrained LM on even a single incorrectly predicted example (30 gradient steps) causes massive forgetting of upstream pretraining data. BART0Large shows 8.0–9.3% EM Drop Ratio; FLAN-T5Large shows 0.15–3.3% EM Drop Ratio depending on tuning strategy.\n- **Evidence**: Table 3 (Vanilla FT rows), Table 4 (Vanilla FT rows)\n- **Implication**: Naive model refinement is impractical for deployment due to uncontrolled forgetting of previously learned knowledge.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "Fine-tuning a pretrained LM on even a single incorrectly predicted example (30 gradient steps) causes massive forgetting of upstream pretraining data. BART0Large shows 8.0–9.3% EM Drop Ratio; FLAN-T5Large shows 0.15–3.3% EM Drop Ratio depending on tuning strategy."
+              },
+              {
+                "label": "Evidence",
+                "value": "Table 3 (Vanilla FT rows), Table 4 (Vanilla FT rows)"
+              },
+              {
+                "label": "Implication",
+                "value": "Naive model refinement is impractical for deployment due to uncontrolled forgetting of previously learned knowledge."
+              }
+            ],
+            "refs": []
+          },
+          {
+            "ent_id": "O2",
+            "inferred_id": false,
+            "ent_title": "Random Replay Provides Partial Relief but High Variance",
+            "text": "- **Statement**: Randomly replaying 8 upstream examples every 10 gradient steps reduces EM Drop on BART0Large from 9.274% to 5.769% (Full FT) and on FLAN-T53B from 4.384% to 1.910% (LoRA), but this is still substantially higher than replaying ground-truth forgotten examples.\n- **Evidence**: Table 3 (Vanilla FT vs. Replay w/ Random rows)\n- **Implication**: Random replay wastes compute on examples that would not be forgotten anyway; targeted replay should be significantly more efficient.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "Randomly replaying 8 upstream examples every 10 gradient steps reduces EM Drop on BART0Large from 9.274% to 5.769% (Full FT) and on FLAN-T53B from 4.384% to 1.910% (LoRA), but this is still substantially higher than replaying ground-truth forgotten examples."
+              },
+              {
+                "label": "Evidence",
+                "value": "Table 3 (Vanilla FT vs. Replay w/ Random rows)"
+              },
+              {
+                "label": "Implication",
+                "value": "Random replay wastes compute on examples that would not be forgotten anyway; targeted replay should be significantly more efficient."
+              }
+            ],
+            "refs": []
+          },
+          {
+            "ent_id": "O3",
+            "inferred_id": false,
+            "ent_title": "Logit Changes Transfer Between Examples",
+            "text": "- **Statement**: After fine-tuning on an online learning example ⟨xi, yi⟩, the change in logit score Δf̂i(xi) for tokens in xi numerically transfers to the logit change Δf̂i(xj) for an upstream example xj, even when the two examples appear semantically unrelated (e.g., a public-relations question causing forgetting of a paraphrase-detection example).\n- **Evidence**: Figure 2(a) — logit scores for tokens \"not\" and \"duplicates\" in xi change by −3.38 and −3.78; corresponding tokens in xj change by −0.26 and −0.40\n- **Implication**: Forgetting has a mechanistic explanation rooted in gradient dynamics, enabling principled prediction.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "After fine-tuning on an online learning example ⟨xi, yi⟩, the change in logit score Δf̂i(xi) for tokens in xi numerically transfers to the logit change Δf̂i(xj) for an upstream example xj, even when the two examples appear semantically unrelated (e.g., a public-relations question causing forgetting of a paraphrase-detection example)."
+              },
+              {
+                "label": "Evidence",
+                "value": "Figure 2(a) — logit scores for tokens \"not\" and \"duplicates\" in xi change by −3.38 and −3.78; corresponding tokens in xj change by −0.26 and −0.40"
+              },
+              {
+                "label": "Implication",
+                "value": "Forgetting has a mechanistic explanation rooted in gradient dynamics, enabling principled prediction."
+              }
+            ],
+            "refs": []
+          },
+          {
+            "ent_id": "O4",
+            "inferred_id": false,
+            "ent_title": "Positive Examples Are a Small Minority",
+            "text": "- **Statement**: Forgotten upstream pretraining examples constitute only 1%–10% of all upstream examples D̂PT, creating a severe class-imbalance problem for forecasting.\n- **Evidence**: Section 4.2 (\"Compared Methods\"), Section 3.3 (\"Training\" in Appendix B)\n- **Implication**: Forecasting models must explicitly handle class imbalance (e.g., via frequency prior or positive-pair weighting).",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "Forgotten upstream pretraining examples constitute only 1%–10% of all upstream examples D̂PT, creating a severe class-imbalance problem for forecasting."
+              },
+              {
+                "label": "Evidence",
+                "value": "Section 4.2 (\"Compared Methods\"), Section 3.3 (\"Training\" in Appendix B)"
+              },
+              {
+                "label": "Implication",
+                "value": "Forecasting models must explicitly handle class imbalance (e.g., via frequency prior or positive-pair weighting)."
+              }
+            ],
+            "refs": []
+          },
+          {
+            "ent_id": "O5",
+            "inferred_id": false,
+            "ent_title": "Ground-Truth Forgetting Identification is Computationally Expensive",
+            "text": "- **Statement**: Obtaining ground-truth forgotten examples requires running full inference over all |D̂PT| pretraining examples with the updated model fi for every single error fixed, costing O(Fw(N)) FLOPs (9.04×10^14 FLOPs for 3,600 upstream examples under full FT).\n- **Evidence**: Table 5, Table 8\n- **Implication**: A forecasting model that avoids PTLM inference at prediction time is essential for practical deployment.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "Obtaining ground-truth forgotten examples requires running full inference over all |D̂PT| pretraining examples with the updated model fi for every single error fixed, costing O(Fw(N)) FLOPs (9.04×10^14 FLOPs for 3,600 upstream examples under full FT)."
+              },
+              {
+                "label": "Evidence",
+                "value": "Table 5, Table 8"
+              },
+              {
+                "label": "Implication",
+                "value": "A forecasting model that avoids PTLM inference at prediction time is essential for practical deployment."
+              }
+            ],
+            "refs": []
+          }
+        ]
+      },
+      {
+        "role": "gaps",
+        "heading": "Gaps",
+        "present": true,
+        "entries": [
+          {
+            "ent_id": "G1",
+            "inferred_id": false,
+            "ent_title": "No Interpretable Framework for Understanding Example-Level Forgetting Interactions",
+            "text": "- **Statement**: Existing work characterizes *which* examples tend to be forgotten (Toneva et al., 2018; Maini et al., 2022) but does not explain *why* learning one example causes forgetting of another.\n- **Caused by**: O3 — the logit-change transfer phenomenon was previously uncharacterized.\n- **Existing attempts**: Ramasesh et al. (2020) analytically study logit changes in frozen-feature models; Evron et al. (2022) analyze forgetting in linear models.\n- **Why they fail**: These analyses do not apply to large-scale instruction-tuned encoder-decoder LMs and do not yield computationally efficient forecasting models.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "Existing work characterizes *which* examples tend to be forgotten (Toneva et al., 2018; Maini et al., 2022) but does not explain *why* learning one example causes forgetting of another."
+              },
+              {
+                "label": "Caused By",
+                "value": "O3 — the logit-change transfer phenomenon was previously uncharacterized."
+              },
+              {
+                "label": "Existing Attempts",
+                "value": "Ramasesh et al. (2020) analytically study logit changes in frozen-feature models; Evron et al. (2022) analyze forgetting in linear models."
+              },
+              {
+                "label": "Why They Fail",
+                "value": "These analyses do not apply to large-scale instruction-tuned encoder-decoder LMs and do not yield computationally efficient forecasting models."
+              }
+            ],
+            "refs": [
+              {
+                "raw": "O3",
+                "kind": "observation",
+                "target": null
+              }
+            ]
+          },
+          {
+            "ent_id": "G2",
+            "inferred_id": false,
+            "ent_title": "No Computationally Efficient Forgetting Forecasting Method",
+            "text": "- **Statement**: Inner-product-of-gradients methods (Lopez-Paz & Ranzato, 2017; Aljundi et al., 2019b) are theoretically sound but require TV backward passes to compute the full NTK, costing O(NPTTHV) even for head-only tuning.\n- **Caused by**: O5 — ground-truth computation is intractable at scale.\n- **Existing attempts**: MIR (Aljundi et al., 2019a) approximates forgetting by evaluating on a small subset of upstream data.\n- **Why they fail**: MIR's subset approximation clearly degrades performance compared to ground-truth forgetting replay (Table 3).",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "Inner-product-of-gradients methods (Lopez-Paz & Ranzato, 2017; Aljundi et al., 2019b) are theoretically sound but require TV backward passes to compute the full NTK, costing O(NPTTHV) even for head-only tuning."
+              },
+              {
+                "label": "Caused By",
+                "value": "O5 — ground-truth computation is intractable at scale."
+              },
+              {
+                "label": "Existing Attempts",
+                "value": "MIR (Aljundi et al., 2019a) approximates forgetting by evaluating on a small subset of upstream data."
+              },
+              {
+                "label": "Why They Fail",
+                "value": "MIR's subset approximation clearly degrades performance compared to ground-truth forgetting replay (Table 3)."
+              }
+            ],
+            "refs": [
+              {
+                "raw": "O5",
+                "kind": "observation",
+                "target": null
+              }
+            ]
+          },
+          {
+            "ent_id": "G3",
+            "inferred_id": false,
+            "ent_title": "Random Replay Lacks Controllability and Interpretability",
+            "text": "- **Statement**: Practitioners cannot predict which examples will be affected by a model update, making debugging and auditability difficult.\n- **Caused by**: O1, O2 — forgetting is severe and random replay does not explain what is being preserved.\n- **Existing attempts**: OCS (Yoon et al., 2022) selects coresets from upstream data.\n- **Why they fail**: OCS does not capture example-level interactions between the new online example and upstream examples.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "Practitioners cannot predict which examples will be affected by a model update, making debugging and auditability difficult."
+              },
+              {
+                "label": "Caused By",
+                "value": "O1, O2 — forgetting is severe and random replay does not explain what is being preserved."
+              },
+              {
+                "label": "Existing Attempts",
+                "value": "OCS (Yoon et al., 2022) selects coresets from upstream data."
+              },
+              {
+                "label": "Why They Fail",
+                "value": "OCS does not capture example-level interactions between the new online example and upstream examples."
+              }
+            ],
+            "refs": [
+              {
+                "raw": "O1",
+                "kind": "observation",
+                "target": null
+              },
+              {
+                "raw": "O2",
+                "kind": "observation",
+                "target": null
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "role": "insight",
+        "heading": "Key Insight",
+        "present": true,
+        "entries": [
+          {
+            "ent_id": null,
+            "inferred_id": true,
+            "ent_title": "Insight",
+            "text": "- **Insight**: The change in pre-softmax logit scores of an online-learned example (after one gradient step) is linearly related to the logit change in any upstream example through the Neural Tangent Kernel: Δf̂i(xj) ≈ Θ(xj, xi)Θ⁻¹(xi, xi) · Δf̂i(xi). This relationship can be *approximated* by a trainable low-rank kernel h(xj,yj)h(xi,yi)^T, enabling efficient forecasting without computing the full NTK.\n- **Derived from**: O3 (logit-change transfer), with NTK theory providing the formal justification.\n- **Enables**: Two forecasting approaches: (1) a partially interpretable logit-based model that predicts logit changes, and (2) a black-box representation-based model that learns a similarity function over example encodings.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Insight",
+                "value": "The change in pre-softmax logit scores of an online-learned example (after one gradient step) is linearly related to the logit change in any upstream example through the Neural Tangent Kernel: Δf̂i(xj) ≈ Θ(xj, xi)Θ⁻¹(xi, xi) · Δf̂i(xi). This relationship can be *approximated* by a trainable low-rank kernel h(xj,yj)h(xi,yi)^T, enabling efficient forecasting without computing the full NTK."
+              },
+              {
+                "label": "Derived From",
+                "value": "O3 (logit-change transfer), with NTK theory providing the formal justification."
+              },
+              {
+                "label": "Enables",
+                "value": "Two forecasting approaches: (1) a partially interpretable logit-based model that predicts logit changes, and (2) a black-box representation-based model that learns a similarity function over example encodings."
+              }
+            ],
+            "refs": [
+              {
+                "raw": "O3",
+                "kind": "observation",
+                "target": null
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "role": "assumptions",
+        "heading": "Assumptions",
+        "present": true,
+        "entries": [
+          {
+            "ent_id": "A1",
+            "inferred_id": false,
+            "ent_title": "",
+            "text": "The pretrained LM f0 is an instruction-tuned seq2seq model (encoder-decoder) that performs multiple NLP tasks using a unified prompt format.",
+            "unstructured": true,
+            "fields": [],
+            "refs": [
+              {
+                "raw": "A1",
+                "kind": "assumption",
+                "target": null
+              }
+            ]
+          },
+          {
+            "ent_id": "A2",
+            "inferred_id": false,
+            "ent_title": "",
+            "text": "Model refinement involves a small number of gradient steps on a single online example (≤100 steps), so first-order Taylor expansion of logit changes is approximately valid.",
+            "unstructured": true,
+            "fields": [],
+            "refs": [
+              {
+                "raw": "A2",
+                "kind": "assumption",
+                "target": null
+              }
+            ]
+          },
+          {
+            "ent_id": "A3",
+            "inferred_id": false,
+            "ent_title": "",
+            "text": "The upstream pretraining data D_PT is accessible for replay (white-box access to training data).",
+            "unstructured": true,
+            "fields": [],
+            "refs": [
+              {
+                "raw": "A3",
+                "kind": "assumption",
+                "target": null
+              }
+            ]
+          },
+          {
+            "ent_id": "A4",
+            "inferred_id": false,
+            "ent_title": "",
+            "text": "The positive/negative structure of forgetting is sufficiently consistent across different online examples to be learnable by a forecasting model trained on D^Train_R.",
+            "unstructured": true,
+            "fields": [],
+            "refs": [
+              {
+                "raw": "A4",
+                "kind": "assumption",
+                "target": null
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "glossary": {
+    "title": "Concepts",
+    "groups": [],
+    "terms": [
+      {
+        "term_id": "G01",
+        "name": "Model Refinement",
+        "aliases": [],
+        "group": "",
+        "definition": "The process of updating a deployed language model $f_0$ by performing $K$ gradient steps on a small set of mispredicted examples $D_R$ to correct their predictions, without full retraining from scratch.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "$f_i \\leftarrow \\text{FineTune}(f_0, \\langle x_i, y_i \\rangle, K \\text{ steps})$"
+          },
+          {
+            "label": "Boundary Conditions",
+            "value": "Applies when model is deployed and making errors; assumes the base model $f_0$ is accessible for further gradient updates. Distinct from model editing methods (e.g., MEND) which learn meta-gradients."
+          }
+        ],
+        "refs": [],
+        "related": [
+          "G02",
+          "G08",
+          "G09"
+        ]
+      },
+      {
+        "term_id": "G02",
+        "name": "Catastrophic Forgetting",
+        "aliases": [],
+        "group": "",
+        "definition": "The phenomenon where fine-tuning a neural network on new data causes it to rapidly lose performance on previously learned tasks. Measured as EM Drop Ratio on upstream pretraining data $D_{PT}$ after model refinement.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "$\\text{EMDrop}_{D_{PT}, f_i} = (\\text{EM}_{D_{PT}, f_i} - \\text{EM}_{D_{PT}, f_0}) / \\text{EM}_{D_{PT}, f_0}$"
+          },
+          {
+            "label": "Boundary Conditions",
+            "value": "More severe with higher learning rates and more gradient steps; less severe with parameter-efficient methods (LoRA, head-only). Positive EM Drop means performance decreased; negative means increased."
+          }
+        ],
+        "refs": [],
+        "related": [
+          "G01",
+          "G03"
+        ]
+      },
+      {
+        "term_id": "G03",
+        "name": "Logit-Change Transfer",
+        "aliases": [],
+        "group": "",
+        "definition": "The empirical observation that the change in pre-softmax logit scores of an online-learned example $x_i$ after a gradient step partially transfers to the logit change of an upstream pretraining example $x_j$, following the relationship derived from first-order Taylor expansion around the Neural Tangent Kernel.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "$\\Delta\\hat{f}_i(x_j) = \\hat{f}_i(x_j) - \\hat{f}_0(x_j) \\approx \\Theta(x_j, x_i)\\Theta^{-1}(x_i, x_i)[\\hat{f}_i(x_i) - \\hat{f}_0(x_i)]$"
+          },
+          {
+            "label": "Boundary Conditions",
+            "value": "Derivation assumes a single gradient step and first-order Taylor approximation. More accurate when only LM heads are tuned (exact for head-only, approximate for LoRA/Full FT). Transfer occurs even for semantically unrelated example pairs."
+          }
+        ],
+        "refs": [],
+        "related": [
+          "G04"
+        ]
+      },
+      {
+        "term_id": "G04",
+        "name": "Neural Tangent Kernel (NTK)",
+        "aliases": [
+          "NTK"
+        ],
+        "group": "",
+        "definition": "A kernel function measuring the inner product of gradients of the model output with respect to parameters, evaluated at two different inputs. Controls how learning from one example affects the model's predictions on another. $T$ = output length, $V$ = vocabulary size.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "$\\Theta(x_j, x_i) = \\nabla_\\theta \\hat{f}_0(x_j) \\nabla_\\theta \\hat{f}_0(x_i)^T \\in \\mathbb{R}^{TV \\times TV}$"
+          },
+          {
+            "label": "Boundary Conditions",
+            "value": "Computing the full NTK for large LMs is prohibitively expensive (requires $TV$ backward passes). Computationally tractable only when fine-tuning only the LM head (gradients are then just example representations). The paper approximates it with a trainable low-rank kernel."
+          }
+        ],
+        "refs": [],
+        "related": [
+          "G03"
+        ]
+      },
+      {
+        "term_id": "G05",
+        "name": "Trainable Logit-Based Forecasting Model",
+        "aliases": [],
+        "group": "",
+        "definition": "An approximation of the NTK-based logit-change transfer, where the ground-truth kernel $\\Theta(x_j, x_i)\\Theta^{-1}(x_i, x_i)$ is replaced by a trainable low-rank kernel $h(x_j, y_j)h(x_i, y_i)^T$. The encoding function $h$ maps input-output pairs to low-dimensional representations of output tokens. Trained using a margin loss to predict whether $x_j$ will be forgotten.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "$\\tilde{\\Theta}(x_j, x_i) = h(x_j, y_j) h(x_i, y_i)^T \\in \\mathbb{R}^{T \\times T}$, where $h: (x, y) \\mapsto \\mathbb{R}^{T \\times d}$"
+          },
+          {
+            "label": "Boundary Conditions",
+            "value": "Effective on BART0 but fails to fit logit dynamics on FLAN-T5. Does not require inference with updated model $f_i$ at test time (logits of $x_i$ and $x_j$ from base model are cached)."
+          }
+        ],
+        "refs": [],
+        "related": [
+          "G03"
+        ]
+      },
+      {
+        "term_id": "G06",
+        "name": "Representation-Based Forecasting Model",
+        "aliases": [],
+        "group": "",
+        "definition": "A black-box binary classifier that directly predicts whether $x_j$ will be forgotten upon learning $x_i$, based on the inner product of learned averaged token representations $h(\\cdot) \\in \\mathbb{R}^d$ plus a frequency-prior bias term $b_j$. Trained with binary cross-entropy loss, with positive-pair weight $\\alpha=0.1$.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "$g(\\langle x_i, y_i\\rangle, \\langle x_j, y_j\\rangle) = \\sigma(h(x_j, y_j) h(x_i, y_i)^T + b_j)$"
+          },
+          {
+            "label": "Boundary Conditions",
+            "value": "Does not interpret *how* forgetting occurs; only predicts *whether* it occurs. Generalizes across model types (BART0, FLAN-T5) and fine-tuning strategies. Computationally efficient: $O(N_{PT} H)$ at inference time."
+          }
+        ],
+        "refs": [],
+        "related": [
+          "G07"
+        ]
+      },
+      {
+        "term_id": "G07",
+        "name": "Frequency Prior",
+        "aliases": [],
+        "group": "",
+        "definition": "The log odds that a specific upstream example $\\langle x_j, y_j\\rangle$ is forgotten (marginalizing over all online examples in the training set). Serves as a bias term in the representation-based forecasting model, capturing global forgettability of each upstream example independent of which online example is learned.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "$b_j = \\log\\left(\\frac{|\\{⟨x_i,y_i⟩ \\in D^{\\text{train}}_R \\mid z_{ij}=1\\}|}{|D^{\\text{train}}_R|}\\right) - \\log\\left(\\frac{|\\{⟨x_i,y_i⟩ \\in D^{\\text{train}}_R \\mid z_{ij}=0\\}|}{|D^{\\text{train}}_R|}\\right)$"
+          },
+          {
+            "label": "Boundary Conditions",
+            "value": "Computed from training split $D^{\\text{train}}_R$ and fixed at inference time. Beneficial especially for OOD generalization; without it, the model may fail to capture frequency-level patterns."
+          }
+        ],
+        "refs": [],
+        "related": [
+          "G10"
+        ]
+      },
+      {
+        "term_id": "G08",
+        "name": "Edit Success Rate",
+        "aliases": [],
+        "group": "",
+        "definition": "The proportion of mispredicted examples in $D_R$ that are correctly predicted by the updated model $f_i$ after model refinement. Measures whether the refinement objective is met.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "$\\text{EditSucc} = |\\{⟨x_i, y_i⟩ \\in D_R \\mid f_i(x_i) = y_i\\}| / |D_R|$"
+          },
+          {
+            "label": "Boundary Conditions",
+            "value": "Approaches 100% immediately after fine-tuning a single error (all methods achieve >95% right after fixing), but drops over time in sequential settings due to forgetting of online learned examples. High edit success rate may conflict with low forgetting."
+          }
+        ],
+        "refs": [],
+        "related": [
+          "G01",
+          "G09"
+        ]
+      },
+      {
+        "term_id": "G09",
+        "name": "EM Drop Ratio",
+        "aliases": [],
+        "group": "",
+        "definition": "The relative change in Exact Match score on upstream pretraining data $D_{PT}$ between the updated model $f_i$ and the base model $f_0$. Negative values indicate improvement; positive values indicate forgetting.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "$\\text{EMDrop}(D_{PT}, f_i, f_0) = (\\text{EM}_{D_{PT}, f_i} - \\text{EM}_{D_{PT}, f_0}) / \\text{EM}_{D_{PT}, f_0}$"
+          },
+          {
+            "label": "Boundary Conditions",
+            "value": "Computed after sequential error fixing on $D^{\\text{test}}_R$ (Table 3) or single-error fixing (Table 4). Uses 100 examples per task across 36 P3 tasks as $D_{PT}$."
+          }
+        ],
+        "refs": [],
+        "related": [
+          "G08",
+          "G02"
+        ]
+      },
+      {
+        "term_id": "G10",
+        "name": "Threshold-Based Forecasting",
+        "aliases": [],
+        "group": "",
+        "definition": "A non-trainable baseline that predicts an upstream example $\\langle x_j, y_j\\rangle$ will be forgotten if it has been forgotten more than $\\gamma$ times in the training set, regardless of the specific online example being learned. The threshold $\\gamma$ is tuned to maximize F1 on $D^{\\text{train}}_R$.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "$g(\\langle x_i, y_i\\rangle, \\langle x_j, y_j\\rangle) = \\mathbf{1}\\left[|\\{j \\in 1..J \\mid z_{ij}=1\\}| \\geq \\gamma\\right]$"
+          },
+          {
+            "label": "Boundary Conditions",
+            "value": "Does not capture interactions between pairs of examples; treats forgettability as a property of $x_j$ only. Serves as a lower bound for methods that should capture interaction effects."
+          }
+        ],
+        "refs": [],
+        "related": [
+          "G07"
+        ]
+      }
+    ],
+    "lexicon": {
+      "model refinement": "G01",
+      "catastrophic forgetting": "G02",
+      "logit-change transfer": "G03",
+      "neural tangent kernel": "G04",
+      "ntk": "G04",
+      "trainable logit-based forecasting model": "G05",
+      "representation-based forecasting model": "G06",
+      "frequency prior": "G07",
+      "edit success rate": "G08",
+      "em drop ratio": "G09",
+      "threshold-based forecasting": "G10"
+    }
+  },
+  "dependencies": {
+    "title": "Related Work / Dependencies",
+    "preamble": "# Related Work",
+    "legend": [],
+    "attribution": "",
+    "entries": [
+      {
+        "rw_id": "RW01",
+        "inferred_id": false,
+        "name": "Toneva et al., 2018",
+        "relation_raw": "imports",
+        "relation_norm": "imports",
+        "delta": "What changed: This paper extends the finding that some examples are more forgettable than others by predicting *which specific upstream example* will be forgotten based on the *specific online example* being learned, rather than characterizing global forgettability.\nWhy: To achieve example-pair-level prediction rather than just per-example statistics.",
+        "adopted": "Concept of \"forgettable examples\"; motivation for threshold-based forecasting baseline (Eqn. 1)",
+        "grounding": [
+          {
+            "raw": "arXiv:1812.05159)",
+            "kind": "arxiv",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C01",
+          "C03"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW02",
+        "inferred_id": false,
+        "name": "Maini et al., 2022",
+        "relation_raw": "imports",
+        "relation_norm": "imports",
+        "delta": "What changed: \"Second-split forgetting\" characterizes example difficulty; this paper instead characterizes pair-wise interaction effects.\nWhy: Single-example characterization cannot predict which example causes forgetting of which other.",
+        "adopted": "The concept of characterizing training examples by forgetting dynamics",
+        "grounding": [],
+        "claims": [
+          "C03"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW03",
+        "inferred_id": false,
+        "name": "Aljundi et al., 2019a (MIR)",
+        "relation_raw": "baseline",
+        "relation_norm": "baseline",
+        "delta": "What changed: MIR retrieves forgetting examples from a small subset of training data to avoid full inference; this paper trains a separate forecasting model that does not require any PTLM inference.\nWhy: MIR's subset approximation degrades performance at scale (Table 3).",
+        "adopted": "The core idea that targeted replay reduces forgetting better than random replay",
+        "grounding": [],
+        "claims": [
+          "C04",
+          "C06"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW04",
+        "inferred_id": false,
+        "name": "Aljundi et al., 2019b (GSS)",
+        "relation_raw": "baseline",
+        "relation_norm": "baseline",
+        "delta": "What changed: Gradient-based sample selection (inner products of gradients) is computationally expensive; this paper replaces gradient inner products with inner products of learned low-dimensional representations.\nWhy: TV backward passes for gradient computation are prohibitive for large LMs.",
+        "adopted": "Motivation for measuring example similarity via inner products",
+        "grounding": [],
+        "claims": [
+          "C06"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW05",
+        "inferred_id": false,
+        "name": "Lee et al., 2019 (NTK)",
+        "relation_raw": "imports",
+        "relation_norm": "imports",
+        "delta": "What changed: The paper applies NTK theory to derive the logit-change transfer formula (Eqn. 2) for sequence-to-sequence models.\nWhy: Provides the theoretical justification for using kernel-based approximations to predict logit changes.",
+        "adopted": "First-order Taylor expansion technique; NTK definition and properties",
+        "grounding": [],
+        "claims": [
+          "C03"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW06",
+        "inferred_id": false,
+        "name": "Ramasesh et al., 2020",
+        "relation_raw": "imports",
+        "relation_norm": "imports",
+        "delta": "What changed: Ramasesh et al. study logit changes in frozen feature models; this paper studies logit-change transfer in fine-tuned instruction-tuned LMs with trainable kernels.\nWhy: The frozen feature assumption does not hold for LoRA or Full FT settings.",
+        "adopted": "The idea that logit dynamics can explain task interference patterns",
+        "grounding": [],
+        "claims": [
+          "C03"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW07",
+        "inferred_id": false,
+        "name": "De Cao et al., 2021 (EDITS)",
+        "relation_raw": "baseline",
+        "relation_norm": "baseline",
+        "delta": "What changed: EDITS learns meta-gradients for editing; this paper uses standard fine-tuning as the update mechanism, which is model-agnostic.\nWhy: Meta-gradient approaches can reduce forgetting but sacrifice edit success rate in the paper's setup (Appendix A, Table 6).",
+        "adopted": "Problem framing of model refinement / error fixing",
+        "grounding": [],
+        "claims": [
+          "C04"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW08",
+        "inferred_id": false,
+        "name": "Mitchell et al., 2021 (MEND)",
+        "relation_raw": "baseline",
+        "relation_norm": "baseline",
+        "delta": "What changed: MEND learns a meta-model to edit gradients; the paper uses standard fine-tuning + forecasting-guided replay, which achieves better edit success rate at comparable forgetting reduction.\nWhy: MEND's edit success rate is lower than Vanilla FT (93.1% vs. 95.7%) in LoRA setting (Table 6).",
+        "adopted": "Comparison methodology; establishing that replay-based methods are competitive",
+        "grounding": [],
+        "claims": [
+          "C04"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW09",
+        "inferred_id": false,
+        "name": "Yoon et al., 2022 (OCS)",
+        "relation_raw": "baseline",
+        "relation_norm": "baseline",
+        "delta": "What changed: OCS computes coresets as important examples to replay; this paper uses forecasting model predictions (pair-specific) rather than importance-based coreset selection.\nWhy: OCS does not capture online example-specific forgetting interactions (Table 3).",
+        "adopted": "Coreset-based replay as an alternative baseline",
+        "grounding": [],
+        "claims": [
+          "C04"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW10",
+        "inferred_id": false,
+        "name": "Chung et al., 2022 (FLAN-T5)",
+        "relation_raw": "imports",
+        "relation_norm": "imports",
+        "delta": "What changed: FLAN-T5 is used as the primary experimental model; the paper studies how model refinement affects FLAN-T5's instruction-following abilities.\nWhy: FLAN-T5 is a widely deployed instruction-tuned model that makes real errors.",
+        "adopted": "FLAN-T5Large and FLAN-T53B model weights; MMLU as evaluation dataset",
+        "grounding": [
+          {
+            "raw": "arXiv:2210.11416",
+            "kind": "arxiv",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C01",
+          "C03",
+          "C04"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW11",
+        "inferred_id": false,
+        "name": "Lin et al., 2022a (BART0)",
+        "relation_raw": "imports",
+        "relation_norm": "imports",
+        "delta": "What changed: BART0 is used as a second experimental model trained exclusively on P3; its controlled training setup enables cleaner evaluation.\nWhy: BART0's single-dataset pretraining allows using P3-Test as a genuinely out-of-pretraining evaluation set.",
+        "adopted": "BART0Large model weights; P3 dataset splits",
+        "grounding": [],
+        "claims": [
+          "C01",
+          "C03",
+          "C04"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW12",
+        "inferred_id": false,
+        "name": "Novak et al., 2022 (Fast NTK)",
+        "relation_raw": "bounds",
+        "relation_norm": "bounds",
+        "delta": "What changed: Establishes that computing NTKs for large LMs is prohibitively expensive; this paper proposes a trainable low-rank approximation to circumvent this.\nWhy: Motivates the departure from exact NTK computation toward the simplified kernel Θ̃.",
+        "adopted": "Complexity analysis framework; TV backward pass cost characterization",
+        "grounding": [],
+        "claims": [
+          "C06"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      }
+    ],
+    "footprint": []
+  },
+  "recipes": {
+    "title": "Solution",
+    "files": [
+      {
+        "file": "algorithm.md",
+        "role": "algorithm",
+        "file_title": "Algorithm",
+        "sections": [
+          {
+            "sec_id": null,
+            "heading": "Mathematical Formulation",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "### Problem Setup\nLet $f_0$ be the base pretrained LM with parameters $\\theta_0$. Given an online learning example $\\langle x_i, y_i \\rangle$ with $f_0(x_i) \\neq y_i$, the updated model is $f_i$ obtained via $K$ gradient steps starting from $f_0$.\n\n**Exact Match score**: $\\text{EM}_{D,f} = |\\{\\langle x,y\\rangle \\in D \\mid f(x) = y\\}| / |D|$\n\n**Forecasting task**: Binary classification $g: \\langle x_i, y_i\\rangle, \\langle x_j, y_j\\rangle \\mapsto z_{ij} \\in \\{0,1\\}$ where $z_{ij}=1$ iff $x_j$ is forgotten upon learning $x_i$.\n\n### Logit-Change Transfer Derivation (Eqn. 2)\n\nFrom the first-order Taylor expansion after one gradient step with learning rate $\\eta$:\n\n$$\\theta_i - \\theta_0 = -\\eta \\nabla_\\theta \\hat{f}_0(x_i) \\nabla_{\\hat{f}_0(x_i)} \\mathcal{L}(x_i, y_i)$$\n\nThe logit change of any example $x_j$:\n\n$$\\Delta\\hat{f}_i(x_j) = -\\eta \\Theta(x_j, x_i) \\mathcal{L}(x_i, y_i)$$\n\nwhere $\\Theta(x_j, x_i) = \\nabla_\\theta \\hat{f}_0(x_j) \\nabla_\\theta \\hat{f}_0(x_i)^T \\in \\mathbb{R}^{TV \\times TV}$.\n\nCombining the logit changes of $x_j$ and $x_i$:\n\n$$\\hat{f}_i(x_j) - \\hat{f}_0(x_j) = \\Theta(x_j, x_i)\\Theta^{-1}(x_i, x_i)\\left[\\hat{f}_i(x_i) - \\hat{f}_0(x_i)\\right] \\tag{Eqn. 2}$$\n\n### Trainable Kernel Approximation\n\nReplace the full NTK with a trainable low-rank approximation:\n\n$$\\tilde{\\Theta}(x_j, x_i) = h(x_j, y_j) h(x_i, y_i)^T \\in \\mathbb{R}^{T \\times T}$$\n\nPredicted updated logits of $x_j$:\n\n$$\\hat{f}_i(x_j) = \\tilde{\\Theta}(x_j, x_i)\\left[\\hat{f}_i(x_i) - \\hat{f}_0(x_i)\\right] + \\hat{f}_0(x_j)$$\n\n**Margin loss** (Eqn. 3):\n\n$$\\mathcal{L}(\\langle x_i, y_i\\rangle, \\langle x_j, y_j\\rangle, z_{ij}) = \\max\\left(0,\\ 1 + (-1)^{z_{ij}} \\left(\\max_{v \\neq y_j} \\hat{f}_i(x_j)[v] - \\hat{f}_i(x_j)[y_j]\\right)\\right)$$\n\n### Representation-Based Forecasting (Eqn. 4)\n\n$$g(\\langle x_i, y_i\\rangle, \\langle x_j, y_j\\rangle) = \\sigma\\left(h(x_j, y_j) h(x_i, y_i)^T + b_j\\right)$$\n\nwhere $h: (x,y) \\mapsto \\mathbb{R}^d$ averages token representations, and the frequency prior is:\n\n$$b_j = \\log\\frac{|\\{⟨x_i,y_i⟩ \\in D^{\\text{train}}_R \\mid z_{ij}=1\\}|}{|D^{\\text{train}}_R|} - \\log\\frac{|\\{⟨x_i,y_i⟩ \\in D^{\\text{train}}_R \\mid z_{ij}=0\\}|}{|D^{\\text{train}}_R|}$$\n\nOptimized with binary cross-entropy loss.",
+            "text": "### Problem Setup\nLet $f_0$ be the base pretrained LM with parameters $\\theta_0$. Given an online learning example $\\langle x_i, y_i \\rangle$ with $f_0(x_i) \\neq y_i$, the updated model is $f_i$ obtained via $K$ gradient steps starting from $f_0$.\n\n**Exact Match score**: $\\text{EM}_{D,f} = |\\{\\langle x,y\\rangle \\in D \\mid f(x) = y\\}| / |D|$\n\n**Forecasting task**: Binary classification $g: \\langle x_i, y_i\\rangle, \\langle x_j, y_j\\rangle \\mapsto z_{ij} \\in \\{0,1\\}$ where $z_{ij}=1$ iff $x_j$ is forgotten upon learning $x_i$.\n\n### Logit-Change Transfer Derivation (Eqn. 2)\n\nFrom the first-order Taylor expansion after one gradient step with learning rate $\\eta$:\n\n$$\\theta_i - \\theta_0 = -\\eta \\nabla_\\theta \\hat{f}_0(x_i) \\nabla_{\\hat{f}_0(x_i)} \\mathcal{L}(x_i, y_i)$$\n\nThe logit change of any example $x_j$:\n\n$$\\Delta\\hat{f}_i(x_j) = -\\eta \\Theta(x_j, x_i) \\mathcal{L}(x_i, y_i)$$\n\nwhere $\\Theta(x_j, x_i) = \\nabla_\\theta \\hat{f}_0(x_j) \\nabla_\\theta \\hat{f}_0(x_i)^T \\in \\mathbb{R}^{TV \\times TV}$.\n\nCombining the logit changes of $x_j$ and $x_i$:\n\n$$\\hat{f}_i(x_j) - \\hat{f}_0(x_j) = \\Theta(x_j, x_i)\\Theta^{-1}(x_i, x_i)\\left[\\hat{f}_i(x_i) - \\hat{f}_0(x_i)\\right] \\tag{Eqn. 2}$$\n\n### Trainable Kernel Approximation\n\nReplace the full NTK with a trainable low-rank approximation:\n\n$$\\tilde{\\Theta}(x_j, x_i) = h(x_j, y_j) h(x_i, y_i)^T \\in \\mathbb{R}^{T \\times T}$$\n\nPredicted updated logits of $x_j$:\n\n$$\\hat{f}_i(x_j) = \\tilde{\\Theta}(x_j, x_i)\\left[\\hat{f}_i(x_i) - \\hat{f}_0(x_i)\\right] + \\hat{f}_0(x_j)$$\n\n**Margin loss** (Eqn. 3):\n\n$$\\mathcal{L}(\\langle x_i, y_i\\rangle, \\langle x_j, y_j\\rangle, z_{ij}) = \\max\\left(0,\\ 1 + (-1)^{z_{ij}} \\left(\\max_{v \\neq y_j} \\hat{f}_i(x_j)[v] - \\hat{f}_i(x_j)[y_j]\\right)\\right)$$\n\n### Representation-Based Forecasting (Eqn. 4)\n\n$$g(\\langle x_i, y_i\\rangle, \\langle x_j, y_j\\rangle) = \\sigma\\left(h(x_j, y_j) h(x_i, y_i)^T + b_j\\right)$$\n\nwhere $h: (x,y) \\mapsto \\mathbb{R}^d$ averages token representations, and the frequency prior is:\n\n$$b_j = \\log\\frac{|\\{⟨x_i,y_i⟩ \\in D^{\\text{train}}_R \\mid z_{ij}=1\\}|}{|D^{\\text{train}}_R|} - \\log\\frac{|\\{⟨x_i,y_i⟩ \\in D^{\\text{train}}_R \\mid z_{ij}=0\\}|}{|D^{\\text{train}}_R|}$$\n\nOptimized with binary cross-entropy loss.",
+            "warn": "",
+            "refs": [],
+            "kind": "math"
+          },
+          {
+            "sec_id": null,
+            "heading": "Pseudocode",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "Input: D^train_R, DPT, f0, max_steps T\nOutput: Trained encoding function h: R^T → R^{T×H}\n\nInitialize h (PTLM + 2-layer MLP)\nfor step in 1..T:\n    (xi, yi) ← sample(D^train_R)\n    (xj, yj) ← sample(DPT)\n    \n    # Get logits from base model\n    f̂0_xi ← f0.logits(xi)\n    f̂0_xj ← f0.logits(xj)\n    \n    # Fine-tune copy of f0 on (xi, yi)\n    fi ← FineTune(f0, (xi, yi), K_steps, lr)\n    f̂i_xi ← fi.logits(xi)\n    f̂i_xj ← fi.logits(xj)\n    \n    # Ground truth forgetting\n    zij ← 1 if fi(xj) ≠ yj else 0\n    \n    # Compute trainable kernel\n    Θ̃ ← h(xj, yj) @ h(xi, yi).T  # [T × T]\n    \n    # Predict updated logits of xj\n    f̂i_xj_pred ← Θ̃ @ (f̂i_xi - f̂0_xi) + f̂0_xj\n    \n    # Margin loss (Eqn. 3)\n    loss ← max(0, 1 + (-1)^zij * (max_{v≠yj} f̂i_xj_pred[v] - f̂i_xj_pred[yj]))\n    loss.backward(); optimizer.step()\n\nInput: (xi, yi) ∈ D^Test_R, DPT, f0, trained h, cached h(xj,yj) for xj ∈ DPT\nOutput: Predicted ẑij for all (xj, yj) ∈ DPT\n\nh_xi ← h(xi, yi)\nf̂0_xi ← f0.logits(xi)\nfi ← FineTune(f0, (xi, yi), K_steps, lr)\nf̂i_xi ← fi.logits(xi)\nΔlogit_xi ← f̂i_xi - f̂0_xi\n\nfor (xj, yj) ∈ DPT:\n    h_xj ← cached h(xj, yj)  # pre-computed\n    Θ̃ ← h_xj @ h_xi.T\n    f̂i_xj_pred ← Θ̃ @ Δlogit_xi + f̂0_xj  # cached f̂0_xj\n    ẑij ← 1 if argmax(f̂i_xj_pred) ≠ yj else 0\n\nInput: D^train_R, DPT, f0, max_steps T, positive weight α=0.1\nOutput: Trained h: R^T → R^d\n\nInitialize h (PTLM + 2-layer MLP)\nCompute frequency priors bj for all (xj,yj) ∈ DPT\n\nwhile not converged:\n    # Sample balanced mini-batch: 8 positive + 8 negative pairs\n    batch ← SamplePairs(D^train_R, DPT, n_pos=8, n_neg=8)\n    \n    for ((xi,yi), (xj,yj), zij) in batch:\n        h_xi ← h(xi, yi)  # averaged token reps\n        h_xj ← h(xj, yj)\n        p̃ij ← σ(h_xj · h_xi + bj)\n        \n        weight ← α if zij==1 else 1.0\n        loss += weight * BCE(p̃ij, zij)\n    \n    loss.backward(); optimizer.step()\n\nInput: (xi, yi) ∈ D^Test_R, DPT, trained h, cached h(xj,yj), cached bj\nOutput: Predicted ẑij for all (xj, yj) ∈ DPT\n\nh_xi ← h(xi, yi)\n\nfor (xj, yj) ∈ DPT:\n    h_xj ← cached h(xj, yj)\n    p̃ij ← σ(h_xj · h_xi + bj)\n    ẑij ← 1 if p̃ij > 0.5 else 0",
+            "text": "### Algorithm 1: Train Logit-Based Forecasting Model\n\n```\nInput: D^train_R, DPT, f0, max_steps T\nOutput: Trained encoding function h: R^T → R^{T×H}\n\nInitialize h (PTLM + 2-layer MLP)\nfor step in 1..T:\n    (xi, yi) ← sample(D^train_R)\n    (xj, yj) ← sample(DPT)\n    \n    # Get logits from base model\n    f̂0_xi ← f0.logits(xi)\n    f̂0_xj ← f0.logits(xj)\n    \n    # Fine-tune copy of f0 on (xi, yi)\n    fi ← FineTune(f0, (xi, yi), K_steps, lr)\n    f̂i_xi ← fi.logits(xi)\n    f̂i_xj ← fi.logits(xj)\n    \n    # Ground truth forgetting\n    zij ← 1 if fi(xj) ≠ yj else 0\n    \n    # Compute trainable kernel\n    Θ̃ ← h(xj, yj) @ h(xi, yi).T  # [T × T]\n    \n    # Predict updated logits of xj\n    f̂i_xj_pred ← Θ̃ @ (f̂i_xi - f̂0_xi) + f̂0_xj\n    \n    # Margin loss (Eqn. 3)\n    loss ← max(0, 1 + (-1)^zij * (max_{v≠yj} f̂i_xj_pred[v] - f̂i_xj_pred[yj]))\n    loss.backward(); optimizer.step()\n```\n\n### Algorithm 2: Inference with Logit-Based Forecasting\n\n```\nInput: (xi, yi) ∈ D^Test_R, DPT, f0, trained h, cached h(xj,yj) for xj ∈ DPT\nOutput: Predicted ẑij for all (xj, yj) ∈ DPT\n\nh_xi ← h(xi, yi)\nf̂0_xi ← f0.logits(xi)\nfi ← FineTune(f0, (xi, yi), K_steps, lr)\nf̂i_xi ← fi.logits(xi)\nΔlogit_xi ← f̂i_xi - f̂0_xi\n\nfor (xj, yj) ∈ DPT:\n    h_xj ← cached h(xj, yj)  # pre-computed\n    Θ̃ ← h_xj @ h_xi.T\n    f̂i_xj_pred ← Θ̃ @ Δlogit_xi + f̂0_xj  # cached f̂0_xj\n    ẑij ← 1 if argmax(f̂i_xj_pred) ≠ yj else 0\n```\n\n### Algorithm 3: Train Representation-Based Forecasting Model\n\n```\nInput: D^train_R, DPT, f0, max_steps T, positive weight α=0.1\nOutput: Trained h: R^T → R^d\n\nInitialize h (PTLM + 2-layer MLP)\nCompute frequency priors bj for all (xj,yj) ∈ DPT\n\nwhile not converged:\n    # Sample balanced mini-batch: 8 positive + 8 negative pairs\n    batch ← SamplePairs(D^train_R, DPT, n_pos=8, n_neg=8)\n    \n    for ((xi,yi), (xj,yj), zij) in batch:\n        h_xi ← h(xi, yi)  # averaged token reps\n        h_xj ← h(xj, yj)\n        p̃ij ← σ(h_xj · h_xi + bj)\n        \n        weight ← α if zij==1 else 1.0\n        loss += weight * BCE(p̃ij, zij)\n    \n    loss.backward(); optimizer.step()\n```\n\n### Algorithm 4: Inference with Representation-Based Forecasting\n\n```\nInput: (xi, yi) ∈ D^Test_R, DPT, trained h, cached h(xj,yj), cached bj\nOutput: Predicted ẑij for all (xj, yj) ∈ DPT\n\nh_xi ← h(xi, yi)\n\nfor (xj, yj) ∈ DPT:\n    h_xj ← cached h(xj, yj)\n    p̃ij ← σ(h_xj · h_xi + bj)\n    ẑij ← 1 if p̃ij > 0.5 else 0\n```",
+            "warn": "",
+            "refs": [],
+            "kind": "code"
+          },
+          {
+            "sec_id": null,
+            "heading": "Complexity Analysis",
+            "markdown": "| Method | Inference Complexity | Notes |\n|--------|---------------------|-------|\n| Threshold | $O(N_{PT})$ | Look up pre-counted forgetting frequencies |\n| Fixed Logit | $O(N_{PT} T^2 (H+V))$ | Kernel computation + logit prediction |\n| Trainable Logit | $O(N_{PT} T^2 (H+V))$ | Same as fixed logit |\n| Representation | $O(N_{PT} H)$ | Inner product of $d$-dim vectors |\n| GT (Head-only) | $O(N_{PT} T H V)$ | Full inference with updated LM |\n| GT (Full FT) | $O(F_w(N_{PT}))$ | Full LM forward passes with all updated params |",
+            "steps": [],
+            "fields": [],
+            "code": "",
+            "text": "| Method | Inference Complexity | Notes |\n|--------|---------------------|-------|\n| Threshold | $O(N_{PT})$ | Look up pre-counted forgetting frequencies |\n| Fixed Logit | $O(N_{PT} T^2 (H+V))$ | Kernel computation + logit prediction |\n| Trainable Logit | $O(N_{PT} T^2 (H+V))$ | Same as fixed logit |\n| Representation | $O(N_{PT} H)$ | Inner product of $d$-dim vectors |\n| GT (Head-only) | $O(N_{PT} T H V)$ | Full inference with updated LM |\n| GT (Full FT) | $O(F_w(N_{PT}))$ | Full LM forward passes with all updated params |\n\nWhere $N_{PT}$ = number of upstream examples, $T$ = max output length, $H$ = hidden dim, $V$ = vocab size.",
+            "warn": "",
+            "refs": [],
+            "kind": "table"
+          }
+        ]
+      },
+      {
+        "file": "architecture.md",
+        "role": "architecture",
+        "file_title": "Solution Architecture",
+        "sections": [
+          {
+            "sec_id": null,
+            "heading": "System Overview",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "┌─────────────────────────────────────────────────────────┐\n│               Data Collection Pipeline                   │\n│  f0 ──→ Evaluate on DR → Collect mispredictions → D^R   │\n│  f0 ──→ Evaluate on DPT → Filter correct → D̂PT          │\n│  For each (xi,yi) ∈ D^Train_R:                          │\n│    fi = FineTune(f0, xi, yi, K steps)                    │\n│    zi = Evaluate fi on D̂PT → Ground truth forgetting     │\n└────────────────────────┬────────────────────────────────┘\n                         │\n                         ▼\n┌─────────────────────────────────────────────────────────┐\n│               Forecasting Model Training                  │\n│                                                          │\n│  Option A: Logit-Based (Fig 2b)                         │\n│    Encoder h: (x,y) → R^{T×d}  (PTLM + MLP)           │\n│    Kernel: Θ̃(xj,xi) = h(xj,yj) h(xi,yi)^T             │\n│    Predict: f̂i(xj) = Θ̃ · Δf̂i(xi) + f̂0(xj)           │\n│    Loss: Margin loss (Eqn 3)                             │\n│                                                          │\n│  Option B: Representation-Based (Fig 2c)                │\n│    Encoder h: (x,y) → R^d  (PTLM + MLP, avg pooling)  │\n│    Predict: g = σ(h(xj,yj)·h(xi,yi)^T + bj)           │\n│    Loss: Binary cross-entropy                            │\n└────────────────────────┬────────────────────────────────┘\n                         │\n                         ▼\n┌─────────────────────────────────────────────────────────┐\n│              Model Refinement with Replay                │\n│                                                          │\n│  For each (xi,yi) ∈ D^Test_R (sequential):             │\n│    1. Query forecasting model for all xj ∈ D̂PT          │\n│    2. Rank by predicted forgetting probability           │\n│    3. Fine-tune f on (xi,yi) for K steps                │\n│       Every 10 steps: replay mini-batch of 8 predicted  │\n│       forgotten examples with distillation loss vs f0    │\n│    4. Measure Edit Success Rate + EM Drop Ratio          │\n└─────────────────────────────────────────────────────────┘",
+            "text": "The system consists of three interacting pipelines: (1) data collection for training forecasting models, (2) the forecasting model itself, and (3) model refinement with targeted replay.\n\n```\n┌─────────────────────────────────────────────────────────┐\n│               Data Collection Pipeline                   │\n│  f0 ──→ Evaluate on DR → Collect mispredictions → D^R   │\n│  f0 ──→ Evaluate on DPT → Filter correct → D̂PT          │\n│  For each (xi,yi) ∈ D^Train_R:                          │\n│    fi = FineTune(f0, xi, yi, K steps)                    │\n│    zi = Evaluate fi on D̂PT → Ground truth forgetting     │\n└────────────────────────┬────────────────────────────────┘\n                         │\n                         ▼\n┌─────────────────────────────────────────────────────────┐\n│               Forecasting Model Training                  │\n│                                                          │\n│  Option A: Logit-Based (Fig 2b)                         │\n│    Encoder h: (x,y) → R^{T×d}  (PTLM + MLP)           │\n│    Kernel: Θ̃(xj,xi) = h(xj,yj) h(xi,yi)^T             │\n│    Predict: f̂i(xj) = Θ̃ · Δf̂i(xi) + f̂0(xj)           │\n│    Loss: Margin loss (Eqn 3)                             │\n│                                                          │\n│  Option B: Representation-Based (Fig 2c)                │\n│    Encoder h: (x,y) → R^d  (PTLM + MLP, avg pooling)  │\n│    Predict: g = σ(h(xj,yj)·h(xi,yi)^T + bj)           │\n│    Loss: Binary cross-entropy                            │\n└────────────────────────┬────────────────────────────────┘\n                         │\n                         ▼\n┌─────────────────────────────────────────────────────────┐\n│              Model Refinement with Replay                │\n│                                                          │\n│  For each (xi,yi) ∈ D^Test_R (sequential):             │\n│    1. Query forecasting model for all xj ∈ D̂PT          │\n│    2. Rank by predicted forgetting probability           │\n│    3. Fine-tune f on (xi,yi) for K steps                │\n│       Every 10 steps: replay mini-batch of 8 predicted  │\n│       forgotten examples with distillation loss vs f0    │\n│    4. Measure Edit Success Rate + EM Drop Ratio          │\n└─────────────────────────────────────────────────────────┘\n```",
+            "warn": "",
+            "refs": [],
+            "kind": "code"
+          },
+          {
+            "sec_id": null,
+            "heading": "Component Descriptions",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Purpose",
+                "value": "The pretrained, instruction-tuned language model being refined\nThe set of upstream examples whose forgetting we wish to prevent\nMaps an input-output pair (x, y) to a low-dimensional representation\nStores pre-computed logit vectors f̂0(xj) for all upstream examples\nBinary classifier predicting forgetting of (xj, yj) upon learning (xi, yi)\nSelects examples from D̂PT to replay during model refinement"
+              },
+              {
+                "label": "Inputs",
+                "value": "Text sequences (x) → text sequences (y)\n36 P3 training tasks, 100 examples per task\nConcatenated input text x and output text y\nf̂0(xj) for all xj ∈ D̂PT\nRepresentations h(xi,yi) and h(xj,yj); cached logits (logit-based only)\nPredicted forgetting labels ẑij from forecasting model"
+              },
+              {
+                "label": "Outputs",
+                "value": "Pre-softmax logits f̂(x) ∈ R^{TV}, predictions f(x) ∈ vocabulary*\nD̂PT = subset correctly predicted by f0; forgetting indicators zij\nLogit-based h: R^{T×d} — representation of each output token\nRepresentation-based h: R^d — averaged over output tokens\nCached logits for efficient inference (top k=100 logit values per token)\nBinary label ẑij ∈ {0,1} or probability p(zij=1)\nMini-batch of 8 examples for replay every 10 gradient steps"
+              },
+              {
+                "label": "Variants",
+                "value": "BART0Large (400M params), FLAN-T5Large (780M), FLAN-T53B (3B)"
+              },
+              {
+                "label": "Interactions",
+                "value": "Provides logits and representations to forecasting encoder; receives gradient updates during refinement\n### Component 2: Upstream Pretraining Dataset (DPT)\nProduces representations used by both the kernel computation and the binary classifier\n### Component 4: Logit Cache\nUsed by logit-based forecasting model at inference time without re-running f0\n### Component 5: Forecasting Function (g)\nQueries logit cache; uses encoder h; outputs replay selection signal\n### Component 6: Replay Controller\nUses forecasting model predictions; applies distillation loss against base model f0"
+              },
+              {
+                "label": "Key Design Choice",
+                "value": "Balanced sampling (100 per task) ensures coverage; using only correctly predicted examples avoids measuring \"forgetting\" of never-learned examples\n### Component 3: Forecasting Encoder (h)"
+              },
+              {
+                "label": "Architecture",
+                "value": "BART0 (for BART0 experiments) or FLAN-T5small (for FLAN-T5 experiments) backbone + freshly initialized 2-layer trainable MLP"
+              }
+            ],
+            "code": "",
+            "text": "### Component 1: Base PTLM (f0)\n- **Purpose**: The pretrained, instruction-tuned language model being refined\n- **Inputs**: Text sequences (x) → text sequences (y)\n- **Outputs**: Pre-softmax logits f̂(x) ∈ R^{TV}, predictions f(x) ∈ vocabulary*\n- **Variants**: BART0Large (400M params), FLAN-T5Large (780M), FLAN-T53B (3B)\n- **Interactions**: Provides logits and representations to forecasting encoder; receives gradient updates during refinement\n\n### Component 2: Upstream Pretraining Dataset (DPT)\n- **Purpose**: The set of upstream examples whose forgetting we wish to prevent\n- **Inputs**: 36 P3 training tasks, 100 examples per task\n- **Outputs**: D̂PT = subset correctly predicted by f0; forgetting indicators zij\n- **Key design choice**: Balanced sampling (100 per task) ensures coverage; using only correctly predicted examples avoids measuring \"forgetting\" of never-learned examples\n\n### Component 3: Forecasting Encoder (h)\n- **Purpose**: Maps an input-output pair (x, y) to a low-dimensional representation\n- **Inputs**: Concatenated input text x and output text y\n- **Outputs**: \n  - Logit-based h: R^{T×d} — representation of each output token\n  - Representation-based h: R^d — averaged over output tokens\n- **Architecture**: BART0 (for BART0 experiments) or FLAN-T5small (for FLAN-T5 experiments) backbone + freshly initialized 2-layer trainable MLP\n- **Interactions**: Produces representations used by both the kernel computation and the binary classifier\n\n### Component 4: Logit Cache\n- **Purpose**: Stores pre-computed logit vectors f̂0(xj) for all upstream examples\n- **Inputs**: f̂0(xj) for all xj ∈ D̂PT\n- **Outputs**: Cached logits for efficient inference (top k=100 logit values per token)\n- **Interactions**: Used by logit-based forecasting model at inference time without re-running f0\n\n### Component 5: Forecasting Function (g)\n- **Purpose**: Binary classifier predicting forgetting of (xj, yj) upon learning (xi, yi)\n- **Inputs**: Representations h(xi,yi) and h(xj,yj); cached logits (logit-based only)\n- **Outputs**: Binary label ẑij ∈ {0,1} or probability p(zij=1)\n- **Interactions**: Queries logit cache; uses encoder h; outputs replay selection signal\n\n### Component 6: Replay Controller\n- **Purpose**: Selects examples from D̂PT to replay during model refinement\n- **Inputs**: Predicted forgetting labels ẑij from forecasting model\n- **Outputs**: Mini-batch of 8 examples for replay every 10 gradient steps\n- **Interactions**: Uses forecasting model predictions; applies distillation loss against base model f0",
+            "warn": "",
+            "refs": [],
+            "kind": "kv"
+          }
+        ]
+      },
+      {
+        "file": "constraints.md",
+        "role": "constraints",
+        "file_title": "Constraints",
+        "sections": [
+          {
+            "sec_id": null,
+            "heading": "Boundary Conditions",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "",
+            "text": "### BC1: Model Type Determines Logit-Based Method Viability\n- The trainable logit-based forecasting model performs well on BART0Large but fails on FLAN-T5 models.\n- Reason: FLAN-T5's instruction tuning creates more complex logit dynamics that the simplified kernel Θ̃ = h(xj,yj)h(xi,yi)^T cannot approximate.\n- Implication: Only representation-based forecasting generalizes across model families.\n\n### BC2: Fine-Tuning Scope Limits NTK Approximation Quality\n- Fixed logit-based forecasting (using frozen f0 representations as h) is exact only when tuning LM heads only.\n- Under LoRA or Full FT, the kernel requires TV backward passes, which is computationally prohibitive.\n- The trainable approximation can partially recover under Full FT for BART0 but not for FLAN-T5.\n\n### BC3: Sequential Refinement Degrades Forecasting Over Time\n- Forecasting models are trained assuming the base model is f0; as the model is sequentially updated, predictions degrade.\n- Precision remains approximately stable but recall drops over time as more examples are forgotten.\n- Future work: update forecasting models alongside the language model.\n\n### BC4: Forecasting Requires Access to Upstream Training Data\n- D̂PT must be accessible for both training forecasting models and for replay.\n- The method is not applicable when upstream pretraining data is private or inaccessible.\n\n### BC5: LoRA Configuration\n- LoRA is applied to query and value (but NOT key) matrices in all self-attention layers.\n- This is a fixed design choice; different LoRA configurations may affect forgetting patterns.\n\n### BC6: Positive Examples Are Rare (1-10%)\n- Class imbalance means naive training without weighting or frequency priors leads to poor F1.\n- The frequency prior and positive-pair weight α=0.1 are essential design choices.",
+            "warn": "",
+            "refs": [],
+            "kind": "prose"
+          },
+          {
+            "sec_id": null,
+            "heading": "Known Limitations",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "",
+            "text": "### L1: Model-Specific Failure\n- Logit-based forecasting works for BART0 but not FLAN-T5; the paper cannot explain why the simplified kernel is insufficient for FLAN-T5's architecture.\n\n### L2: Distributional Shift in Sequential Settings\n- In long sequential streams, the base model f0 used for training diverges from the current model ft, causing forecasting accuracy to degrade.\n- Table 12 shows representation-based F1 drops from 49.3 to 23.4 over 5 time steps on FLAN-T5Large.\n\n### L3: Task Distribution Effects Not Fully Analyzed\n- The paper does not comprehensively analyze how task similarity between online and upstream examples affects forgetting probability.\n\n### L4: Edit Success Rate vs. Forgetting Trade-off\n- All replay methods reduce forgetting but may also cause forgetting of the newly learned online example (lower edit success rate in sequential settings).\n- This tension is noted but not fully resolved.\n\n### L5: Replay Overfitting in Single-Error Setting\n- Replaying more examples per online example causes *increased* forgetting in the single-error setting (Table 10), suggesting replay overfitting to the replayed examples at the expense of the online example.",
+            "warn": "",
+            "refs": [],
+            "kind": "prose"
+          }
+        ]
+      },
+      {
+        "file": "heuristics.md",
+        "role": "heuristics",
+        "file_title": "Heuristics",
+        "sections": [
+          {
+            "sec_id": "H01",
+            "heading": "H01: Positive-Pair Reweighting (α=0.1)",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "Forgotten examples constitute only 1-10% of D̂PT, creating severe class imbalance. Without reweighting, the model would predict no forgetting on all examples and achieve near-zero F1. The weight α=0.1 assigned to positive pairs compensates for this."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "high"
+              },
+              {
+                "label": "Bounds",
+                "value": "α ∈ (0, 1]; paper uses α=0.1 for all experiments"
+              },
+              {
+                "label": "Code Ref",
+                "value": "[src/execution/forecasting.py]"
+              },
+              {
+                "label": "Source",
+                "value": "Appendix B, \"Training Details of the Forecasting Models\""
+              }
+            ],
+            "code": "",
+            "text": "- **Rationale**: Forgotten examples constitute only 1-10% of D̂PT, creating severe class imbalance. Without reweighting, the model would predict no forgetting on all examples and achieve near-zero F1. The weight α=0.1 assigned to positive pairs compensates for this.\n- **Sensitivity**: high\n- **Bounds**: α ∈ (0, 1]; paper uses α=0.1 for all experiments\n- **Code ref**: [src/execution/forecasting.py]\n- **Source**: Appendix B, \"Training Details of the Forecasting Models\"",
+            "warn": "",
+            "refs": [],
+            "kind": "kv"
+          },
+          {
+            "sec_id": "H02",
+            "heading": "H02: Frequency Prior Bias Term (bj)",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "Some upstream examples are intrinsically more forgettable than others (independent of which online example is learned). Adding the log-odds prior as a bias term to the representation model allows it to focus on learning residual interaction effects rather than global forgettability."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "medium"
+              },
+              {
+                "label": "Bounds",
+                "value": "Computed from D^Train_R; fixed at inference time; removing it consistently reduces F1 (Table 1, \"w/o Prior\" rows)"
+              },
+              {
+                "label": "Code Ref",
+                "value": "[src/execution/forecasting.py]"
+              },
+              {
+                "label": "Source",
+                "value": "Section 3.3, \"Forecasting with Frequency Priors\""
+              }
+            ],
+            "code": "",
+            "text": "- **Rationale**: Some upstream examples are intrinsically more forgettable than others (independent of which online example is learned). Adding the log-odds prior as a bias term to the representation model allows it to focus on learning residual interaction effects rather than global forgettability.\n- **Sensitivity**: medium\n- **Bounds**: Computed from D^Train_R; fixed at inference time; removing it consistently reduces F1 (Table 1, \"w/o Prior\" rows)\n- **Code ref**: [src/execution/forecasting.py]\n- **Source**: Section 3.3, \"Forecasting with Frequency Priors\"",
+            "warn": "",
+            "refs": [],
+            "kind": "kv"
+          },
+          {
+            "sec_id": "H03",
+            "heading": "H03: Caching Top-k Logits (k=100)",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "Storing all TV logit values for each upstream example is prohibitively expensive in memory. Caching only the top-100 logits per output token provides sufficient coverage for margin-based prediction while reducing storage by a factor of V/100 ≈ 300-500×."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "low"
+              },
+              {
+                "label": "Bounds",
+                "value": "k=100; increasing k improves accuracy marginally but increases storage"
+              },
+              {
+                "label": "Code Ref",
+                "value": "[src/execution/forecasting.py]"
+              },
+              {
+                "label": "Source",
+                "value": "Section 3.2, \"Efficient Inference\""
+              }
+            ],
+            "code": "",
+            "text": "- **Rationale**: Storing all TV logit values for each upstream example is prohibitively expensive in memory. Caching only the top-100 logits per output token provides sufficient coverage for margin-based prediction while reducing storage by a factor of V/100 ≈ 300-500×.\n- **Sensitivity**: low\n- **Bounds**: k=100; increasing k improves accuracy marginally but increases storage\n- **Code ref**: [src/execution/forecasting.py]\n- **Source**: Section 3.2, \"Efficient Inference\"",
+            "warn": "",
+            "refs": [],
+            "kind": "kv"
+          },
+          {
+            "sec_id": "H04",
+            "heading": "H04: Replay Interval (every 10 steps for BART0/FLAN-T5Large; every 5 for FLAN-T53B)",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "Replaying every step wastes compute; replaying too infrequently fails to counteract forgetting. The paper fixes 3 mini-batches over 30 fine-tuning steps (every 10 steps). Larger models (FLAN-T53B) use a denser schedule (every 5 steps over 30 steps = 6 mini-batches of size 4)."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "medium"
+              },
+              {
+                "label": "Bounds",
+                "value": "Paper uses 3 batches for BART0/FLAN-T5Large; 4-15 batches increases forgetting prevention but risks overfitting (Table 10)"
+              },
+              {
+                "label": "Code Ref",
+                "value": "[src/execution/model_refinement.py]"
+              },
+              {
+                "label": "Source",
+                "value": "Section 4.2, \"Model Refinement\"; Appendix D.2, Table 10"
+              }
+            ],
+            "code": "",
+            "text": "- **Rationale**: Replaying every step wastes compute; replaying too infrequently fails to counteract forgetting. The paper fixes 3 mini-batches over 30 fine-tuning steps (every 10 steps). Larger models (FLAN-T53B) use a denser schedule (every 5 steps over 30 steps = 6 mini-batches of size 4).\n- **Sensitivity**: medium\n- **Bounds**: Paper uses 3 batches for BART0/FLAN-T5Large; 4-15 batches increases forgetting prevention but risks overfitting (Table 10)\n- **Code ref**: [src/execution/model_refinement.py]\n- **Source**: Section 4.2, \"Model Refinement\"; Appendix D.2, Table 10",
+            "warn": "",
+            "refs": [],
+            "kind": "kv"
+          },
+          {
+            "sec_id": "H05",
+            "heading": "H05: Distillation Loss for Replay",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "Standard cross-entropy replay forces exact match to ground truth; distillation against the base model f0 is softer and preserves the full output distribution including uncertainties, leading to better performance than standard CE replay (following Buzzega et al., 2020a)."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "medium"
+              },
+              {
+                "label": "Bounds",
+                "value": "Applied to all replay variants; target distribution is f0's output probabilities"
+              },
+              {
+                "label": "Code Ref",
+                "value": "[src/execution/model_refinement.py]"
+              },
+              {
+                "label": "Source",
+                "value": "Section 4.2, \"Model Refinement\"; Buzzega et al. (2020a) citation"
+              }
+            ],
+            "code": "",
+            "text": "- **Rationale**: Standard cross-entropy replay forces exact match to ground truth; distillation against the base model f0 is softer and preserves the full output distribution including uncertainties, leading to better performance than standard CE replay (following Buzzega et al., 2020a).\n- **Sensitivity**: medium\n- **Bounds**: Applied to all replay variants; target distribution is f0's output probabilities\n- **Code ref**: [src/execution/model_refinement.py]\n- **Source**: Section 4.2, \"Model Refinement\"; Buzzega et al. (2020a) citation",
+            "warn": "",
+            "refs": [],
+            "kind": "kv"
+          },
+          {
+            "sec_id": "H06",
+            "heading": "H06: Smaller Learning Rate for Sequential Error Fixing",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "In sequential refinement, using the same learning rate as single-error fixing leads to rapid accumulation of forgetting across multiple updates. The paper uses 10× lower learning rates for sequential settings (10^-6 for BART0, 10^-5 for FLAN-T5 vs. 10^-5 and 10^-4 for single-error). Table 9 shows that 1e-4 leads to 24.9% EM Drop vs. 3.3% at 1e-5."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "high"
+              },
+              {
+                "label": "Bounds",
+                "value": "Single error: 10^-5 (BART0), 10^-4 (FLAN-T5); Sequential: 10^-6 (BART0), 10^-5 (FLAN-T5)"
+              },
+              {
+                "label": "Code Ref",
+                "value": "[src/execution/model_refinement.py]"
+              },
+              {
+                "label": "Source",
+                "value": "Section 4.1, \"Hyperparameters\"; Appendix D.1, Table 9"
+              }
+            ],
+            "code": "",
+            "text": "- **Rationale**: In sequential refinement, using the same learning rate as single-error fixing leads to rapid accumulation of forgetting across multiple updates. The paper uses 10× lower learning rates for sequential settings (10^-6 for BART0, 10^-5 for FLAN-T5 vs. 10^-5 and 10^-4 for single-error). Table 9 shows that 1e-4 leads to 24.9% EM Drop vs. 3.3% at 1e-5.\n- **Sensitivity**: high\n- **Bounds**: Single error: 10^-5 (BART0), 10^-4 (FLAN-T5); Sequential: 10^-6 (BART0), 10^-5 (FLAN-T5)\n- **Code ref**: [src/execution/model_refinement.py]\n- **Source**: Section 4.1, \"Hyperparameters\"; Appendix D.1, Table 9",
+            "warn": "",
+            "refs": [],
+            "kind": "kv"
+          }
+        ]
+      }
+    ]
+  }
+}
+/* __ARA_DATA_END__ */
+</script>
+
+<script>
+"use strict";
+(function () {
+  const GLYPH = { question:"Q", experiment:"✦", decision:"→", dead_end:"✗", pivot:"↻", insight:"!", default:"•" };
+  const TYPES = ["question","experiment","decision","dead_end","pivot","insight"];
+
+  let DATA;
+  try {
+    // The payload sits between the BEGIN/END marker comments (kept in-file so the
+    // skill can re-inject). Strip ONLY those two named markers before parsing; the
+    // rest of textContent is pure JSON. (Marker text is not written literally here,
+    // so it stays a single injection site.)
+    var raw = document.getElementById("ara-data").textContent
+                .replace(/\/\*\s*__ARA_DATA_(?:BEGIN|END)__\s*\*\//g, "");
+    DATA = JSON.parse(raw);
+  } catch (e) {
+    document.getElementById("detail").innerHTML =
+      '<div class="none">Could not parse embedded ARA data: ' + String(e) + '</div>';
+    return;
+  }
+
+  const nodes = DATA.nodes || [];
+  const byId = new Map(nodes.map(n => [n.id, n]));
+  const kids = new Map();
+  nodes.forEach(n => kids.set(n.id, []));
+  let roots = [];
+  nodes.forEach(n => {
+    if (n.parent && byId.has(n.parent)) kids.get(n.parent).push(n.id);
+    else roots.push(n.id);
+  });
+  // Traversal order: explicit DATA.order if given, else DFS from roots.
+  let order = Array.isArray(DATA.order) && DATA.order.length ? DATA.order.filter(id => byId.has(id)) : [];
+  if (!order.length) { const seen=new Set(); const dfs=id=>{if(seen.has(id))return;seen.add(id);order.push(id);(kids.get(id)||[]).forEach(dfs)}; roots.forEach(dfs); }
+
+  const esc = s => String(s==null?"":s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  const glyph = t => GLYPH[t] || GLYPH.default;
+  const cls = t => TYPES.includes(t) ? t : "default";
+
+  // ---- header ----
+  const m = DATA.meta || {};
+  document.getElementById("h-title").textContent = m.title || "ARA Trajectory";
+  document.getElementById("h-sub").textContent =
+    [ (m.authors||[]).join(", "), m.venue, m.year ].filter(Boolean).join(" · ");
+  if (m.abstract) document.getElementById("h-abstract").textContent = m.abstract;
+  else document.getElementById("h-abstract-wrap").style.display = "none";
+
+  const ftype = document.getElementById("ftype");
+  const present = [...new Set(nodes.map(n => n.type))];
+  TYPES.concat(present.filter(t=>!TYPES.includes(t))).filter(t=>present.includes(t))
+    .forEach(t => { const o=document.createElement("option"); o.value=t; o.textContent=t; ftype.appendChild(o); });
+
+  // ---- minimal markdown-table renderer ----
+  function renderMd(md){
+    if(!md) return "";
+    const lines = String(md).split("\n");
+    let out=[], i=0;
+    while(i<lines.length){
+      if(/^\s*\|/.test(lines[i]) && i+1<lines.length && /^\s*\|?[\s:|-]+\|?\s*$/.test(lines[i+1])){
+        const row = l => l.replace(/^\s*\|/,"").replace(/\|\s*$/,"").split("|").map(c=>c.trim());
+        const head = row(lines[i]); i+=2; const body=[];
+        while(i<lines.length && /^\s*\|/.test(lines[i])){ body.push(row(lines[i])); i++; }
+        out.push('<table class="md"><thead><tr>'+head.map(h=>"<th>"+esc(h)+"</th>").join("")+
+          '</tr></thead><tbody>'+body.map(r=>"<tr>"+r.map(c=>"<td>"+esc(c)+"</td>").join("")+"</tr>").join("")+"</tbody></table>");
+      } else { if(lines[i].trim()) out.push("<div>"+esc(lines[i])+"</div>"); i++; }
+    }
+    return out.join("");
+  }
+
+  // ---- detail pane ----
+  function block(title, tag, inner, open, cls){
+    return '<details class="block'+(cls?" "+cls:"")+'"'+(open?" open":"")+'><summary>'+esc(title)+
+      (tag?'<span class="tag">'+esc(tag)+'</span>':'')+'</summary><div class="body">'+inner+'</div></details>';
+  }
+  function chips(arr, klass){ return arr&&arr.length ? '<div class="chips">'+arr.map(x=>'<span class="chip '+(klass||"")+'">'+esc(x)+'</span>').join("")+'</div>' : ""; }
+
+  function renderDetail(n){
+    const d = document.getElementById("detail");
+    let h = '<div class="dhead"><span class="badge '+cls(n.type)+'">'+esc(n.type)+'</span>'+
+      '<span class="did">'+esc(n.id)+'</span>'+
+      (n.support_level?'<span class="pill '+esc(n.support_level)+'">'+esc(n.support_level)+'</span>':'')+
+      (n.isolated?'<span class="pill iso">isolated</span>':'')+'</div>';
+    h += '<div class="dtitle">'+esc(n.title||"(untitled)")+'</div>';
+
+    // reasoning (primary, always open) — the agent's thinking IS the content of a step
+    let reason="";
+    if(n.thinking){
+      reason += '<div class="lead">'+esc(n.thinking)+'</div>';
+      if(n.body) reason += '<div class="didwhat">what it did</div><div>'+esc(n.body)+'</div>';
+    } else {
+      reason += n.body ? '<div class="lead">'+esc(n.body)+'</div>' : '<div class="empty">No description.</div>';
+    }
+    if(n.depends_on&&n.depends_on.length) reason += chips(n.depends_on.map(x=>"⇠ depends on "+x));
+    if(n.source_refs&&n.source_refs.length) reason += chips(n.source_refs, "ext");
+    if(n.built_on&&n.built_on.length) reason += chipRow("built on", n.built_on, "chip-built");
+    if(n.rejected_here&&n.rejected_here.length) reason += chipRow("rejected here", n.rejected_here, "chip-rej");
+    if(n.recipe_refs&&n.recipe_refs.length) reason += recipeChips(n.recipe_refs);
+    h += block(n.thinking?"reasoning":"what", n.type, reason, true, "reason");
+
+    // result (the grounded payload) — open
+    const r = n.result||{};
+    if((r.sources&&r.sources.length)||(r.figures&&r.figures.length)||(r.tables&&r.tables.length)||(r.data&&r.data.length)){
+      let s="";
+      (r.figures||[]).forEach(f=>{ s+='<figure><img src="'+esc(f.img)+'" alt="'+esc(f.caption||f.id)+'"/>'+
+        (f.caption?'<figcaption>'+esc(f.caption)+'</figcaption>':'')+'</figure>'; });
+      (r.tables||[]).forEach(t=>{ s+=(t.caption?'<div class="empty">'+esc(t.caption)+'</div>':'')+renderMd(t.markdown); });
+      (r.sources||[]).forEach(q=>{ s+='<div class="quote">'+esc(q.quote)+(q.ref?'<div class="ref">← '+esc(q.ref)+'</div>':'')+'</div>'; });
+      (r.data||[]).forEach(x=>{ s+='<div class="ptr">⛁ <span class="path">'+esc(x.path)+'</span>'+(x.note?' — '+esc(x.note):'')+'</div>'; });
+      h += block("result", "", s, true);
+    }
+
+    // why (claims) — supporting detail, collapsed
+    if(n.why&&n.why.length){
+      const w = n.why.map(c=>{
+        let s='<div class="claim"><h4>'+esc(c.id)+(c.title?' — '+esc(c.title):'')+'</h4>';
+        if(c.statement) s+='<div class="kv">'+esc(c.statement)+'</div>';
+        if(c.status) s+='<div class="kv"><b>status</b> <span class="status '+esc(String(c.status).toLowerCase())+'">'+esc(c.status)+'</span></div>';
+        if(c.conditions) s+='<div class="kv"><b>conditions</b> '+esc(c.conditions)+'</div>';
+        if(c.falsification) s+='<div class="kv"><b>falsified if</b> '+esc(c.falsification)+'</div>';
+        if(c.dependencies&&c.dependencies.length) s+='<div class="kv"><b>depends on</b> '+esc(c.dependencies.join(", "))+'</div>';
+        if(c.provenance) s+='<div class="kv"><span class="prov">provenance: '+esc(c.provenance)+'</span></div>';
+        return s+'</div>';
+      }).join("");
+      h += block("why", n.why.map(c=>c.id).join(" · "), w);
+    }
+
+    // how verified (experiments) — supporting detail, collapsed
+    if(n.verified_by&&n.verified_by.length){
+      const v = n.verified_by.map(e=>'<div class="claim"><h4>'+esc(e.id)+(e.title?' — '+esc(e.title):'')+'</h4>'+
+        (e.run?'<div class="kv"><b>run</b> <span class="path mono">'+esc(e.run)+'</span></div>':'')+
+        (e.setup?'<div class="kv"><b>setup</b> '+esc(e.setup)+'</div>':'')+
+        (e.metrics?'<div class="kv"><b>metrics</b> '+esc(e.metrics)+'</div>':'')+'</div>').join("");
+      h += block("how verified", n.verified_by.map(e=>e.id).join(" · "), v);
+    }
+
+    // artifact pointers (src/artifacts.md) — collapsed
+    if(n.artifact&&n.artifact.length){
+      const a = n.artifact.map(x=>'<div class="ptr">▸ <b>'+esc(x.name)+'</b> — <span class="path">'+esc(x.pointer)+'</span>'+
+        (x.what?'<div class="empty">'+esc(x.what)+'</div>':'')+'</div>').join("");
+      h += block("artifact", "pointer", a);
+    }
+
+    d.innerHTML = h;
+    if(typeof LEX!=="undefined" && LEX) linkifyConcepts(d);
+    d.scrollTop = 0;
+  }
+
+  // ---- map ----
+  let selected = null;
+  function selectNode(id){
+    if(!byId.has(id)) return;
+    selected = id;
+    document.querySelectorAll(".node").forEach(el=>el.classList.toggle("sel", el.dataset.id===id));
+    const el = document.querySelector('.node[data-id="'+CSS.escape(id)+'"]');
+    if(el) el.scrollIntoView({block:"nearest"});
+    renderDetail(byId.get(id));
+    rstat();
+  }
+
+  function nodeRow(n){
+    const row = document.createElement("div");
+    row.className = "node "+(n.type==="dead_end"?"dead":"");
+    row.dataset.id = n.id; row.dataset.type = n.type;
+    // calmer than before: one glyph + id + (quiet) cross-edge marker; the ⊕/⊘ count soup is gone.
+    row.innerHTML = '<span class="glyph '+cls(n.type)+'">'+glyph(n.type)+'</span>'+
+      '<span><span class="meta"><span class="nid">'+esc(n.id)+'</span>'+
+      (n.depends_on&&n.depends_on.length?'<span class="dep" title="depends on '+esc(n.depends_on.join(", "))+'">⇠ '+esc(n.depends_on.join(","))+'</span>':'')+
+      '</span><div class="ntitle">'+esc(n.title||n.body||"(untitled)")+'</div></span>';
+    row.addEventListener("click", ()=>selectNode(n.id));
+    // hover a node to highlight its cross-edge targets (gentler than always-on connectors)
+    if(n.depends_on&&n.depends_on.length){
+      row.addEventListener("mouseenter", ()=>n.depends_on.forEach(t=>{ const el=document.querySelector('.node[data-id="'+CSS.escape(t)+'"]'); if(el) el.classList.add("deptarget"); }));
+      row.addEventListener("mouseleave", ()=>document.querySelectorAll(".node.deptarget").forEach(el=>el.classList.remove("deptarget")));
+    }
+    return row;
+  }
+  function renderSubtree(id, container){
+    const n = byId.get(id); if(!n) return;
+    container.appendChild(nodeRow(n));
+    const cs = kids.get(id)||[];
+    if(cs.length){ const wrap=document.createElement("div"); wrap.className="kid"; cs.forEach(c=>renderSubtree(c,wrap)); container.appendChild(wrap); }
+  }
+  function renderMap(){
+    const map = document.getElementById("map"); map.innerHTML="";
+    const normalRoots = roots.filter(id=>!byId.get(id).isolated);
+    const isoRoots = roots.filter(id=>byId.get(id).isolated);
+    normalRoots.forEach(id=>renderSubtree(id, map));
+    if(isoRoots.length){
+      const box=document.createElement("div"); box.className="isobox";
+      const hdr=document.createElement("div"); hdr.className="isohdr"; hdr.textContent="isolated subtree"; box.appendChild(hdr);
+      isoRoots.forEach(id=>renderSubtree(id, box)); map.appendChild(box);
+    }
+  }
+
+  // ---- filter / search ----
+  function applyFilters(){
+    const q = document.getElementById("q").value.trim().toLowerCase();
+    const ty = document.getElementById("ftype").value;
+    const deadOnly = document.getElementById("fdead").checked;
+    let shown=0;
+    document.querySelectorAll(".node").forEach(el=>{
+      const n = byId.get(el.dataset.id);
+      const text = (n.id+" "+(n.title||"")+" "+(n.body||"")).toLowerCase();
+      const ok = (!q||text.includes(q)) && (!ty||n.type===ty) && (!deadOnly||n.type==="dead_end");
+      el.classList.toggle("dim", !ok);
+      if(ok) shown++;
+    });
+    document.getElementById("rstat").textContent = shown+" / "+nodes.length+" steps";
+  }
+  function rstat(){
+    const i = selected?order.indexOf(selected):-1;
+    document.getElementById("rstat").textContent = (i>=0?("step "+(i+1)+" / "+order.length):(nodes.length+" steps"));
+  }
+
+  // ---- replay ----
+  let timer=null;
+  function step(delta){
+    let i = selected?order.indexOf(selected):-1;
+    i = Math.max(0, Math.min(order.length-1, i+delta));
+    selectNode(order[i]);
+  }
+  function play(){
+    if(timer){ stop(); return; }
+    if(!selected) selectNode(order[0]);
+    document.getElementById("rplay").textContent="⏸ Pause";
+    timer = setInterval(()=>{
+      const i = selected?order.indexOf(selected):-1;
+      if(i>=order.length-1){ stop(); return; }
+      step(1);
+    }, 1300);
+  }
+  function stop(){ if(timer){clearInterval(timer);timer=null;} document.getElementById("rplay").textContent="▶ Replay"; }
+
+  // ======================= v1.1 enrichment layers (all inert unless present) =======================
+  const CTX = DATA.context, GLO = DATA.glossary, DEP = DATA.dependencies, REC = DATA.recipes;
+  const LAYERS = { context:CTX, glossary:GLO, dependencies:DEP, recipes:REC };
+
+  // ---- indexes (built once) ----
+  const claimToNodes = new Map();
+  nodes.forEach(n => (n.why||[]).forEach(c => { if(c&&c.id){ if(!claimToNodes.has(c.id)) claimToNodes.set(c.id,[]); claimToNodes.get(c.id).push(n.id); } }));
+  const firstNodeForClaim = id => (claimToNodes.get(id)||[])[0] || null;
+  const rwById   = new Map(((DEP&&DEP.entries)||[]).map(e => [e.rw_id, e]));
+  const termById = new Map(((GLO&&GLO.terms)||[]).map(t => [t.term_id, t]));
+  // concept "used by" (inferred) from each node's name-matched concepts[]
+  if(GLO){
+    const nameToTerm = new Map();
+    (GLO.terms||[]).forEach(t => { if(t.name) nameToTerm.set(String(t.name).toLowerCase(), t); (t.aliases||[]).forEach(a=>nameToTerm.set(String(a).toLowerCase(), t)); });
+    nodes.forEach(n => (n.concepts||[]).forEach(cn => { const t=nameToTerm.get(String(cn).toLowerCase()); if(t){ (t._used=t._used||[]).push(n.id); } }));
+  }
+
+  // ---- tiny inline-math fallback (no CDN; operates on already-escaped text, adds only safe tags) ----
+  const GK={alpha:"α",beta:"β",gamma:"γ",delta:"δ",epsilon:"ε",eta:"η",theta:"θ",kappa:"κ",lambda:"λ",mu:"μ",nu:"ν",pi:"π",rho:"ρ",sigma:"σ",tau:"τ",phi:"φ",chi:"χ",psi:"ψ",omega:"ω",Delta:"Δ",Sigma:"Σ",Omega:"Ω",Phi:"Φ",Theta:"Θ",Lambda:"Λ",Gamma:"Γ",nabla:"∇",partial:"∂",times:"×",cdot:"·",infty:"∞",approx:"≈",leq:"≤",geq:"≥",neq:"≠",to:"→",in:"∈",sum:"Σ",prod:"Π",sqrt:"√",mathbb:"",mathcal:"",mathbf:"",mathrm:"",left:"",right:""};
+  function texInner(s){
+    s=s.replace(/\\(?:mathbb|mathcal|mathbf|mathrm)\{([^{}]*)\}/g,"$1");
+    s=s.replace(/\\frac\{([^{}]*)\}\{([^{}]*)\}/g,"($1)/($2)");
+    s=s.replace(/\\([A-Za-z]+)/g,(m,w)=>GK[w]!==undefined?GK[w]:m);
+    s=s.replace(/\^\{([^{}]*)\}/g,"<sup>$1</sup>").replace(/\^([\w()+\-])/g,"<sup>$1</sup>");
+    s=s.replace(/_\{([^{}]*)\}/g,"<sub>$1</sub>").replace(/_([\w()+\-])/g,"<sub>$1</sub>");
+    return s;
+  }
+  function mathPass(escaped){
+    if(escaped.indexOf("$")<0) return escaped;
+    return escaped.replace(/\$\$([^$]+)\$\$/g,(m,x)=>'<span class="math">'+texInner(x)+'</span>')
+                  .replace(/\$([^$]+)\$/g,(m,x)=>'<span class="math">'+texInner(x)+'</span>');
+  }
+  function mtext(v){ const e=esc(v); try{ return mathPass(e); }catch(_){ return e; } }
+
+  // ---- typed-ref rendering (off-ARA pointers stay inert; in-ARA targets become jump chips) ----
+  function refUrl(rf){
+    const raw=rf.raw||"";
+    if(rf.kind==="url"){ const m=raw.match(/https?:\/\/\S+/); return m?m[0]:""; }
+    if(rf.kind==="arxiv"){ const m=raw.match(/(\d{4}\.\d{4,5})/); return m?("https://arxiv.org/abs/"+m[1]):""; }
+    if(rf.kind==="doi"){ const m=raw.match(/(10\.\d{4,}\/\S+)/); return m?("https://doi.org/"+m[1]):""; }
+    return "";
+  }
+  function refChip(rf){
+    const raw=esc(rf.raw||""), url=refUrl(rf);
+    if(url) return '<a class="chip ext" href="'+esc(url)+'" target="_blank" rel="noopener">'+raw+'</a>';
+    if(rf.target){
+      if(rf.kind==="claim")        return '<span class="chip jump" data-jump-claim="'+esc(rf.target)+'">'+raw+'</span>';
+      if(rf.kind==="node")         return '<span class="chip jump" data-jump-node="'+esc(rf.target)+'">'+raw+'</span>';
+      if(rf.kind==="concept")      return '<span class="chip jump" data-open-term="'+esc(rf.target)+'">'+raw+'</span>';
+      if(rf.kind==="related_work") return '<span class="chip jump" data-open-panel="dependencies" data-anchor="ov-'+esc(rf.target)+'">'+raw+'</span>';
+      return '<span class="chip jump" data-scroll="ov-'+esc(rf.target)+'">'+raw+'</span>';
+    }
+    const dangle=(rf.kind==="claim"||rf.kind==="related_work"||rf.kind==="concept");
+    return '<span class="chip '+(dangle?'dangle" title="referenced but not found in this ARA':'ext')+'">'+raw+'</span>';
+  }
+  function refRow(refs){ return refs&&refs.length ? '<div class="chips">'+refs.map(refChip).join("")+'</div>' : ""; }
+
+  // ---- per-node provenance chips (consumed by renderDetail) ----
+  function chipRow(label, arr, klass){
+    const cs=arr.map(x=>{
+      const txt=[x.rw_id,x.name].filter(Boolean).join(" · ")||"?";
+      const tip=x.relation_raw?(' title="'+esc(x.relation_raw)+'"'):'';
+      const op =x.rw_id?(' data-open-panel="dependencies" data-anchor="ov-'+esc(x.rw_id)+'"'):'';
+      return '<span class="chip '+klass+(x.rw_id?' jump':'')+'"'+tip+op+'>'+esc(txt)+'</span>';
+    }).join("");
+    return '<div class="chiplabel">'+esc(label)+'</div><div class="chips">'+cs+'</div>';
+  }
+  function recipeChips(arr){
+    const cs=arr.map(x=>{
+      const anchor="ov-sec-"+(x.file||"")+"-"+(x.sec_id||"");
+      return '<span class="chip chip-recipe jump" data-open-panel="recipes" data-anchor="'+esc(anchor)+'" title="'+esc((x.file||"")+(x.role?(" · "+x.role):""))+'">▦ '+esc(x.heading||x.file||"recipe")+'</span>';
+    }).join("");
+    return '<div class="chiplabel">recipe</div><div class="chips">'+cs+'</div>';
+  }
+
+  // ---- the four overlay renderers (reuse block/chips/renderMd) ----
+  function renderContext(){
+    let h=""; if(CTX.summary) h+='<div class="ribbon">'+esc(CTX.summary)+'</div>';
+    (CTX.sections||[]).forEach(sec=>{
+      let inner="";
+      if(sec.present===false){ inner='<div class="muted grey">(not specified in this ARA)</div>'; }
+      else (sec.entries||[]).forEach(en=>{
+        let c='<div class="card" id="ov-'+esc(en.ent_id||"")+'"><h4>'+(en.ent_id?'<span class="did">'+esc(en.ent_id)+'</span> ':'')+esc(en.ent_title||"")+(en.inferred_id?' <span class="sub">(pos.)</span>':'')+'</h4>';
+        if(!en.unstructured && en.fields && en.fields.length) en.fields.forEach(f=>c+='<div class="kv"><b>'+esc(f.label)+'</b> '+mtext(f.value)+'</div>');
+        else if(en.text) c+='<div class="kv">'+mtext(en.text)+'</div>';
+        if(en.unstructured) c+='<div class="sub">unstructured</div>';
+        c+=refRow(en.refs)+'</div>'; inner+=c;
+      });
+      h+=block(sec.heading||sec.role||"section", sec.role||"", inner, sec.role==="insight");
+    });
+    return h || '<div class="muted">No problem context.</div>';
+  }
+  function renderGlossary(filter){
+    const f=(filter||"").trim().toLowerCase();
+    const match=t=>!f||((t.name||"")+" "+(t.aliases||[]).join(" ")+" "+(t.definition||"")).toLowerCase().includes(f);
+    function card(t){
+      let c='<div class="card" id="ov-'+esc(t.term_id)+'"><h4>'+esc(t.name)+(t.group?' <span class="sub">'+esc(t.group)+'</span>':'')+'</h4>';
+      if(t.aliases&&t.aliases.length) c+='<div class="chips">'+t.aliases.map(a=>'<span class="chip">'+esc(a)+'</span>').join("")+'</div>';
+      if(t.definition) c+='<div class="kv">'+mtext(t.definition)+'</div>';
+      (t.fields||[]).forEach(fl=>c+='<div class="kv"><b>'+esc(fl.label)+'</b> '+mtext(fl.value)+'</div>');
+      if(t.related&&t.related.length) c+='<div class="kv"><b>related</b> '+t.related.map(r=>{const rt=termById.get(r);return '<span class="chip jump" data-open-term="'+esc(r)+'">'+esc(rt?rt.name:r)+'</span>';}).join(" ")+'</div>';
+      if(t._used&&t._used.length) c+='<div class="kv"><b>mentions</b> '+[...new Set(t._used)].map(nid=>'<span class="chip jump" data-jump-node="'+esc(nid)+'">'+esc(nid)+'</span>').join(" ")+' <span class="sub">(inferred)</span></div>';
+      return c+refRow(t.refs)+'</div>';
+    }
+    const groups=GLO.groups&&GLO.groups.length?GLO.groups:null; let h="";
+    if(groups){
+      const grouped=new Set();
+      groups.forEach(g=>{ (g.term_ids||[]).forEach(id=>grouped.add(id)); const ts=(g.term_ids||[]).map(id=>termById.get(id)).filter(Boolean).filter(match); if(ts.length) h+=block(g.name||"group", String(ts.length), ts.map(card).join(""), true); });
+      const rest=(GLO.terms||[]).filter(t=>!grouped.has(t.term_id)).filter(match);
+      if(rest.length) h+=block("other", String(rest.length), rest.map(card).join(""), true);
+    } else { const ts=(GLO.terms||[]).filter(match); h=ts.map(card).join(""); }
+    return h || '<div class="muted">No matching terms.</div>';
+  }
+  function renderDeps(filter){
+    const f=(filter||"").trim().toLowerCase(); let h="";
+    if(DEP.preamble) h+='<div class="muted">'+esc(DEP.preamble)+'</div>';
+    if(DEP.attribution) h+='<div class="ribbon">'+esc(DEP.attribution)+'</div>';
+    const ents=(DEP.entries||[]).filter(e=>!e.is_footprint).filter(e=>!f||(((e.rw_id||"")+" "+(e.name||"")+" "+(e.relation_raw||"")+" "+(e.delta||"")).toLowerCase().includes(f)));
+    ents.forEach(e=>{
+      const rn=e.relation_norm, relc=["baseline","imports","extends","bounds","refutes"].includes(rn)?rn:"neutral";
+      let c='<div class="card" id="ov-'+esc(e.rw_id||"")+'"><h4>'+(e.rw_id?'<span class="did">'+esc(e.rw_id)+'</span> ':'')+esc(e.name||"")+'</h4>';
+      c+='<div class="chips"><span class="rel '+relc+'">'+esc(e.relation_raw||rn||"related")+'</span>'+(e.cross_agent?'<span class="chip" title="other-agent provenance">↔ other-agent</span>':'')+'</div>';
+      if(e.delta) c+='<div class="kv">'+mtext(e.delta)+'</div>';
+      if(e.adopted) c+='<div class="kv"><b>adopted</b> '+esc(e.adopted)+'</div>';
+      let prov=(e.grounding||[]).map(refChip).join("");
+      (e.claims||[]).filter(id=>claimToNodes.has(id)).forEach(id=>prov+='<span class="chip jump" data-jump-claim="'+esc(id)+'">'+esc(id)+'</span>');
+      c+= prov?('<div class="kv"><b>grounding</b> '+prov+'</div>'):'<div class="muted">ungrounded</div>';
+      h+=c+'</div>';
+    });
+    if(!ents.length) h+='<div class="muted">No matching dependencies.</div>';
+    const fp=DEP.footprint||[];
+    if(fp.length) h+=block("Citation footprint", String(fp.length), fp.map(x=>'<div class="ptr"><span class="muted">'+esc(x.ref_id||"")+'</span> '+esc(x.citation||"")+'</div>').join(""), false);
+    return h;
+  }
+  function renderRecipes(){
+    let h="";
+    (REC.files||[]).forEach(file=>{
+      let inner="";
+      (file.sections||[]).forEach(sec=>{
+        let c='<div class="card" id="ov-sec-'+esc((file.file||"")+"-"+(sec.sec_id||""))+'"><h4>'+(sec.sec_id?'<span class="did">'+esc(sec.sec_id)+'</span> ':'')+esc(sec.heading||"")+'</h4>';
+        if(sec.kind==="table"&&sec.markdown) c+=renderMd(sec.markdown);
+        else if(sec.kind==="steps"&&sec.steps&&sec.steps.length) c+='<ol>'+sec.steps.map(s=>'<li>'+mtext(String(s).replace(/^\s*\d+\.\s*/,""))+'</li>').join("")+'</ol>';
+        else if(sec.kind==="kv"&&sec.fields&&sec.fields.length) sec.fields.forEach(fl=>c+='<div class="kv"><b>'+esc(fl.label)+'</b> '+mtext(fl.value)+'</div>');
+        else if(sec.kind==="code"&&sec.code) c+='<pre class="snip">'+esc(sec.code)+'</pre>';
+        else if(sec.kind==="math"&&sec.code) c+='<div class="kv math">'+mtext(sec.code)+'</div>';
+        else if(sec.text) c+='<div class="kv">'+mtext(sec.text)+'</div>';
+        if(sec.warn) c+='<div class="warn">'+esc(sec.warn)+'</div>';
+        inner+=c+refRow(sec.refs)+'</div>';
+      });
+      h+=block((file.file_title||file.file||"recipe")+(file.role?("  ·  "+file.role):""), String((file.sections||[]).length), inner, true);
+    });
+    return h || '<div class="muted">No recipe content.</div>';
+  }
+
+  // ---- overlay open/close + layerbar wiring ----
+  const ov=document.getElementById("overlay");
+  let lastTrigger=null;
+  const PANEL_RENDER={ context:renderContext, glossary:()=>renderGlossary(""), dependencies:()=>renderDeps(""), recipes:renderRecipes };
+  function hasContent(name){ const L=LAYERS[name]; if(!L) return false;
+    if(name==="context") return (L.sections||[]).length>0;
+    if(name==="glossary") return (L.terms||[]).length>0;
+    if(name==="dependencies") return (L.entries||[]).length>0||(L.footprint||[]).length>0;
+    if(name==="recipes") return (L.files||[]).length>0; return false; }
+  function panelTitle(name){ const L=LAYERS[name]||{}; return L.title || ({context:"Context",glossary:"Concepts",dependencies:"Dependencies",recipes:"Solution"}[name]); }
+  function panelCount(name){ const L=LAYERS[name]||{};
+    if(name==="glossary") return (L.terms||[]).length;
+    if(name==="dependencies") return (L.entries||[]).length;
+    if(name==="recipes") return (L.files||[]).reduce((a,f)=>a+(f.sections||[]).length,0); return 0; }
+  function openPanel(name, anchor){
+    if(!hasContent(name)) return;
+    stop(); lastTrigger=document.activeElement;
+    document.getElementById("ov-title").textContent=panelTitle(name);
+    const body=document.getElementById("ov-body"); body.innerHTML=PANEL_RENDER[name]();
+    if(LEX) linkifyConcepts(body);
+    const q=document.getElementById("ov-q");
+    if(name==="glossary"||name==="dependencies"){ q.hidden=false; q.value=""; q.dataset.panel=name; } else { q.hidden=true; }
+    ov.hidden=false;
+    if(anchor){ const el=document.getElementById(anchor); if(el) el.scrollIntoView({block:"center"}); } else body.scrollTop=0;
+    (q.hidden?document.getElementById("ov-close"):q).focus();
+  }
+  function closePanel(){ ov.hidden=true; if(lastTrigger&&lastTrigger.focus) lastTrigger.focus(); }
+  document.querySelectorAll(".lbtn").forEach(b=>{ const name=b.dataset.panel;
+    if(hasContent(name)){ b.hidden=false; const c=b.querySelector(".cnt"); if(c){ const n=panelCount(name); if(n) c.textContent=n; } b.addEventListener("click",()=>openPanel(name)); } });
+  document.getElementById("ov-q").addEventListener("input", e=>{ const p=e.target.dataset.panel, body=document.getElementById("ov-body");
+    body.innerHTML = p==="glossary"?renderGlossary(e.target.value):renderDeps(e.target.value); if(LEX) linkifyConcepts(body); });
+
+  // ---- glossary lexicon + popover ----
+  const LEX=(GLO&&GLO.lexicon&&Object.keys(GLO.lexicon).length)?(function(){
+    const surf=Object.keys(GLO.lexicon).filter(s=>s.length>=3).sort((a,b)=>b.length-a.length);
+    if(!surf.length) return null;
+    const re=s=>s.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+    return { re:new RegExp("\\b("+surf.map(re).join("|")+")\\b","i"), map:GLO.lexicon };
+  })():null;
+  const SKIP_TAGS={A:1,CODE:1,PRE:1,BUTTON:1,SCRIPT:1,STYLE:1,H4:1,H5:1,SUMMARY:1};
+  function linkifyConcepts(root){
+    if(!LEX) return;
+    const walker=document.createTreeWalker(root, NodeFilter.SHOW_TEXT, { acceptNode(t){
+      if(!t.nodeValue||!t.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+      let p=t.parentNode; while(p&&p!==root){ if(p.classList&&p.classList.contains("gterm")) return NodeFilter.FILTER_REJECT; if(SKIP_TAGS[p.tagName]) return NodeFilter.FILTER_REJECT; p=p.parentNode; }
+      return NodeFilter.FILTER_ACCEPT; } });
+    const seen=new Set(), hits=[]; let t;
+    while((t=walker.nextNode())){ const m=LEX.re.exec(t.nodeValue); if(!m) continue; const tid=LEX.map[m[1].toLowerCase()]; if(!tid||seen.has(tid)) continue; seen.add(tid); hits.push({node:t,index:m.index,len:m[1].length,tid}); }
+    hits.forEach(hp=>{ const tn=hp.node, txt=tn.nodeValue, par=tn.parentNode; if(!par) return;
+      const span=document.createElement("span"); span.className="gterm"; span.dataset.term=hp.tid; span.tabIndex=0; span.textContent=txt.slice(hp.index,hp.index+hp.len);
+      const after=document.createTextNode(txt.slice(hp.index+hp.len));
+      par.replaceChild(after,tn); par.insertBefore(span,after); par.insertBefore(document.createTextNode(txt.slice(0,hp.index)),span); });
+  }
+  const gpop=document.getElementById("gpop");
+  function gpopShow(span){ const t=termById.get(span.dataset.term); if(!t) return;
+    const def=t.definition||""; gpop.innerHTML='<h5>'+esc(t.name)+'</h5><div>'+mtext(def.slice(0,240))+(def.length>240?'…':'')+'</div><span class="gp-open" data-open-term="'+esc(t.term_id)+'">open in glossary →</span>';
+    gpop.style.display="block"; const r=span.getBoundingClientRect();
+    gpop.style.left=Math.max(6,Math.min(r.left, window.innerWidth-372))+"px"; gpop.style.top=(r.bottom+6)+"px"; }
+  function gpopHide(){ gpop.style.display="none"; }
+
+  // ---- delegated interactions for the new layers ----
+  document.addEventListener("click", e=>{
+    const el=e.target.closest&&e.target.closest("[data-close],[data-jump-node],[data-jump-claim],[data-open-panel],[data-open-term],[data-scroll]");
+    if(!el) return;
+    if(el.hasAttribute("data-close")){ closePanel(); return; }
+    if(el.dataset.jumpNode){ closePanel(); selectNode(el.dataset.jumpNode); return; }
+    if(el.dataset.jumpClaim){ const nid=firstNodeForClaim(el.dataset.jumpClaim); if(nid){ closePanel(); selectNode(nid); } return; }
+    if(el.dataset.openTerm){ openPanel("glossary","ov-"+el.dataset.openTerm); return; }
+    if(el.hasAttribute("data-open-panel")){ openPanel(el.dataset.openPanel, el.dataset.anchor||null); return; }
+    if(el.dataset.scroll){ const t=document.getElementById(el.dataset.scroll); if(t) t.scrollIntoView({block:"center"}); return; }
+  });
+  document.addEventListener("mouseover", e=>{ const g=e.target.closest&&e.target.closest(".gterm"); if(g) gpopShow(g); });
+  document.addEventListener("mouseout",  e=>{ const g=e.target.closest&&e.target.closest(".gterm"); if(g) gpopHide(); });
+  document.addEventListener("focusin",   e=>{ const g=e.target.closest&&e.target.closest(".gterm"); if(g) gpopShow(g); });
+  document.addEventListener("focusout",  e=>{ const g=e.target.closest&&e.target.closest(".gterm"); if(g) gpopHide(); });
+  window.addEventListener("scroll", gpopHide, true);
+
+  document.getElementById("q").addEventListener("input", applyFilters);
+  document.getElementById("ftype").addEventListener("change", applyFilters);
+  document.getElementById("fdead").addEventListener("change", applyFilters);
+  document.getElementById("rplay").addEventListener("click", play);
+  document.getElementById("rprev").addEventListener("click", ()=>{stop();step(-1);});
+  document.getElementById("rnext").addEventListener("click", ()=>{stop();step(1);});
+  document.addEventListener("keydown", e=>{
+    if(e.key==="Escape"){ if(!ov.hidden){ closePanel(); return; } gpopHide(); }
+    if(e.target.tagName==="INPUT"||e.target.tagName==="SELECT") return;
+    if(e.key==="ArrowLeft"){stop();step(-1);} else if(e.key==="ArrowRight"){stop();step(1);}
+    else if(e.key==="c"||e.key==="g"||e.key==="d"||e.key==="r"){ const p={c:"context",g:"glossary",d:"dependencies",r:"recipes"}[e.key]; if(hasContent(p)) openPanel(p); }
+  });
+
+  renderMap();
+  rstat();
+})();
+</script>
+</body>
+</html>

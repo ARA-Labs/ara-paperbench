@@ -1,0 +1,2659 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ARA Trajectory</title>
+<!--
+  ARA Trajectory Viewer — canonical self-contained scaffold for the `research-visualizer` skill.
+
+  HOW THE SKILL USES THIS FILE
+  ----------------------------
+  The rendering logic below is FIXED. The agent does NOT rewrite it. The agent only:
+    1. Parses the ARA into one ARA_DATA object (schema in references/binding.md).
+    2. base64-inlines every referenced figure .png into node.result.figures[].img.
+    3. Replaces ONLY the JSON between the BEGIN/END markers in the <script id="ara-data"> block.
+    4. Writes the result to <ara>/trajectory.html (or --output).
+  Everything is inline (no CDN, no fetch, no server) so the output is one portable file.
+
+  INJECTION CONTRACT
+  ------------------
+  - Replace exactly the lines between  __ARA_DATA_BEGIN__  and  __ARA_DATA_END__.
+  - The payload MUST be valid JSON (it is read with JSON.parse).
+  - JSON must not contain the literal substring "</script>"; escape any "<" in inlined
+    markdown/text as "<" to be safe.
+  - The demo payload shipped here renders a 3-node sample so the bare template opens and
+    shows every node state (experiment, dead_end, isolated). The skill overwrites it.
+-->
+<style>
+  /* Research Visualizer — "field notebook of a machine scientist".
+     Cool archival vellum + ink; monospace is the machine-readout voice for
+     structure / IDs / data, a humanist serif carries the reasoning prose. The
+     signature is a traced trajectory spine that forks at branches and is struck
+     through at dead ends. Type is read from glyph + label; colour is reserved
+     for true epistemic status (teal = chrome, green = supported, amber =
+     tentative, clay-red = dead end) — never decoration. */
+  :root{
+    /* paper & ink — deliberately cool vellum, NOT warm cream */
+    --bg:#e9ece4; --panel:#f4f6f0; --panel2:#e3e7dd; --line:#ccd3c7; --ink:#1b2420;
+    --muted:#67726a; --faint:#8a948b; --accent:#0e6b62; --accent-ink:#0a4f48; --chip:#e6eae0;
+    --ok:#3a6a39; --warn:#a6402c; --tentative:#8a6310; --glyph-bg:#e0e5da; --glyph-ink:#4a544c;
+    --sel-bg:#e3ede7; --code-bg:#eaeee6; --reason-bg:#f4f6f0;
+    --iso-line:#b7c0ae; --iso-bg:#e5eadf; --iso-ink:#5f6b58;
+    --scrim:rgba(20,28,24,.42); --shadow:rgba(20,28,24,.16);
+    --add-bg:#e0ebdb; --add-ink:#2f5a2e; --del-bg:#f1e0da; --del-ink:#8c3623; --hunk:#67726a;
+    --spine:#c3ccbd; --grid:rgba(27,36,32,.05);
+    /* legacy type vars retained so any leftover hooks resolve */
+    --q:var(--glyph-bg); --exp:var(--glyph-bg); --dec:var(--glyph-bg); --piv:var(--glyph-bg); --ins:var(--glyph-bg); --def:var(--glyph-bg); --dead:var(--warn);
+    /* type roles: a serif reads the prose, monospace reads the machine */
+    --serif:ui-serif,"New York","Iowan Old Style",Palatino,Georgia,serif;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--bg);color:var(--ink);font:14px/1.65 var(--sans);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  code,pre,.mono{font-family:var(--mono)}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+
+  /* ---- masthead ---- */
+  header{padding:20px 24px 14px;border-bottom:1px solid var(--line);background:var(--panel)}
+  header .title{font-family:var(--serif);font-size:23px;font-weight:600;margin:0;letter-spacing:-.012em}
+  header .sub{font-family:var(--mono);color:var(--muted);font-size:11.5px;margin-top:5px;letter-spacing:.01em}
+  header details{margin-top:10px;color:var(--ink)}
+  header summary{cursor:pointer;color:var(--accent-ink);font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em}
+  .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:16px}
+  .toolbar input[type=search],.toolbar select{background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:6px 10px;font-size:13px;font-family:var(--sans)}
+  .toolbar input[type=search]{min-width:230px}
+  .toolbar input[type=search]:focus,.toolbar select:focus{border-color:var(--accent);outline:none}
+  .toolbar label{color:var(--muted);font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.06em;display:flex;gap:6px;align-items:center}
+  .btn{background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:6px 11px;font-size:12.5px;font-family:var(--mono);cursor:pointer;transition:border-color .12s,color .12s,background .12s}
+  .btn:hover{border-color:var(--accent);color:var(--accent-ink)}
+  .btn.primary{border-color:var(--accent);color:#fff;background:var(--accent)}
+  .btn.primary:hover{background:var(--accent-ink)}
+  .spacer{flex:1}
+  .count{color:var(--muted);font-family:var(--mono);font-size:11px;letter-spacing:.04em;padding-left:10px;border-left:1px solid var(--line)}
+
+  main{display:grid;grid-template-columns:minmax(300px,36%) 1fr;height:calc(100% - 0px);min-height:0}
+  #map{overflow:auto;border-right:1px solid var(--line);padding:18px 12px 56px;background:var(--bg);
+    background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+    background-size:24px 24px;background-position:-1px -1px}
+  #detail{overflow:auto;padding:26px 32px 80px;background:var(--bg)}
+
+  /* ---- process map: the trajectory spine is the signature ---- */
+  .node{position:relative;display:flex;gap:10px;align-items:flex-start;padding:7px 9px;border-radius:6px;cursor:pointer;border:1px solid transparent}
+  .node:hover{background:var(--panel2)}
+  .node.sel{background:var(--sel-bg);border-color:var(--accent)}
+  .node.deptarget{background:var(--sel-bg);outline:1px dashed var(--accent);outline-offset:-1px}
+  .node.dim{opacity:.32}
+  .node .glyph{flex:none;width:20px;height:20px;border-radius:5px;display:grid;place-items:center;font-family:var(--mono);font-size:11px;font-weight:700;color:var(--glyph-ink);background:var(--glyph-bg);border:1px solid var(--line);margin-top:1px}
+  .node.sel .glyph{border-color:var(--accent);color:var(--accent-ink)}
+  .node .nid{color:var(--muted);font-size:10.5px;font-family:var(--mono);letter-spacing:.02em}
+  .node .ntitle{font-size:13px;line-height:1.45}
+  .node.dead .ntitle{color:var(--warn);text-decoration:line-through;text-decoration-color:rgba(166,64,44,.45)}
+  .node .meta{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  /* the spine + branch connectors: nested steps trace back to their parent */
+  .kid{margin-left:19px;border-left:2px solid var(--spine);padding-left:14px}
+  .kid>.node::before{content:"";position:absolute;left:-14px;top:14px;width:10px;height:2px;background:var(--spine)}
+  .kid>.node.sel::before{background:var(--accent)}
+  .isobox{border:1px dashed var(--iso-line);border-radius:8px;margin:12px 2px;padding:6px 4px;background:var(--iso-bg)}
+  .isobox .isohdr{color:var(--iso-ink);font-family:var(--mono);font-size:10px;padding:3px 8px 7px;text-transform:uppercase;letter-spacing:.1em}
+  .dep{color:var(--muted);font-size:10px;font-family:var(--mono);border:1px solid var(--line);border-radius:4px;padding:0 5px}
+
+  .glyph.dead_end{background:var(--warn);color:#fff;border-color:var(--warn)}
+
+  /* ---- detail pane ---- */
+  .dhead{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-bottom:2px}
+  .badge{font-family:var(--mono);font-size:10px;font-weight:700;border-radius:4px;padding:3px 9px;color:var(--glyph-ink);background:var(--glyph-bg);border:1px solid var(--line);text-transform:uppercase;letter-spacing:.08em}
+  .badge.dead_end{background:var(--warn);color:#fff;border-color:var(--warn)}
+  .pill{font-family:var(--mono);font-size:10px;border:1px solid var(--line);border-radius:20px;padding:2px 9px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+  .pill.explicit{border-color:var(--ok);color:var(--ok)} .pill.inferred{border-color:var(--tentative);color:var(--tentative)}
+  .pill.iso{border-color:var(--iso-line);color:var(--iso-ink)}
+  .dtitle{font-family:var(--serif);font-size:25px;font-weight:600;margin:12px 0 6px;letter-spacing:-.012em;line-height:1.28}
+  .did{color:var(--muted);font-family:var(--mono);font-size:11.5px}
+
+  .block{border:1px solid var(--line);border-radius:7px;margin:15px 0;background:var(--panel)}
+  .block>summary{cursor:pointer;padding:11px 15px;font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);list-style:none;display:flex;align-items:center;gap:8px}
+  .block>summary::-webkit-details-marker{display:none}
+  .block>summary:hover{color:var(--accent-ink)}
+  .block>summary .tag{margin-left:auto;color:var(--faint);font-size:10.5px;font-weight:400;font-family:var(--mono);text-transform:none;letter-spacing:0}
+  .block .body{padding:4px 16px 16px}
+  /* the primary reasoning block: the agent's thinking, set as typeset prose */
+  .block.reason{border-left:3px solid var(--accent);background:var(--reason-bg)}
+  .block.reason>summary{color:var(--accent-ink)}
+  .block.reason .lead{font-family:var(--serif);font-size:17px;line-height:1.7;color:var(--ink)}
+  .didwhat{color:var(--muted);font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.09em;margin:16px 0 4px}
+  .lead{font-family:var(--serif);color:#2a322c;font-size:16px;line-height:1.7}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:11px}
+  .chip{background:var(--chip);border:1px solid var(--line);border-radius:4px;padding:2px 8px;font-size:11px;color:#46504a;font-family:var(--mono)}
+  .chip.ext{color:var(--muted)}
+
+  .claim{border:1px solid var(--line);border-left:2px solid var(--accent);border-radius:0 6px 6px 0;padding:11px 13px;margin:11px 0;background:var(--panel2)}
+  .claim h4{margin:0 0 6px;font-family:var(--mono);font-size:12px}
+  .claim .kv{font-size:13px;line-height:1.6;margin:4px 0;color:#3a423c}
+  .claim .kv b{color:var(--muted);font-weight:600;font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em}
+  .status{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.05em;border-radius:4px;padding:1px 7px;border:1px solid var(--line)}
+  .status.supported{color:var(--ok);border-color:var(--ok)}
+  .status.refuted{color:var(--warn);border-color:var(--warn)}
+  .status.hypothesis{color:var(--tentative);border-color:var(--tentative)}
+  .prov{font-size:11px;color:var(--iso-ink);font-family:var(--mono)}
+
+  .quote{border-left:3px solid var(--accent);background:var(--panel);border-radius:0 6px 6px 0;padding:9px 13px;margin:9px 0;font-size:13.5px;line-height:1.6;color:#2a322c}
+  .quote .ref{color:var(--muted);font-size:10.5px;font-family:var(--mono);margin-top:5px}
+  figure{margin:14px 0}
+  figure img{max-width:100%;border:1px solid var(--line);border-radius:5px;background:#fff;padding:6px}
+  figcaption{color:var(--muted);font-family:var(--mono);font-size:11px;margin-top:7px}
+
+  table.md{border-collapse:collapse;width:100%;font-family:var(--mono);font-size:12px;margin:10px 0}
+  table.md th,table.md td{border:1px solid var(--line);padding:5px 9px;text-align:left}
+  table.md th{background:var(--panel2);color:var(--ink);font-weight:700;text-transform:uppercase;font-size:10.5px;letter-spacing:.04em}
+  pre.snip{background:var(--code-bg);border:1px solid var(--line);border-radius:6px;padding:10px 12px;overflow:auto;font-size:12px;color:var(--ink);white-space:pre-wrap}
+
+  .ptr{font-size:13px;margin:7px 0}
+  .ptr .path{font-family:var(--mono);color:#46504a}
+  .truncated{color:var(--muted);font-size:11.5px;font-style:italic}
+  .empty{color:var(--muted);font-size:13px}
+  .none{color:var(--muted);padding:40px 24px;text-align:center;font-family:var(--mono);font-size:12px;letter-spacing:.02em}
+  kbd{background:var(--panel2);border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 5px;font-family:var(--mono);font-size:11px}
+
+  /* ---- enrichment layers (all inert unless the data is present) ---- */
+  .layerbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+  .lbtn .cnt{color:var(--muted);font-size:10.5px}
+  .chiplabel{color:var(--muted);font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.08em;margin:12px 0 3px}
+  .chip.jump{cursor:pointer}
+  .chip.jump:hover{border-color:var(--accent);color:var(--accent-ink)}
+  .chip.dangle{color:#9aa49b;text-decoration:line-through;cursor:not-allowed}
+  .chip.infer{border-style:dashed}
+  .chip-built{border-color:var(--ok);color:var(--ok)}
+  .chip-rej{border-color:var(--warn);color:var(--warn)}
+  .chip-recipe{border-color:var(--accent);color:var(--accent-ink)}
+  .nmark{color:var(--muted);font-size:10px;margin-left:5px;font-family:var(--mono)}
+  .rel{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.05em;border-radius:4px;padding:2px 8px;color:var(--glyph-ink);background:var(--glyph-bg);font-weight:700}
+  .rel.bounds,.rel.refutes{background:var(--warn);color:#fff}
+  .rel.neutral{background:var(--chip);color:var(--ink);border:1px solid var(--line);font-weight:400}
+  .ribbon{border-left:3px solid var(--accent);background:var(--panel2);border-radius:0 6px 6px 0;padding:9px 13px;margin:9px 0;color:#3a423c;font-size:13px;line-height:1.6}
+  .warn{border-left:3px solid var(--warn);background:var(--del-bg);border-radius:0 6px 6px 0;padding:9px 13px;margin:9px 0;font-size:13px;line-height:1.6}
+  .muted{color:var(--muted);font-size:11.5px}
+  .math{font-family:var(--serif);font-style:italic}
+  .gterm{border-bottom:1px dashed var(--accent);cursor:help}
+  #gpop{position:fixed;max-width:360px;background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:11px 13px;z-index:60;box-shadow:0 8px 28px var(--shadow);font-size:13px;line-height:1.55;display:none}
+  #gpop h5{margin:0 0 5px;font-family:var(--mono);font-size:12px;text-transform:uppercase;letter-spacing:.05em}
+  #gpop .gp-open{color:var(--accent);cursor:pointer;font-family:var(--mono);font-size:11px;margin-top:7px;display:inline-block}
+  .ov{position:fixed;inset:0;z-index:50}
+  .ov[hidden]{display:none}
+  .ov-scrim{position:absolute;inset:0;background:var(--scrim)}
+  .ov-sheet{position:relative;margin:5vh auto;max-width:920px;max-height:86vh;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 16px 48px var(--shadow)}
+  .ov-head{position:sticky;top:0;display:flex;gap:10px;align-items:center;padding:13px 17px;border-bottom:1px solid var(--line);background:var(--panel);z-index:1}
+  .ov-head #ov-title{font-family:var(--mono);font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.09em;color:var(--accent-ink)}
+  .ov-head input[type=search]{flex:1;max-width:260px;background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:5px 10px;font-size:13px}
+  .ov-body{padding:10px 17px 26px}
+  .ov-body .spacer{flex:1}
+  .card{border:1px solid var(--line);border-radius:6px;padding:11px 13px;margin:11px 0;background:var(--panel2)}
+  .card h4{margin:0 0 6px;font-family:var(--mono);font-size:12px}
+  .card .sub{color:var(--muted);font-family:var(--mono);font-size:10.5px}
+  .grey{opacity:.5}
+
+  /* responsive: stack the two panes on a narrow screen */
+  @media (max-width:720px){
+    main{grid-template-columns:1fr;grid-template-rows:42vh 1fr}
+    #map{border-right:none;border-bottom:1px solid var(--line)}
+    #detail{padding:20px 18px 64px}
+    .dtitle{font-size:21px}
+  }
+  /* honour reduced-motion */
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<header>
+  <h1 class="title" id="h-title">ARA Trajectory</h1>
+  <div class="sub" id="h-sub"></div>
+  <details id="h-abstract-wrap"><summary>Abstract</summary><div class="lead" id="h-abstract"></div></details>
+  <div class="toolbar">
+    <input type="search" id="q" placeholder="search steps…" autocomplete="off" />
+    <label>type
+      <select id="ftype"><option value="">all</option></select>
+    </label>
+    <label><input type="checkbox" id="fdead" /> dead ends only</label>
+    <span class="spacer"></span>
+    <button class="btn" id="rprev" title="previous (←)">‹</button>
+    <button class="btn primary" id="rplay">▶ Replay</button>
+    <button class="btn" id="rnext" title="next (→)">›</button>
+    <span class="count" id="rstat"></span>
+  </div>
+  <div class="layerbar" id="layerbar">
+    <button class="btn lbtn" data-panel="context" hidden>◧ Context</button>
+    <button class="btn lbtn" data-panel="glossary" hidden>▤ Glossary <span class="cnt"></span></button>
+    <button class="btn lbtn" data-panel="dependencies" hidden>⇄ Dependencies <span class="cnt"></span></button>
+    <button class="btn lbtn" data-panel="recipes" hidden>▦ Recipes <span class="cnt"></span></button>
+  </div>
+</header>
+
+<main>
+  <aside id="map"></aside>
+  <section id="detail"><div class="none">Select a step on the left, or press <kbd>▶ Replay</kbd>.</div></section>
+</main>
+
+<!-- v1.1: one shared modal overlay for the Context/Glossary/Dependencies/Recipes panels, + a glossary popover. Both inert unless their data is present. -->
+<div id="overlay" class="ov" hidden role="dialog" aria-modal="true">
+  <div class="ov-scrim" data-close></div>
+  <div class="ov-sheet">
+    <div class="ov-head"><span id="ov-title"></span>
+      <input type="search" id="ov-q" placeholder="filter…" hidden autocomplete="off" />
+      <span class="spacer"></span>
+      <button class="btn" id="ov-close" data-close>✕ <kbd>Esc</kbd></button>
+    </div>
+    <div class="ov-body" id="ov-body"></div>
+  </div>
+</div>
+<div id="gpop"></div>
+
+<!-- The skill replaces ONLY the JSON between the two markers below. -->
+<script id="ara-data" type="application/json">
+/* __ARA_DATA_BEGIN__ */
+{
+  "meta": {
+    "title": "Stay on topic with Classifier-Free Guidance",
+    "authors": [
+      "Guillaume V. Sanchez",
+      "Honglu Fan",
+      "Alexander Spangher",
+      "Elad Levi",
+      "Pawan Sasanka Ammanamanchi",
+      "Stella Biderman"
+    ],
+    "year": "2023",
+    "venue": "arXiv preprint",
+    "ara_dir": "stay-on-topic-with-classifier-free-guidance",
+    "abstract": "Classifier-Free Guidance (CFG) has recently emerged in text-to-image generation as a lightweight technique to encourage prompt-adherence in generations. In this work, we demonstrate that CFG can be used broadly as an inference-time technique in pure language modeling. We show that CFG (1) improves the performance of Pythia, GPT-2 and LLaMA-family models across an array of tasks: Q&A, reasoning, code generation, and machine translation, achieving SOTA on LAMBADA with LLaMA-7B over PaLM-540B; (2) brings improvements equivalent to a model with twice the parameter-count; (3) can stack alongside other inference-time methods like Chain-of-Thought and Self-Consistency, yielding further improvements in difficult tasks; (4) can be used to increase the faithfulness and coherence of assistants in challenging form-driven and content-driven prompts: in a human evaluation we show a 75% preference for GPT4All using CFG over baseline."
+  },
+  "order": [
+    "N01",
+    "N02",
+    "N03",
+    "N04",
+    "N05",
+    "N06",
+    "N07",
+    "N08",
+    "N09",
+    "N10",
+    "N11",
+    "N12",
+    "N13",
+    "N14"
+  ],
+  "nodes": [
+    {
+      "id": "N01",
+      "type": "question",
+      "parent": null,
+      "title": "Can CFG from text-to-image be applied to language models?",
+      "body": "Text-to-image CFG requires conditioning dropout training. Do LMs need the same? Can logit-space arithmetic yield prompt adherence without any retraining?",
+      "thinking": "This is the paper's opening question. Classifier-Free Guidance (CFG) is a technique from text-to-image diffusion models that makes a generated image adhere more closely to its text prompt, by contrasting the model's prediction when given the prompt against its prediction when given no prompt, and then exaggerating that difference. In diffusion models, getting a usable 'no prompt' prediction requires a special training step called conditioning dropout, where the model is deliberately trained to sometimes ignore its condition. This step asks whether the same idea could work for autoregressive language models (LMs, which generate text one token at a time) purely by manipulating logits (the model's raw, pre-softmax scores over the vocabulary) at inference time, with no retraining at all.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [],
+      "built_on": [],
+      "rejected_here": [],
+      "concepts": [
+        "Classifier-Free Guidance (CFG)"
+      ],
+      "recipe_refs": []
+    },
+    {
+      "id": "N02",
+      "type": "experiment",
+      "parent": "N01",
+      "title": "Test if LMs naturally support unconditional generation",
+      "body": "Yes — autoregressive LMs can drop the prompt prefix naturally; last token of prompt serves as an in-distribution unconditional starting point",
+      "thinking": "The first move toward answering N01 is to check a precondition: does an LM already know how to generate text without being given a prompt? Because autoregressive LMs are trained on continuous text, continuing from any point in a document rather than only from prompted continuations, dropping the prompt and generating from just the last token it saw still produces text the model has effectively seen before, i.e., an in-distribution 'unconditional' stream. This closes the gap that blocked diffusion models: language models get CFG's required unconditional distribution for free, without the conditioning-dropout training diffusion models need, which is what makes the rest of the paper possible.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [
+        "§2.2",
+        "Eq. 6",
+        "Eq. 7"
+      ],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [
+        {
+          "name": "stay-on-topic-with-classifier-free-guidance implementation",
+          "pointer": "src/execution/ (2 files): cfg_decoding.py, entropy_analysis.py",
+          "what": "transcribed source code pointer index (not an external run-store pointer)"
+        }
+      ],
+      "built_on": [],
+      "rejected_here": [],
+      "concepts": [],
+      "recipe_refs": []
+    },
+    {
+      "id": "N03",
+      "type": "decision",
+      "parent": "N02",
+      "title": "Choose latent space for CFG: hidden states vs logits",
+      "body": "Logit space (pre-softmax log-probabilities)\n\nAlternatives considered: Hidden state space (requires network editing [9]); Embedding space (requires decoder inversion)",
+      "thinking": "With unconditional generation established as free, the next choice is where in the network to actually perform the CFG contrast between the conditioned and unconditioned predictions. The paper weighs three options: the hidden state space (the model's internal intermediate representations, which would require editing the network internals), the embedding space (which would require inverting the model's output layer), and the logit space (the model's final, pre-softmax output scores). It settles on logits, since they vary linearly with the last hidden layer, behave the same way regardless of model architecture, and require no changes to the network itself.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [
+        "Logit space has linear relationship with last hidden layer; architecture-agnostic; avoids network editing"
+      ],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [],
+      "built_on": [],
+      "rejected_here": [],
+      "concepts": [
+        "Classifier-Free Guidance (CFG)"
+      ],
+      "recipe_refs": []
+    },
+    {
+      "id": "N04",
+      "type": "decision",
+      "parent": "N03",
+      "title": "Choose unconditional prefix: BOS token vs last prompt token",
+      "body": "Last token of the initial prompt\n\nAlternatives considered: Beginning-of-sequence (BOS) token; Empty/padding token",
+      "thinking": "Having fixed logits as the site for the CFG arithmetic, the next decision is what input sequence to feed the model to obtain its unconditional prediction. Candidates include a special beginning-of-sequence (BOS) token or an empty/padding token, but the paper instead uses the very last token of the original prompt. Because the model was trained to continue from any real prefix, starting from an actual in-distribution token, rather than an artificial marker, better approximates the true unconditional distribution the model would produce without any prompt.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [
+        "Last prompt token is in-distribution for autoregressive generation; better approximates marginal distribution"
+      ],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [],
+      "built_on": [],
+      "rejected_here": [],
+      "concepts": [],
+      "recipe_refs": []
+    },
+    {
+      "id": "N05",
+      "type": "experiment",
+      "parent": "N04",
+      "title": "Zero-shot NLP benchmarks: GPT-2, Pythia, LLaMA with gamma=1.5",
+      "body": "CFG improves 7/9 benchmarks consistently; LLaMA-7B achieves 81% on Lambada vs PaLM-540B SOTA 77.9%; ARC-c and WinoGrande inconsistent",
+      "thinking": "With the full mechanism now specified (logit-space CFG, last-prompt-token unconditional prefix), the paper runs its first large-scale test: apply CFG at a guidance strength (a scalar, denoted gamma, that controls how strongly generation is pulled toward the prompted prediction) of 1.5 to GPT-2, Pythia, and LLaMA models across nine zero-shot NLP benchmarks spanning question answering, commonsense reasoning, and sentence completion. The result is broadly positive: 7 of 9 benchmarks improve, headlined by LLaMA-7B reaching 81% accuracy on the Lambada sentence-completion benchmark, surpassing the previous best score of 77.9% set by the much larger PaLM-540B model. Two of the nine benchmarks show inconsistent behavior, which the paper flags for closer investigation next.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [
+        "§3.1"
+      ],
+      "why": [
+        {
+          "id": "C01",
+          "title": "CFG Improves Zero-Shot Benchmark Performance",
+          "statement": "Applying CFG with γ=1.5 to GPT-2, Pythia, and LLaMA family models improves zero-shot accuracy on 7 out of 9 standard NLP benchmarks (excluding ARC-challenge and WinoGrande), with LLaMA-7B achieving 81% on Lambada (OpenAI), surpassing PaLM-540B's 77.9% SOTA.",
+          "status": "supported",
+          "conditions": "",
+          "falsification": "CFG with γ=1.5 fails to improve ≥5/9 benchmarks for GPT-2 or Pythia models; or LLaMA-7B with CFG scores below 77.9% on Lambada.",
+          "dependencies": [],
+          "provenance": null
+        }
+      ],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [
+          {
+            "id": "fig2a_zero_shot_arc_boolq_hellaswag",
+            "caption": "Results of general natural language benchmarks. In each cell, the first value is the result for γ=1 (baseline) and the second value is the result for γ=1.5 (ours).",
+            "markdown": "| Model | ARC-c | ARC-e | BoolQ | HellaSwag |\n|-------|-------|-------|-------|-----------|\n| GPT2-small | 22.7 / 23.0 | 39.5 / 42.1 | 48.7 / 57.0 | 31.1 / 31.9 |\n| GPT2-medium | 25.0 / 23.9 | 43.6 / 47.6 | 58.6 / 60.1 | 39.4 / 40.9 |\n| GPT2-large | 25.1 / 24.7 | 46.6 / 51.0 | 60.5 / 62.1 | 45.3 / 47.1 |\n| GPT2-xl | 28.5 / 30.0 | 51.1 / 56.5 | 61.8 / 62.6 | 50.9 / 52.4 |\n| Pythia-160M | 23.5 / 23.0 | 39.5 / 42.2 | 55.0 / 58.3 | 30.1 / 31.2 |\n| Pythia-410M | 24.1 / 23.8 | 45.7 / 50.3 | 60.6 / 61.2 | 40.6 / 41.6 |\n| Pythia-1B | 27.0 / 28.0 | 49.0 / 54.9 | 60.7 / 61.8 | 47.1 / 48.9 |\n| Pythia-1.4B | 28.6 / 29.6 | 53.8 / 59.6 | 63.0 / 63.8 | 52.1 / 54.3 |\n| Pythia-2.8B | 33.1 / 34.5 | 58.8 / 65.4 | 64.7 / 64.7 | 59.3 / 61.9 |\n| Pythia-6.9B | 35.2 / 36.1 | 61.3 / 67.4 | 63.7 / 64.6 | 64.0 / 66.5 |\n| Pythia-12B | 36.9 / 38.7 | 64.1 / 72.6 | 67.6 / 67.8 | 67.3 / 69.6 |\n| LLaMA-7B | 41.5 / 43.9 | 52.5 / 58.9 | 73.1 / 71.8 | 73.0 / 76.9 |\n| LLaMA-13B | 47.8 / 54.2 | 74.8 / 79.1 | 78.0 / 75.8 | 79.1 / 82.1 |\n| LLaMA-30B | 52.9 / 57.4 | 78.9 / 83.2 | 82.7 / 80.0 | 82.6 / 85.3 |\n| LLaMA-65B | 55.6 / 59.0 | 79.7 / 84.2 | 84.8 / 83.0 | 84.1 / 86.3 |"
+          },
+          {
+            "id": "fig2b_zero_shot_piqa_sciq_trivia_wino_lambada",
+            "caption": "Results of general natural language benchmarks. In each cell, the first value is the result for γ=1 (baseline) and the second value is the result for γ=1.5 (ours). LLaMA 7B with CFG on Lambada zero-shot already outperforms vanilla PaLM 540B, Chinchilla 70B, and GPT-3 175B, tops the SOTA leaderboard for Lambada zero-shot as of June 26th, 2023",
+            "markdown": "| Model | PIQA | SciQ | TriviaQA | WinoGrande | Lambada |\n|-------|------|------|----------|------------|---------|\n| GPT2-small | 62.5 / 63.8 | 64.4 / 70.8 | 5.5 / 6.5 | 51.6 / 50.5 | 32.6 / 44.6 |\n| GPT2-medium | 66.4 / 66.9 | 67.2 / 76.7 | 8.3 / 9.3 | 53.1 / 52.1 | 43.0 / 55.8 |\n| GPT2-large | 69.2 / 70.2 | 69.4 / 78.8 | 11.1 / 12.0 | 55.4 / 54.4 | 47.7 / 60.5 |\n| GPT2-xl | 70.5 / 71.3 | 76.1 / 82.4 | 14.7 / 15.2 | 58.3 / 55.6 | 51.2 / 62.5 |\n| Pythia-160M | 61.4 / 62.1 | 67.0 / 75.4 | 4.1 / 5.3 | 52.3 / 51.1 | 32.8 / 47.4 |\n| Pythia-410M | 67.1 / 67.8 | 72.1 / 79.0 | 7.9 / 9.1 | 52.9 / 50.7 | 51.3 / 64.0 |\n| Pythia-1B | 69.2 / 70.5 | 76.0 / 82.9 | 12.3 / 12.3 | 53.9 / 51.5 | 56.2 / 69.0 |\n| Pythia-1.4B | 71.1 / 72.5 | 79.4 / 85.1 | 15.9 / 15.9 | 57.4 / 56.0 | 61.6 / 72.7 |\n| Pythia-2.8B | 73.6 / 75.8 | 83.3 / 88.2 | 22.1 / 20.9 | 60.1 / 57.9 | 64.6 / 76.5 |\n| Pythia-6.9B | 76.3 / 77.4 | 84.3 / 89.7 | 28.2 / 27.2 | 61.1 / 60.3 | 67.1 / 78.8 |\n| Pythia-12B | 77.0 / 78.4 | 87.7 / 91.9 | 33.4 / 32.1 | 65.0 / 63.4 | 70.4 / 80.6 |\n| LLaMA-7B | 77.4 / 79.8 | 66.3 / 75.4 | 56.0 / 52.7 | 67.1 / 65.5 | 73.6 / 81.3 |\n| LLaMA-13B | 80.1 / 80.9 | 91.1 / 95.1 | 62.4 / 59.8 | 72.8 / 71.5 | 76.2 / 82.2 |\n| LLaMA-30B | 82.3 / 82.3 | 94.3 / 96.4 | 69.7 / 67.9 | 75.8 / 74.1 | 77.5 / 83.9 |\n| LLaMA-65B | 82.3 / 82.6 | 95.1 / 96.6 | 73.3 / 71.8 | 77.4 / 76.1 | 79.1 / 84.0 |"
+          },
+          {
+            "id": "table11_bleu_machine_translation",
+            "caption": "BLEU scores for different γ for machine translation tasks. In the case of 1-shot and mt0, we experiment with γ values between 1 and 1.1 since we see a rapid decline at even slightly higher values. All models are evaluated 0-shot unless otherwise specified.",
+            "markdown": "| Model | γ = 1 | γ = 1.10 | γ = 1.25 |\n|-------|-------|----------|----------|\n| Bloom-3B | 14.16 | 15.81 | 14.16 |\n| RedPajama-Incite-3B | 15.04 | 17.24 | 17.78 |"
+          }
+        ],
+        "data": []
+      },
+      "verified_by": [
+        {
+          "id": "E01",
+          "title": "Zero-Shot NLP Benchmark Evaluation with CFG",
+          "run": "",
+          "setup": "Model: GPT-2 (small/medium/large/xl), Pythia (160M/410M/1B/1.4B/2.8B/6.9B/12B), LLaMA (7B/13B/30B/65B)\nHardware: High-memory GPU cluster (CoreWeave / Stability AI infrastructure)\nDataset: ARC-c, ARC-e, BoolQ, HellaSwag, PIQA, SciQ, TriviaQA, WinoGrande, Lambada (OpenAI) — all implemented in EleutherAI Language Model Evaluation Harness [33]\nSystem: EleutherAI LM Evaluation Harness (github.com/EleutherAI/lm-evaluation-harness)",
+          "metrics": "Accuracy (%) per benchmark task; for Lambada specifically compare against PaLM-540B zero-shot SOTA"
+        }
+      ],
+      "artifact": [
+        {
+          "name": "stay-on-topic-with-classifier-free-guidance implementation",
+          "pointer": "src/execution/ (2 files): cfg_decoding.py, entropy_analysis.py",
+          "what": "transcribed source code pointer index (not an external run-store pointer)"
+        }
+      ],
+      "built_on": [
+        {
+          "rw_id": "RW01",
+          "name": "Ho & Salimans, 2021 (Original CFG)",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW02",
+          "name": "Dhariwal & Nichol, 2021 (Classifier Guidance)",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW03",
+          "name": "Dathathri et al., 2019 (PPLM)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW04",
+          "name": "Li et al., 2022 (Contrastive Decoding)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW07",
+          "name": "Yang & Klein, 2021 (FUDGE)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW09",
+          "name": "Touvron et al., 2023 (LLaMA)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW10",
+          "name": "Biderman et al., 2023 (Pythia)",
+          "relation_raw": "baseline"
+        }
+      ],
+      "rejected_here": [],
+      "concepts": [
+        "Classifier-Free Guidance (CFG)"
+      ],
+      "recipe_refs": []
+    },
+    {
+      "id": "N06",
+      "type": "experiment",
+      "parent": "N05",
+      "title": "FLOPs analysis: CFG vs 2x model size",
+      "body": "5/9 tasks: statistically insignificant difference at p=0.01 (ANCOVA); 2 tasks favor CFG, 2 favor vanilla",
+      "thinking": "CFG needs two forward passes per generated token (one conditioned, one unconditional), roughly doubling inference compute, so this step asks whether that extra compute is well spent. It compares CFG's benchmark gains against simply using a model twice as large, using a statistical test (ANCOVA, which compares two conditions while accounting for a covariate, here log-FLOPs) at a significance threshold of p=0.01. On 5 of the 9 benchmarks from N05, CFG and a 2x-larger vanilla model are statistically indistinguishable, and the remaining 4 split evenly between the two, suggesting CFG's extra compute buys performance roughly on par with doubling the model's parameter count.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [
+        "§4"
+      ],
+      "why": [
+        {
+          "id": "C02",
+          "title": "CFG Matches 2× Model Size at Same Inference FLOPs",
+          "statement": "Across 5 out of 9 benchmark tasks, there is a statistically insignificant difference (ANCOVA at p=0.01) between using a model with CFG (doubling inference FLOPs) and using a vanilla model twice as large; 2 tasks favor CFG and 2 favor vanilla among significant cases.",
+          "status": "supported",
+          "conditions": "",
+          "falsification": "Fewer than 5/9 tasks show insignificant ANCOVA difference; or the significant-difference tasks do not split evenly.",
+          "dependencies": [
+            "C01"
+          ],
+          "provenance": null
+        }
+      ],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [
+          {
+            "id": "fig2a_zero_shot_arc_boolq_hellaswag",
+            "caption": "Results of general natural language benchmarks. In each cell, the first value is the result for γ=1 (baseline) and the second value is the result for γ=1.5 (ours).",
+            "markdown": "| Model | ARC-c | ARC-e | BoolQ | HellaSwag |\n|-------|-------|-------|-------|-----------|\n| GPT2-small | 22.7 / 23.0 | 39.5 / 42.1 | 48.7 / 57.0 | 31.1 / 31.9 |\n| GPT2-medium | 25.0 / 23.9 | 43.6 / 47.6 | 58.6 / 60.1 | 39.4 / 40.9 |\n| GPT2-large | 25.1 / 24.7 | 46.6 / 51.0 | 60.5 / 62.1 | 45.3 / 47.1 |\n| GPT2-xl | 28.5 / 30.0 | 51.1 / 56.5 | 61.8 / 62.6 | 50.9 / 52.4 |\n| Pythia-160M | 23.5 / 23.0 | 39.5 / 42.2 | 55.0 / 58.3 | 30.1 / 31.2 |\n| Pythia-410M | 24.1 / 23.8 | 45.7 / 50.3 | 60.6 / 61.2 | 40.6 / 41.6 |\n| Pythia-1B | 27.0 / 28.0 | 49.0 / 54.9 | 60.7 / 61.8 | 47.1 / 48.9 |\n| Pythia-1.4B | 28.6 / 29.6 | 53.8 / 59.6 | 63.0 / 63.8 | 52.1 / 54.3 |\n| Pythia-2.8B | 33.1 / 34.5 | 58.8 / 65.4 | 64.7 / 64.7 | 59.3 / 61.9 |\n| Pythia-6.9B | 35.2 / 36.1 | 61.3 / 67.4 | 63.7 / 64.6 | 64.0 / 66.5 |\n| Pythia-12B | 36.9 / 38.7 | 64.1 / 72.6 | 67.6 / 67.8 | 67.3 / 69.6 |\n| LLaMA-7B | 41.5 / 43.9 | 52.5 / 58.9 | 73.1 / 71.8 | 73.0 / 76.9 |\n| LLaMA-13B | 47.8 / 54.2 | 74.8 / 79.1 | 78.0 / 75.8 | 79.1 / 82.1 |\n| LLaMA-30B | 52.9 / 57.4 | 78.9 / 83.2 | 82.7 / 80.0 | 82.6 / 85.3 |\n| LLaMA-65B | 55.6 / 59.0 | 79.7 / 84.2 | 84.8 / 83.0 | 84.1 / 86.3 |"
+          },
+          {
+            "id": "fig2b_zero_shot_piqa_sciq_trivia_wino_lambada",
+            "caption": "Results of general natural language benchmarks. In each cell, the first value is the result for γ=1 (baseline) and the second value is the result for γ=1.5 (ours). LLaMA 7B with CFG on Lambada zero-shot already outperforms vanilla PaLM 540B, Chinchilla 70B, and GPT-3 175B, tops the SOTA leaderboard for Lambada zero-shot as of June 26th, 2023",
+            "markdown": "| Model | PIQA | SciQ | TriviaQA | WinoGrande | Lambada |\n|-------|------|------|----------|------------|---------|\n| GPT2-small | 62.5 / 63.8 | 64.4 / 70.8 | 5.5 / 6.5 | 51.6 / 50.5 | 32.6 / 44.6 |\n| GPT2-medium | 66.4 / 66.9 | 67.2 / 76.7 | 8.3 / 9.3 | 53.1 / 52.1 | 43.0 / 55.8 |\n| GPT2-large | 69.2 / 70.2 | 69.4 / 78.8 | 11.1 / 12.0 | 55.4 / 54.4 | 47.7 / 60.5 |\n| GPT2-xl | 70.5 / 71.3 | 76.1 / 82.4 | 14.7 / 15.2 | 58.3 / 55.6 | 51.2 / 62.5 |\n| Pythia-160M | 61.4 / 62.1 | 67.0 / 75.4 | 4.1 / 5.3 | 52.3 / 51.1 | 32.8 / 47.4 |\n| Pythia-410M | 67.1 / 67.8 | 72.1 / 79.0 | 7.9 / 9.1 | 52.9 / 50.7 | 51.3 / 64.0 |\n| Pythia-1B | 69.2 / 70.5 | 76.0 / 82.9 | 12.3 / 12.3 | 53.9 / 51.5 | 56.2 / 69.0 |\n| Pythia-1.4B | 71.1 / 72.5 | 79.4 / 85.1 | 15.9 / 15.9 | 57.4 / 56.0 | 61.6 / 72.7 |\n| Pythia-2.8B | 73.6 / 75.8 | 83.3 / 88.2 | 22.1 / 20.9 | 60.1 / 57.9 | 64.6 / 76.5 |\n| Pythia-6.9B | 76.3 / 77.4 | 84.3 / 89.7 | 28.2 / 27.2 | 61.1 / 60.3 | 67.1 / 78.8 |\n| Pythia-12B | 77.0 / 78.4 | 87.7 / 91.9 | 33.4 / 32.1 | 65.0 / 63.4 | 70.4 / 80.6 |\n| LLaMA-7B | 77.4 / 79.8 | 66.3 / 75.4 | 56.0 / 52.7 | 67.1 / 65.5 | 73.6 / 81.3 |\n| LLaMA-13B | 80.1 / 80.9 | 91.1 / 95.1 | 62.4 / 59.8 | 72.8 / 71.5 | 76.2 / 82.2 |\n| LLaMA-30B | 82.3 / 82.3 | 94.3 / 96.4 | 69.7 / 67.9 | 75.8 / 74.1 | 77.5 / 83.9 |\n| LLaMA-65B | 82.3 / 82.6 | 95.1 / 96.6 | 73.3 / 71.8 | 77.4 / 76.1 | 79.1 / 84.0 |"
+          },
+          {
+            "id": "table4_ancova_pvalues",
+            "caption": "ANCOVA p-value results for plots shown in Figure 11. We calculate ANCOVA on log-transformed variables and calculate significance at p=.01.",
+            "markdown": "| Task | p-value | Win (if significant) |\n|------|---------|---------------------|\n| Lambada | 0.000 | CFG |\n| WinoGrande | 0.003 | Vanilla |\n| SciQ | 0.008 | CFG |\n| TriviaQA | 0.008 | Vanilla |\n| HellaSwag | 0.012 | p > .01 |\n| PiQA | 0.030 | p > .01 |\n| ARC-c | 0.216 | p > .01 |\n| BoolQ | 0.345 | p > .01 |\n| ARC-e | 0.355 | p > .01 |"
+          }
+        ],
+        "data": []
+      },
+      "verified_by": [
+        {
+          "id": "E01",
+          "title": "Zero-Shot NLP Benchmark Evaluation with CFG",
+          "run": "",
+          "setup": "Model: GPT-2 (small/medium/large/xl), Pythia (160M/410M/1B/1.4B/2.8B/6.9B/12B), LLaMA (7B/13B/30B/65B)\nHardware: High-memory GPU cluster (CoreWeave / Stability AI infrastructure)\nDataset: ARC-c, ARC-e, BoolQ, HellaSwag, PIQA, SciQ, TriviaQA, WinoGrande, Lambada (OpenAI) — all implemented in EleutherAI Language Model Evaluation Harness [33]\nSystem: EleutherAI LM Evaluation Harness (github.com/EleutherAI/lm-evaluation-harness)",
+          "metrics": "Accuracy (%) per benchmark task; for Lambada specifically compare against PaLM-540B zero-shot SOTA"
+        },
+        {
+          "id": "E04",
+          "title": "Entropy, FLOPs, and Instruction-Tuning Comparison",
+          "run": "",
+          "setup": "Model: Falcon-7b-Base, Falcon-7b-Instruct (for analysis); GPT-2/Pythia/LLaMA families (for FLOPs)\nHardware: GPU cluster\nDataset: P3 dataset (bigscience/P3 on HuggingFace; 32,902 sampled datapoints); benchmark results from E01 (for FLOPs)\nSystem: Custom analysis scripts; ANCOVA regression (log-transformed FLOP vs accuracy)",
+          "metrics": "Mean logit entropy per condition; top-p=0.9 vocabulary overlap fraction; Spearman correlation (rs) and p-value; ANCOVA p-value per benchmark task"
+        }
+      ],
+      "artifact": [
+        {
+          "name": "stay-on-topic-with-classifier-free-guidance implementation",
+          "pointer": "src/execution/ (2 files): cfg_decoding.py, entropy_analysis.py",
+          "what": "transcribed source code pointer index (not an external run-store pointer)"
+        }
+      ],
+      "built_on": [
+        {
+          "rw_id": "RW01",
+          "name": "Ho & Salimans, 2021 (Original CFG)",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW04",
+          "name": "Li et al., 2022 (Contrastive Decoding)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW09",
+          "name": "Touvron et al., 2023 (LLaMA)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW10",
+          "name": "Biderman et al., 2023 (Pythia)",
+          "relation_raw": "baseline"
+        }
+      ],
+      "rejected_here": [],
+      "concepts": [
+        "Classifier-Free Guidance (CFG)"
+      ],
+      "recipe_refs": []
+    },
+    {
+      "id": "N07",
+      "type": "dead_end",
+      "parent": "N05",
+      "title": "ARC-challenge and WinoGrande do not improve with CFG",
+      "body": "Hypothesis: CFG would uniformly improve all zero-shot benchmarks\n\nFailure mode: ARC-c and WinoGrande show inconsistent or negative results at gamma=1.5; exact reason unknown\n\nLesson: CFG is not universally beneficial; task-specific properties (adversarial construction in WinoGrande, complex reasoning in ARC-c) may resist prompt-adherence boosting",
+      "thinking": "The zero-shot sweep in N05 implicitly assumed CFG would help fairly uniformly across benchmarks, but two of the nine, ARC-challenge (a harder science-reasoning benchmark) and WinoGrande (a benchmark built with deliberately adversarial sentence pairs), broke that pattern, showing inconsistent or negative results at gamma=1.5. The paper does not identify the exact cause, but the working lesson is that CFG's prompt-adherence boost is not universal: tasks involving complex multi-step reasoning or adversarial construction may resist the technique, which qualifies the strong claim from N05 rather than undermining it entirely.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [],
+      "built_on": [],
+      "rejected_here": [],
+      "concepts": [
+        "Classifier-Free Guidance (CFG)"
+      ],
+      "recipe_refs": []
+    },
+    {
+      "id": "N08",
+      "type": "experiment",
+      "parent": "N03",
+      "title": "CoT reasoning: CFG on GSM8K and AQuA",
+      "body": "Low gamma increases valid-answer rate and accuracy; high gamma maintains low invalid rate but accuracy drops",
+      "thinking": "Having validated CFG on short-answer zero-shot tasks, the paper moves to a harder setting: chain-of-thought (CoT) prompting, where the model writes out intermediate reasoning steps before giving a final answer, tested on the math word-problem benchmark GSM8K and the multiple-choice math benchmark AQuA. At low guidance strength (gamma up to about 1.5), CFG increases both the fraction of reasoning chains that end in a valid, parseable answer and overall accuracy; push gamma higher and invalid chains stay rare, but accuracy starts to drop, since over-constraining a long generated chain hurts more than it helps.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [
+        "§3.2"
+      ],
+      "why": [
+        {
+          "id": "C03",
+          "title": "CFG Improves CoT Validity and Accuracy at Low γ",
+          "statement": "At low guidance strengths (γ ≤ 1.5), CFG increases the percentage of Chain-of-Thought continuations ending in a valid parseable answer and improves overall accuracy on GSM8K and AQuA; at high γ (> 1.5), invalid chains remain rare but accuracy degrades.",
+          "status": "supported",
+          "conditions": "",
+          "falsification": "CFG at γ=1.1 or γ=1.25 fails to increase valid-answer rate on GSM8K or AQuA relative to γ=1; or accuracy at γ=1.1 is lower than at γ=1.",
+          "dependencies": [
+            "C01"
+          ],
+          "provenance": null
+        }
+      ],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [
+        {
+          "id": "E02",
+          "title": "Chain-of-Thought Reasoning with CFG",
+          "run": "",
+          "setup": "Model: WizardLM-30B, Guanaco-65B\nHardware: High-memory GPU cluster\nDataset: GSM8K (openai/gsm8k on HuggingFace), AQuA (nguyen-brat/aqua on HuggingFace)\nSystem: Few-shot CoT prompts from Wang et al. 2023 (Self-Consistency paper); LM Evaluation Harness or equivalent",
+          "metrics": "% chains ending in valid answer (parseable), final answer accuracy on GSM8K and AQuA"
+        }
+      ],
+      "artifact": [
+        {
+          "name": "stay-on-topic-with-classifier-free-guidance implementation",
+          "pointer": "src/execution/ (2 files): cfg_decoding.py, entropy_analysis.py",
+          "what": "transcribed source code pointer index (not an external run-store pointer)"
+        }
+      ],
+      "built_on": [
+        {
+          "rw_id": "RW01",
+          "name": "Ho & Salimans, 2021 (Original CFG)",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW05",
+          "name": "Wei et al., 2022 (Chain-of-Thought Prompting)",
+          "relation_raw": "extends"
+        },
+        {
+          "rw_id": "RW06",
+          "name": "Wang et al., 2023 (Self-Consistency CoT)",
+          "relation_raw": "extends"
+        }
+      ],
+      "rejected_here": [],
+      "concepts": [
+        "Classifier-Free Guidance (CFG)"
+      ],
+      "recipe_refs": []
+    },
+    {
+      "id": "N09",
+      "type": "dead_end",
+      "parent": "N08",
+      "title": "Applying CFG to full CoT chain (wp + wcot) degrades quality",
+      "body": "Hypothesis: Upweighting the full chain including reasoning steps would improve accuracy\n\nFailure mode: Not formally tested but acknowledged as future work; current design only upweights wp\n\nLesson: CFG should target only the task prompt wp, not the reasoning chain wcot; leaving the chain free improves quality",
+      "thinking": "The CoT experiment in N08 only ever applied CFG's upweighting to the initial task prompt wp, never to the reasoning chain wcot the model generates afterward. This node records an idea the researchers did not test: that also pushing the reasoning chain itself toward the prompt might further improve accuracy. They leave it as future work instead, drawing the lesson that letting the chain-of-thought develop freely, rather than constraining it, is precisely what let CFG improve CoT quality in N08 in the first place.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [],
+      "built_on": [],
+      "rejected_here": [],
+      "concepts": [
+        "Classifier-Free Guidance (CFG)"
+      ],
+      "recipe_refs": []
+    },
+    {
+      "id": "N10",
+      "type": "experiment",
+      "parent": "N03",
+      "title": "Code generation on HumanEval with CodeGen models",
+      "body": "Low CFG (gamma&lt;=1.5) increases pass@1; high CFG decreases pass@100 (reduces diversity)",
+      "thinking": "The third domain tested is code generation, using HumanEval (164 Python programming problems each checked against unit tests) with the CodeGen family of models. The pattern echoes the CoT result: modest guidance (gamma up to about 1.5) raises pass@1 (the chance a single generated solution passes the tests), but stronger guidance hurts pass@100 (the chance that at least one of 100 sampled solutions passes), because sharpening the output distribution toward the prompt reduces the diversity that many-sample success depends on.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [
+        "§3.3"
+      ],
+      "why": [
+        {
+          "id": "C04",
+          "title": "CFG Improves Code Generation at Low γ",
+          "statement": "Low CFG (γ ≤ 1.5) uniformly increases the pass@1 rate on HumanEval for CodeGen models at temperature=0.2; high CFG (γ ≥ 1.5) leads to deterioration; improvement diminishes or harms performance at pass@k for large k.",
+          "status": "supported",
+          "conditions": "",
+          "falsification": "pass@1 for CodeGen-350M-mono at γ=1.1 is not higher than at γ=1.0; or CFG outperforms baseline at pass@100.",
+          "dependencies": [
+            "C01"
+          ],
+          "provenance": null
+        }
+      ],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [
+          {
+            "id": "table2_codegen_humaneval_temp02",
+            "caption": "CodeGen results with temperature=0.2. CFG in nearly all cases increases performance, but the optimal γ value varies.",
+            "markdown": "| γ | CodeGen-350M k=1 | CodeGen-350M k=10 | CodeGen-350M k=100 | CodeGen-2B k=1 | CodeGen-2B k=10 | CodeGen-2B k=100 | CodeGen-6B k=1 | CodeGen-6B k=10 | CodeGen-6B k=100 |\n|---|-----------------|------------------|-------------------|----------------|-----------------|------------------|----------------|-----------------|------------------|\n| 1.0 | 11.0% | 17.0% | 22.0% | 19.5% | 25.5% | 29.8% | 19.5% | 25.5% | 29.8% |\n| 1.1 | 11.8% | 18.1% | 20.1% | 20.4% | 25.4% | 28.0% | 20.4% | 25.4% | 28.0% |\n| 1.25 | 11.4% | 17.3% | 18.9% | 19.7% | 25.4% | 28.0% | 19.7% | 25.4% | 28.0% |\n| 1.5 | 10.9% | 16.7% | 18.3% | 20.9% | 26.7% | 29.2% | 20.9% | 26.7% | 29.2% |\n| 1.75 | 10.3% | 16.0% | 18.2% | 20.4% | 26.2% | 28.6% | 20.4% | 26.2% | 28.6% |\n| 2.0 | 8.6% | 14.6% | 17.6% | 16.5% | 22.4% | 24.4% | 16.5% | 22.4% | 24.4% |"
+          },
+          {
+            "id": "table5_codegen350m_full",
+            "caption": "CodeGen-350M-mono results",
+            "markdown": "| γ | temp=0.2 k=1 | temp=0.2 k=10 | temp=0.2 k=100 | temp=0.6 k=1 | temp=0.6 k=10 | temp=0.6 k=100 | temp=0.8 k=1 | temp=0.8 k=10 | temp=0.8 k=100 |\n|---|-------------|--------------|----------------|-------------|--------------|----------------|-------------|--------------|----------------|\n| 1.0 | 11.0% | 17.0% | 22.0% | 8.9% | 18.2% | 23.7% | 7.2% | 17.2% | 29.4% |\n| 1.1 | 11.8% | 18.1% | 20.1% | 10.0% | 19.7% | 25.5% | 7.8% | 17.1% | 22.5% |\n| 1.25 | 11.4% | 17.3% | 18.9% | 9.7% | 18.4% | 23.7% | 8.3% | 18.2% | 24.9% |\n| 1.5 | 10.9% | 16.7% | 18.3% | 9.9% | 19.3% | 24.9% | 8.0% | 18.0% | 26.1% |\n| 1.75 | 10.3% | 16.0% | 18.2% | 9.2% | 18.3% | 23.7% | 7.7% | 16.9% | 24.2% |\n| 2.0 | 8.6% | 14.6% | 17.6% | 7.6% | 16.6% | 20.1% | 7.4% | 16.5% | 21.3% |"
+          },
+          {
+            "id": "table6_codegen2b_full",
+            "caption": "CodeGen-2B-mono results",
+            "markdown": "| γ | temp=0.2 k=1 | temp=0.2 k=10 | temp=0.2 k=100 | temp=0.6 k=1 | temp=0.6 k=10 | temp=0.6 k=100 | temp=0.8 k=1 | temp=0.8 k=10 | temp=0.8 k=100 |\n|---|-------------|--------------|----------------|-------------|--------------|----------------|-------------|--------------|----------------|\n| 1.0 | 19.5% | 25.5% | 29.8% | 15.9% | 29.3% | 36.5% | 12.3% | 26.4% | 33.5% |\n| 1.1 | 20.4% | 25.4% | 28.0% | 16.3% | 29.3% | 36.5% | 13.8% | 29.0% | 38.3% |\n| 1.25 | 19.7% | 25.4% | 28.0% | 17.4% | 30.1% | 38.3% | 14.1% | 28.7% | 37.6% |\n| 1.5 | 20.9% | 26.7% | 29.2% | 18.3% | 31.7% | 40.1% | 14.9% | 29.1% | 36.5% |\n| 1.75 | 20.4% | 26.2% | 28.6% | 17.7% | 30.4% | 35.9% | 14.3% | 28.3% | 34.1% |\n| 2.0 | 16.5% | 22.4% | 24.4% | 13.7% | 25.2% | 32.2% | 11.3% | 23.9% | 31.6% |"
+          },
+          {
+            "id": "table7_codegen6b_full",
+            "caption": "CodeGen-6B-mono results",
+            "markdown": "| γ | temp=0.2 k=1 | temp=0.2 k=10 | temp=0.2 k=100 | temp=0.6 k=1 | temp=0.6 k=10 | temp=0.6 k=100 | temp=0.8 k=1 | temp=0.8 k=10 | temp=0.8 k=100 |\n|---|-------------|--------------|----------------|-------------|--------------|----------------|-------------|--------------|----------------|\n| 1.0 | 19.5% | 25.5% | 29.8% | 15.9% | 29.3% | 36.5% | 12.3% | 26.4% | 33.5% |\n| 1.1 | 20.4% | 25.4% | 28.0% | 16.3% | 29.3% | 36.5% | 13.8% | 29.0% | 38.3% |\n| 1.25 | 19.7% | 25.4% | 28.0% | 17.4% | 30.1% | 38.3% | 14.1% | 28.7% | 37.6% |\n| 1.5 | 20.9% | 26.7% | 29.2% | 18.3% | 31.7% | 40.1% | 14.9% | 29.1% | 36.5% |\n| 1.75 | 20.4% | 26.2% | 28.6% | 17.7% | 30.4% | 35.9% | 14.3% | 28.3% | 34.1% |\n| 2.0 | 16.5% | 22.4% | 24.4% | 13.7% | 25.2% | 32.2% | 11.3% | 23.9% | 31.6% |"
+          },
+          {
+            "id": "table12_gptj_code_confusion",
+            "caption": "Confusion matrix for generating code tests with GPT-J. We prompt it to generate code in some programming language (rows) and compare with the generated programming language (columns). The overall accuracy results for γ=1, 1.25, 1.5, 1.75 are 73%, 86%, 81%, 77%, respectively.",
+            "markdown": "| γ value | Overall Accuracy |\n|---------|-----------------|\n| 1.0 | 73% |\n| 1.25 | 86% |\n| 1.5 | 81% |\n| 1.75 | 77% |"
+          }
+        ],
+        "data": []
+      },
+      "verified_by": [
+        {
+          "id": "E03",
+          "title": "Code Generation (HumanEval) with CFG",
+          "run": "",
+          "setup": "Model: CodeGen-350M-mono, CodeGen-2B-mono, CodeGen-6B-mono (Nijkamp et al. [54])\nHardware: GPU cluster; CodeGen-16B-mono omitted due to compute constraints\nDataset: HumanEval (Chen et al. [16]; 164 Python coding tasks with unit tests; openai/human-eval on GitHub)\nSystem: Standard HumanEval evaluation framework",
+          "metrics": "pass@k for k=1, 10, 100 per model, guidance strength, and temperature; win/tie/loss counts per task"
+        }
+      ],
+      "artifact": [
+        {
+          "name": "stay-on-topic-with-classifier-free-guidance implementation",
+          "pointer": "src/execution/ (2 files): cfg_decoding.py, entropy_analysis.py",
+          "what": "transcribed source code pointer index (not an external run-store pointer)"
+        }
+      ],
+      "built_on": [
+        {
+          "rw_id": "RW01",
+          "name": "Ho & Salimans, 2021 (Original CFG)",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW03",
+          "name": "Dathathri et al., 2019 (PPLM)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW07",
+          "name": "Yang & Klein, 2021 (FUDGE)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW08",
+          "name": "Nijkamp et al., 2023 (CodeGen)",
+          "relation_raw": "baseline"
+        }
+      ],
+      "rejected_here": [],
+      "concepts": [
+        "Classifier-Free Guidance (CFG)",
+        "pass@k (HumanEval Metric)"
+      ],
+      "recipe_refs": []
+    },
+    {
+      "id": "N11",
+      "type": "dead_end",
+      "parent": "N10",
+      "title": "CodeGen-16B-mono omitted due to compute constraints",
+      "body": "Hypothesis: Larger models would show same CFG trends\n\nFailure mode: Compute budget insufficient; 16B model requires too many GPU-hours\n\nLesson: Hardware constraints limited evaluation to 350M/2B/6B; pattern may generalize but unverified",
+      "thinking": "The CodeGen family also includes a 16B-parameter variant, but it was left out of the HumanEval evaluation in N10 because running it exceeded the project's available GPU-hours. This is a compute-budget limitation rather than a finding about CFG itself: the low-gamma-helps/high-gamma-hurts pattern held for the models that were tested, but whether it extends to the largest model in the family remains unverified.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [],
+      "built_on": [],
+      "rejected_here": [],
+      "concepts": [
+        "Classifier-Free Guidance (CFG)"
+      ],
+      "recipe_refs": []
+    },
+    {
+      "id": "N12",
+      "type": "experiment",
+      "parent": "N03",
+      "title": "Negative prompting for chatbot assistant tasks (GPT4All)",
+      "body": "75% human preference for system-prompt following at gamma=3; user-prompt relevance undegraded (52%) at gamma=3",
+      "thinking": "Building on the last-prompt-token unconditional prefix from N04, this experiment tests a variant called negative prompting, where instead of contrasting against a generic unconditional distribution, the model contrasts a user-edited system prompt against its own default system prompt. Applied to the GPT4All-J chatbot at gamma=3, human evaluators preferred the CFG-guided response for following the edited system prompt 75% of the time, while relevance to the user's own prompt, which CFG was not targeting, stayed essentially unaffected at 52%, showing the technique can steer assistant behavior without collateral damage to the user-facing task.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [
+        "N04"
+      ],
+      "source_refs": [
+        "§3.4"
+      ],
+      "why": [
+        {
+          "id": "C05",
+          "title": "CFG with Negative Prompting Improves Assistant System-Prompt Following",
+          "statement": "CFG with negative prompting (negative prompt = default system prompt, positive = edited system prompt) on GPT4All-J achieves 75% human preference for system-prompt following over baseline at γ=3, without degrading user-prompt relevance (52% preference, ≈ random).",
+          "status": "supported",
+          "conditions": "",
+          "falsification": "Human evaluators do not prefer CFG over baseline at ≥60% rate; or user-prompt relevance drops significantly below 50% at optimal γ.",
+          "dependencies": [],
+          "provenance": null
+        }
+      ],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [
+          {
+            "id": "fig5_human_preference",
+            "caption": "Evaluators (611 votes, 71 unique voters) significantly preferred the system-prompt with CFG (max at γ=3). The user-prompt relevance, not subject to CFG, did not degrade until γ≥4, showing a clear win without tradeoff at γ=3.",
+            "markdown": "| γ | System-Prompt Following Preference (%) | User-Prompt Relevance Preference (%) |\n|---|----------------------------------------|--------------------------------------|\n| 1 | ≈50% (baseline / random) | ≈50% |\n| 2 | > 50% (increasing) | ≈50% |\n| 3 | 75% (peak) | 52% (undegraded) |\n| 4 | &lt; 75% (declining) | ≈50% (beginning to degrade) |\n| 5 | decreasing | &lt; 50% (degraded) |\n| 6 | decreasing | &lt; 50% (degraded) |"
+          }
+        ],
+        "data": []
+      },
+      "verified_by": [
+        {
+          "id": "E05",
+          "title": "Negative Prompting for Assistant Task Human Evaluation",
+          "run": "",
+          "setup": "Model: GPT4All-J v1.3-jazzy\nHardware: CPU/GPU (GPT4All is designed for consumer hardware)\nDataset: 25 system prompts × 46 user prompts = 1,740 sampled combinations (Appendix G)\nSystem: Custom platform built by Guillaume Sanchez; blind pairwise human preference evaluation",
+          "metrics": "% preference for CFG over vanilla on (A) system-prompt following and (B) user-prompt relevance, per γ value; total vote count; unique voter count"
+        }
+      ],
+      "artifact": [
+        {
+          "name": "stay-on-topic-with-classifier-free-guidance implementation",
+          "pointer": "src/execution/ (2 files): cfg_decoding.py, entropy_analysis.py",
+          "what": "transcribed source code pointer index (not an external run-store pointer)"
+        }
+      ],
+      "built_on": [
+        {
+          "rw_id": "RW01",
+          "name": "Ho & Salimans, 2021 (Original CFG)",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW02",
+          "name": "Dhariwal & Nichol, 2021 (Classifier Guidance)",
+          "relation_raw": "imports"
+        }
+      ],
+      "rejected_here": [],
+      "concepts": [
+        "Classifier-Free Guidance (CFG)",
+        "Negative Prompting"
+      ],
+      "recipe_refs": []
+    },
+    {
+      "id": "N13",
+      "type": "experiment",
+      "parent": "N01",
+      "title": "Entropy analysis: does CFG reduce sampling entropy?",
+      "body": "CFG (gamma=1.5) reduces mean entropy from 5.4 to 4.7; comparable to instruction-tuned model entropy",
+      "thinking": "Returning to the question of what CFG is actually doing mechanically, this step examines sampling entropy (a measure of how spread out or concentrated the model's next-token probability distribution is). Applying CFG at gamma=1.5 lowers mean entropy from 5.4 to 4.7, a level comparable to instruction-tuned models (models explicitly fine-tuned to follow instructions), suggesting CFG nudges the model toward the kind of decisive, less-scattered predictions that expensive fine-tuning produces, but purely at inference time and with no retraining.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [
+        "§5.1"
+      ],
+      "why": [
+        {
+          "id": "C06",
+          "title": "CFG Reduces Sampling Entropy but Differs from Instruction Tuning",
+          "statement": "CFG at γ=1.5 reduces logit entropy (mean 4.7 vs 5.4 for vanilla) to a level similar to instruction-tuned models, but CFG and instruction-tuned models share less than 30% vocabulary overlap in top-p=0.9; they are not equivalent in their effect on logit distributions.",
+          "status": "supported",
+          "conditions": "",
+          "falsification": "CFG entropy is not significantly lower than vanilla; or CFG and instruction-tuned models share >50% top-p vocabulary overlap.",
+          "dependencies": [
+            "C01"
+          ],
+          "provenance": null
+        }
+      ],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [
+          {
+            "id": "fig6_entropy_analysis",
+            "caption": "(a) \"Entropy of logits for the vanilla prompted distribution P(y|x), the unprompted distribution, P(x), the CFG-γ=1.5 distribution and an instruction-tuned model Pinstruct(y|x).\" (b) \"Number of tokens overlapping in top-p=90% of vocabulary distributions between that of: CFG, that of the vanilla prompted model, p(y|x), and that of the unprompted model, P(x).",
+            "markdown": "| Distribution | Mean Entropy (nats) | Notes |\n|--------------|---------------------|-------|\n| Unconditional P(x) | higher than vanilla | Highest entropy (least focused) |\n| Vanilla P(y\\|x) | 5.4 | Standard conditional generation |\n| CFG γ=1.5 | 4.7 | Reduced entropy; similar to instruct |\n| Instruction-Tuned Pinstruct(y\\|x) | ≈4.7 | Similar level to CFG |"
+          }
+        ],
+        "data": []
+      },
+      "verified_by": [
+        {
+          "id": "E04",
+          "title": "Entropy, FLOPs, and Instruction-Tuning Comparison",
+          "run": "",
+          "setup": "Model: Falcon-7b-Base, Falcon-7b-Instruct (for analysis); GPT-2/Pythia/LLaMA families (for FLOPs)\nHardware: GPU cluster\nDataset: P3 dataset (bigscience/P3 on HuggingFace; 32,902 sampled datapoints); benchmark results from E01 (for FLOPs)\nSystem: Custom analysis scripts; ANCOVA regression (log-transformed FLOP vs accuracy)",
+          "metrics": "Mean logit entropy per condition; top-p=0.9 vocabulary overlap fraction; Spearman correlation (rs) and p-value; ANCOVA p-value per benchmark task"
+        }
+      ],
+      "artifact": [
+        {
+          "name": "stay-on-topic-with-classifier-free-guidance implementation",
+          "pointer": "src/execution/ (2 files): cfg_decoding.py, entropy_analysis.py",
+          "what": "transcribed source code pointer index (not an external run-store pointer)"
+        }
+      ],
+      "built_on": [],
+      "rejected_here": [],
+      "concepts": [
+        "Classifier-Free Guidance (CFG)",
+        "Sampling Entropy"
+      ],
+      "recipe_refs": []
+    },
+    {
+      "id": "N14",
+      "type": "dead_end",
+      "parent": "N13",
+      "title": "Hypothesis: CFG and instruction tuning have similar effects on vocabulary",
+      "body": "Hypothesis: CFG top-p vocabulary distribution would substantially overlap with instruction-tuned model\n\nFailure mode: Top-p=0.9 overlap is less than 30%; CFG and instruction-tuned models use different token sets despite similar entropies\n\nLesson: Similar entropy does not imply similar vocabulary distribution; CFG and instruction tuning are complementary, not equivalent",
+      "thinking": "Given that CFG and instruction tuning land at similar entropy levels in N13, the natural next hypothesis is that they achieve this by favoring the same tokens, making CFG a cheap stand-in for instruction tuning. Comparing the top-p=0.9 vocabulary (the smallest set of tokens covering 90% of the probability mass) selected by each method shows less than 30% overlap: despite narrowing the distribution to a similar degree, CFG and instruction tuning pick largely different words. The lesson is that matching entropy does not mean matching behavior, so CFG should be treated as complementary to instruction tuning rather than a substitute for it.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [],
+      "built_on": [],
+      "rejected_here": [],
+      "concepts": [
+        "Classifier-Free Guidance (CFG)"
+      ],
+      "recipe_refs": []
+    }
+  ],
+  "context": {
+    "title": "Problem",
+    "summary": "- **Insight**: In autoregressive language models, the prompt c naturally serves as the conditioning, and the last token of the prompt can initiate the unconditional generation, making CFG applicable out-of-the-box at…",
+    "sections": [
+      {
+        "role": "setting",
+        "heading": "Setting",
+        "present": false,
+        "entries": []
+      },
+      {
+        "role": "observations",
+        "heading": "Observations",
+        "present": true,
+        "entries": [
+          {
+            "ent_id": "O1",
+            "inferred_id": false,
+            "ent_title": "Language Model Prompt Drift",
+            "text": "- **Statement**: Standard autoregressive generation does not differentiate between prompt tokens w₁...wₚ and continuation tokens wₚ₊₁...wₜ₋₁, leading to generations that lose adherence to the prompt over time.\n- **Evidence**: Qualitative examples in Table 1 (main paper) show GPT4All ignoring system-level directives in vanilla sampling; Figure 17/18/19/20 show GPT-2 continuations diverging from the prompt.\n- **Implication**: Models treat all context equally at generation time, causing meandering and hallucination especially in longer generations.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "Standard autoregressive generation does not differentiate between prompt tokens w₁...wₚ and continuation tokens wₚ₊₁...wₜ₋₁, leading to generations that lose adherence to the prompt over time."
+              },
+              {
+                "label": "Evidence",
+                "value": "Qualitative examples in Table 1 (main paper) show GPT4All ignoring system-level directives in vanilla sampling; Figure 17/18/19/20 show GPT-2 continuations diverging from the prompt."
+              },
+              {
+                "label": "Implication",
+                "value": "Models treat all context equally at generation time, causing meandering and hallucination especially in longer generations."
+              }
+            ],
+            "refs": []
+          },
+          {
+            "ent_id": "O2",
+            "inferred_id": false,
+            "ent_title": "Smaller Models Struggle with Prompt Adherence",
+            "text": "- **Statement**: Smaller language models (GPT-2, Pythia &lt;1B) exhibit more severe prompt drift, hallucination, and degradation problems than larger models.\n- **Evidence**: Zero-shot benchmark results (Figure 2, Table 2a/2b) show smaller models perform considerably worse; referenced issues of hallucination [49], degradation [38], and meandering [76].\n- **Implication**: Compute-constrained users are most harmed by prompt drift.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "Smaller language models (GPT-2, Pythia &lt;1B) exhibit more severe prompt drift, hallucination, and degradation problems than larger models."
+              },
+              {
+                "label": "Evidence",
+                "value": "Zero-shot benchmark results (Figure 2, Table 2a/2b) show smaller models perform considerably worse; referenced issues of hallucination [49], degradation [38], and meandering [76]."
+              },
+              {
+                "label": "Implication",
+                "value": "Compute-constrained users are most harmed by prompt drift."
+              }
+            ],
+            "refs": []
+          },
+          {
+            "ent_id": "O3",
+            "inferred_id": false,
+            "ent_title": "Existing Solutions Are Compute- and Data-Expensive",
+            "text": "- **Statement**: Instruction fine-tuning and reinforcement learning from human feedback (RLHF) are the dominant mitigation strategies but require significant compute, data, and expertise.\n- **Evidence**: Referenced works [81, 70, 56, 4, 6] on instruction tuning and RLHF; these approaches are noted as not accessible to all users.\n- **Implication**: There is a gap for lightweight, inference-time-only interventions accessible without model retraining.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "Instruction fine-tuning and reinforcement learning from human feedback (RLHF) are the dominant mitigation strategies but require significant compute, data, and expertise."
+              },
+              {
+                "label": "Evidence",
+                "value": "Referenced works [81, 70, 56, 4, 6] on instruction tuning and RLHF; these approaches are noted as not accessible to all users."
+              },
+              {
+                "label": "Implication",
+                "value": "There is a gap for lightweight, inference-time-only interventions accessible without model retraining."
+              }
+            ],
+            "refs": []
+          },
+          {
+            "ent_id": "O4",
+            "inferred_id": false,
+            "ent_title": "CFG Works in Text-to-Image Without Architecture Changes",
+            "text": "- **Statement**: Classifier-Free Guidance in diffusion models requires conditioning dropout training but significantly improves prompt adherence in text-to-image generation.\n- **Evidence**: Ho & Salimans [37], Saharia et al. [68] demonstrate CFG effectiveness; conditioning dropout needed for diffusion.\n- **Implication**: If LMs can support CFG without special training, they offer a superior application domain.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "Classifier-Free Guidance in diffusion models requires conditioning dropout training but significantly improves prompt adherence in text-to-image generation."
+              },
+              {
+                "label": "Evidence",
+                "value": "Ho & Salimans [37], Saharia et al. [68] demonstrate CFG effectiveness; conditioning dropout needed for diffusion."
+              },
+              {
+                "label": "Implication",
+                "value": "If LMs can support CFG without special training, they offer a superior application domain."
+              }
+            ],
+            "refs": []
+          },
+          {
+            "ent_id": "O5",
+            "inferred_id": false,
+            "ent_title": "Language Models Naturally Handle Unconditional Generation",
+            "text": "- **Statement**: Autoregressive language models trained on finite context windows naturally produce both conditional P(w|c) and unconditional P(w) distributions, since dropping the prefix c is a natural feature.\n- **Evidence**: Equation 6 in Section 2.2 shows the factorization holds for autoregressive models; described in §2.2.\n- **Implication**: Language models can apply CFG out-of-the-box without conditioning dropout training, unlike diffusion models.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "Autoregressive language models trained on finite context windows naturally produce both conditional P(w|c) and unconditional P(w) distributions, since dropping the prefix c is a natural feature."
+              },
+              {
+                "label": "Evidence",
+                "value": "Equation 6 in Section 2.2 shows the factorization holds for autoregressive models; described in §2.2."
+              },
+              {
+                "label": "Implication",
+                "value": "Language models can apply CFG out-of-the-box without conditioning dropout training, unlike diffusion models."
+              }
+            ],
+            "refs": []
+          }
+        ]
+      },
+      {
+        "role": "gaps",
+        "heading": "Gaps",
+        "present": true,
+        "entries": [
+          {
+            "ent_id": "G1",
+            "inferred_id": false,
+            "ent_title": "No Inference-Time Prompt-Adherence Method for LMs",
+            "text": "- **Statement**: No existing inference-time-only technique specifically targets prompt adherence across diverse prompting paradigms (zero-shot, CoT, long-form, chatbot) in autoregressive LMs.\n- **Caused by**: O1, O3\n- **Existing attempts**: Temperature scaling, nucleus sampling, repetition penalties (improve fluency but not prompt adherence); PPLM, FUDGE, GeDi (require auxiliary classifiers); instruction tuning (retraining required).\n- **Why they fail**: Classifier-guided approaches require separate trained classifiers; instruction tuning requires full retraining and labeled data.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "No existing inference-time-only technique specifically targets prompt adherence across diverse prompting paradigms (zero-shot, CoT, long-form, chatbot) in autoregressive LMs."
+              },
+              {
+                "label": "Caused By",
+                "value": "O1, O3"
+              },
+              {
+                "label": "Existing Attempts",
+                "value": "Temperature scaling, nucleus sampling, repetition penalties (improve fluency but not prompt adherence); PPLM, FUDGE, GeDi (require auxiliary classifiers); instruction tuning (retraining required)."
+              },
+              {
+                "label": "Why They Fail",
+                "value": "Classifier-guided approaches require separate trained classifiers; instruction tuning requires full retraining and labeled data."
+              }
+            ],
+            "refs": [
+              {
+                "raw": "O1",
+                "kind": "observation",
+                "target": null
+              },
+              {
+                "raw": "O3",
+                "kind": "observation",
+                "target": null
+              }
+            ]
+          },
+          {
+            "ent_id": "G2",
+            "inferred_id": false,
+            "ent_title": "CFG Has Not Been Applied to Pure Language Modeling",
+            "text": "- **Statement**: CFG has only been studied in the text-to-image domain with diffusion models; its application to decoder-only language models is unexplored.\n- **Caused by**: O4, O5\n- **Existing attempts**: None directly — the closest is contrastive decoding [45] which uses two models of different sizes.\n- **Why they fail**: Contrastive decoding changes the model pair, not a single model's self-conditioning.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "CFG has only been studied in the text-to-image domain with diffusion models; its application to decoder-only language models is unexplored."
+              },
+              {
+                "label": "Caused By",
+                "value": "O4, O5"
+              },
+              {
+                "label": "Existing Attempts",
+                "value": "None directly — the closest is contrastive decoding [45] which uses two models of different sizes."
+              },
+              {
+                "label": "Why They Fail",
+                "value": "Contrastive decoding changes the model pair, not a single model's self-conditioning."
+              }
+            ],
+            "refs": [
+              {
+                "raw": "O4",
+                "kind": "observation",
+                "target": null
+              },
+              {
+                "raw": "O5",
+                "kind": "observation",
+                "target": null
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "role": "insight",
+        "heading": "Key Insight",
+        "present": true,
+        "entries": [
+          {
+            "ent_id": null,
+            "inferred_id": true,
+            "ent_title": "Insight",
+            "text": "- **Insight**: In autoregressive language models, the prompt c naturally serves as the conditioning, and the last token of the prompt can initiate the unconditional generation, making CFG applicable out-of-the-box at the logit level. The logit-space arithmetic log P̂(wᵢ|w&lt;ᵢ, c) = log P(wᵢ|w&lt;ᵢ) + γ(log P(wᵢ|w&lt;ᵢ, c) − log P(wᵢ|w&lt;ᵢ)) provides a guidance mechanism without any auxiliary model or retraining.\n- **Derived from**: O4, O5\n- **Enables**: Architecture-agnostic, training-free CFG applied to any decoder-only language model across arbitrary tasks.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Insight",
+                "value": "In autoregressive language models, the prompt c naturally serves as the conditioning, and the last token of the prompt can initiate the unconditional generation, making CFG applicable out-of-the-box at the logit level. The logit-space arithmetic log P̂(wᵢ|w&lt;ᵢ, c) = log P(wᵢ|w&lt;ᵢ) + γ(log P(wᵢ|w&lt;ᵢ, c) − log P(wᵢ|w&lt;ᵢ)) provides a guidance mechanism without any auxiliary model or retraining."
+              },
+              {
+                "label": "Derived From",
+                "value": "O4, O5"
+              },
+              {
+                "label": "Enables",
+                "value": "Architecture-agnostic, training-free CFG applied to any decoder-only language model across arbitrary tasks."
+              }
+            ],
+            "refs": [
+              {
+                "raw": "O4",
+                "kind": "observation",
+                "target": null
+              },
+              {
+                "raw": "O5",
+                "kind": "observation",
+                "target": null
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "role": "assumptions",
+        "heading": "Assumptions",
+        "present": true,
+        "entries": [
+          {
+            "ent_id": "A1",
+            "inferred_id": false,
+            "ent_title": "",
+            "text": "The logit distribution of a language model is linearly related to the last hidden layer, making logit-space arithmetic meaningful.",
+            "unstructured": true,
+            "fields": [],
+            "refs": [
+              {
+                "raw": "A1",
+                "kind": "assumption",
+                "target": null
+              }
+            ]
+          },
+          {
+            "ent_id": "A2",
+            "inferred_id": false,
+            "ent_title": "",
+            "text": "The unconditional distribution P(w) can be approximated by starting generation from the last token of the prompt (rather than a fixed start token).",
+            "unstructured": true,
+            "fields": [],
+            "refs": [
+              {
+                "raw": "A2",
+                "kind": "assumption",
+                "target": null
+              }
+            ]
+          },
+          {
+            "ent_id": "A3",
+            "inferred_id": false,
+            "ent_title": "",
+            "text": "Higher guidance strength γ > 1 improves prompt adherence at the cost of reduced diversity, consistent with behavior observed in text-to-image models.",
+            "unstructured": true,
+            "fields": [],
+            "refs": [
+              {
+                "raw": "A3",
+                "kind": "assumption",
+                "target": null
+              }
+            ]
+          },
+          {
+            "ent_id": "A4",
+            "inferred_id": false,
+            "ent_title": "",
+            "text": "The optimal γ value is task-dependent and must be tuned per setting.",
+            "unstructured": true,
+            "fields": [],
+            "refs": [
+              {
+                "raw": "A4",
+                "kind": "assumption",
+                "target": null
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "glossary": {
+    "title": "Concepts",
+    "groups": [],
+    "terms": [
+      {
+        "term_id": "G01",
+        "name": "Classifier-Free Guidance (CFG)",
+        "aliases": [
+          "CFG"
+        ],
+        "group": "",
+        "definition": "An inference-time technique that upweights conditional generation relative to unconditional generation in logit space. At each decoding step i, the guided log-probability is: $\\log \\hat{P}_\\theta(w_i | w_{j&lt;i}, c) = \\log P_\\theta(w_i | w_{j&lt;i}) + \\gamma \\left( \\log P_\\theta(w_i | w_{j&lt;i}, c) - \\log P_\\theta(w_i | w_{j&lt;i}) \\right)$",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "$\\hat{P}_\\theta(w_i | w_{j&lt;i}, c) \\propto P_\\theta(w_i | w_{j&lt;i}, c)^\\gamma \\cdot P_\\theta(w_i | w_{j&lt;i})^{\\gamma-1}$"
+          },
+          {
+            "label": "Boundary Conditions",
+            "value": "γ=0 reduces to unconditional generation; γ=1 reduces to standard conditional generation; γ>1 overemphasizes conditioning, improving adherence at the cost of diversity. Optimal γ is task-dependent."
+          }
+        ],
+        "refs": [],
+        "related": [
+          "G02",
+          "G03",
+          "G04",
+          "G07"
+        ]
+      },
+      {
+        "term_id": "G02",
+        "name": "Guidance Strength (γ)",
+        "aliases": [
+          "γ"
+        ],
+        "group": "",
+        "definition": "A scalar hyperparameter controlling how strongly the model's generation is steered toward the conditioning prompt c. Higher values increase prompt adherence; excessively high values degrade quality.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "$\\gamma \\in \\mathbb{R}_{\\geq 0}$"
+          },
+          {
+            "label": "Boundary Conditions",
+            "value": "γ=1 is the baseline (no guidance effect beyond standard conditional generation). For zero-shot benchmarks γ=1.5 is used. For CoT tasks γ∈{1.0, 1.1, 1.25, 1.5, 1.75, 2.0}. For assistant prompts γ∈{1,2,3,4,5,6}. Optimal γ varies per task."
+          }
+        ],
+        "refs": [],
+        "related": [
+          "G01",
+          "G04"
+        ]
+      },
+      {
+        "term_id": "G03",
+        "name": "Unconditional Distribution",
+        "aliases": [],
+        "group": "",
+        "definition": "The probability distribution over next tokens when the model is prompted only with the last token of the original prompt (rather than the full prompt). This approximates the marginalized distribution and serves as the reference in CFG arithmetic.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "$P_\\theta(w_i | w_{j&lt;i})$ (without conditioning prefix $c$)"
+          },
+          {
+            "label": "Boundary Conditions",
+            "value": "In autoregressive LMs, dropping the prefix c is a natural operation (unlike diffusion models which require conditioning dropout training). The paper starts the unconditional distribution from the last token of the initial prompt."
+          }
+        ],
+        "refs": [],
+        "related": [
+          "G01",
+          "G02"
+        ]
+      },
+      {
+        "term_id": "G04",
+        "name": "Negative Prompting",
+        "aliases": [],
+        "group": "",
+        "definition": "An extension of CFG where instead of using the marginal P(w) as the reference, a specified \"negative\" prompt $\\bar{c}$ is used as the reference: $\\log \\hat{P}_\\theta = \\log P_\\theta(w|\\bar{c}) + \\gamma(\\log P_\\theta(w|c) - \\log P_\\theta(w|\\bar{c}))$. This emphasizes the difference between the target and negative prompts.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "$\\bar{c}$ (negative conditioning); $c$ (positive/target conditioning)"
+          },
+          {
+            "label": "Boundary Conditions",
+            "value": "Applied in chatbot settings where $\\bar{c}$ is the model's default system prompt and $c$ is the user-modified system prompt. Reduces to standard CFG when $\\bar{c} = \\emptyset$."
+          }
+        ],
+        "refs": [],
+        "related": [
+          "G01",
+          "G02"
+        ]
+      },
+      {
+        "term_id": "G05",
+        "name": "Chain-of-Thought (CoT) Prompting",
+        "aliases": [],
+        "group": "",
+        "definition": "A prompting strategy where the model generates intermediate reasoning steps before producing a final answer. In this paper, CFG is applied only to upweight the initial prompt $w_p$, not the CoT chain $w_{cot}$.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "$p(w_{cot}, w_a | w_p)$ where $w_{cot} = w_{p+1}...w_{c-1}$ (reasoning chain) and $w_a$ is the answer"
+          },
+          {
+            "label": "Boundary Conditions",
+            "value": "CFG upweights only $w_p$ (the task prompt), not $w_{cot}$ or $w_a$. Low γ (≤1.5) improves valid-answer rate; high γ (>1.5) maintains low invalid rate but degrades accuracy."
+          }
+        ],
+        "refs": [],
+        "related": [
+          "G01",
+          "G02"
+        ]
+      },
+      {
+        "term_id": "G06",
+        "name": "pass@k (HumanEval Metric)",
+        "aliases": [
+          "HumanEval Metric"
+        ],
+        "group": "",
+        "definition": "For HumanEval code generation: k code samples are generated per problem; a problem is considered solved if any sample passes the unit tests; the total fraction of problems solved is reported. Defined per [16] (Chen et al.).",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "$\\text{pass@}k$"
+          },
+          {
+            "label": "Boundary Conditions",
+            "value": "Evaluated for k=1, 10, 100. CFG improves pass@1 at low γ but hurts pass@100, as CFG reduces diversity (exploration) while improving precision."
+          }
+        ],
+        "refs": [],
+        "related": [
+          "G01",
+          "G02"
+        ]
+      },
+      {
+        "term_id": "G07",
+        "name": "Logit Distribution",
+        "aliases": [],
+        "group": "",
+        "definition": "The raw log-probability outputs of the final linear layer of the language model before softmax normalization. CFG operates directly in this space, making it architecture-agnostic (avoids network editing).",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "$\\text{logits}_i = \\log P_\\theta(w_i | w_{j&lt;i}, c)$ (unnormalized log-probabilities)"
+          },
+          {
+            "label": "Boundary Conditions",
+            "value": "The logit space has a linear relationship with the last hidden layer. The semantic structure of logits (confirmed by word/sentence embedding research [51, 60]) makes logit-space arithmetic meaningful."
+          }
+        ],
+        "refs": [],
+        "related": [
+          "G01",
+          "G08",
+          "G03"
+        ]
+      },
+      {
+        "term_id": "G08",
+        "name": "Sampling Entropy",
+        "aliases": [],
+        "group": "",
+        "definition": "The Shannon entropy of the token probability distribution at each decoding step. Measures how concentrated or spread-out the model's prediction is over the vocabulary.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "$H(p) = -\\sum_k p_k \\log p_k$"
+          },
+          {
+            "label": "Boundary Conditions",
+            "value": "CFG reduces mean entropy from 5.4 (vanilla) to 4.7 (CFG γ=1.5), comparable to instruction-tuned model entropy. However, the specific tokens upweighted differ from instruction tuning (top-p overlap &lt; 30%)."
+          }
+        ],
+        "refs": [],
+        "related": [
+          "G07",
+          "G01",
+          "G04"
+        ]
+      }
+    ],
+    "lexicon": {
+      "classifier-free guidance": "G01",
+      "cfg": "G01",
+      "guidance strength": "G02",
+      "unconditional distribution": "G03",
+      "negative prompting": "G04",
+      "chain-of-thoughtprompting": "G05",
+      "pass@k": "G06",
+      "humaneval metric": "G06",
+      "logit distribution": "G07",
+      "sampling entropy": "G08"
+    }
+  },
+  "dependencies": {
+    "title": "Related Work / Dependencies",
+    "preamble": "---\n# Related Work",
+    "legend": [],
+    "attribution": "",
+    "entries": [
+      {
+        "rw_id": "RW01",
+        "inferred_id": false,
+        "name": "Ho & Salimans, 2021 (Original CFG)",
+        "relation_raw": "imports",
+        "relation_norm": "imports",
+        "delta": "What changed: Original CFG was applied to diffusion models with conditioning dropout training; this paper applies CFG to autoregressive LMs without any training changes\nWhy: Autoregressive LMs naturally support unconditional generation; no conditioning dropout needed",
+        "adopted": "Core CFG formula (Eq. 2/3); guidance strength γ interpretation; negative prompting concept",
+        "grounding": [],
+        "claims": [
+          "C01",
+          "C02",
+          "C03",
+          "C04",
+          "C05"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW02",
+        "inferred_id": false,
+        "name": "Dhariwal & Nichol, 2021 (Classifier Guidance)",
+        "relation_raw": "imports",
+        "relation_norm": "imports",
+        "delta": "What changed: Classifier guidance requires separate classifier Pφ(c|x); CFG eliminates the auxiliary classifier by using the model itself\nWhy: Avoids the computational overhead and need for a separate trained classifier",
+        "adopted": "Observation that γ>1 overemphasizes conditioning, trading diversity for quality; γ parameter definition",
+        "grounding": [],
+        "claims": [
+          "C01",
+          "C05"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW03",
+        "inferred_id": false,
+        "name": "Dathathri et al., 2019 (PPLM)",
+        "relation_raw": "baseline",
+        "relation_norm": "baseline",
+        "delta": "What changed: PPLM uses Bayes rule to factorize controlled distribution with gradient-based hidden state modification; CFG operates purely in logit space\nWhy: Logit-space operation is architecture-agnostic and avoids gradient computation at inference time",
+        "adopted": "Conceptual framework of inference-time controlled generation without retraining",
+        "grounding": [
+          {
+            "raw": "arXiv:1912.02164",
+            "kind": "arxiv",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C01",
+          "C04"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW04",
+        "inferred_id": false,
+        "name": "Li et al., 2022 (Contrastive Decoding)",
+        "relation_raw": "baseline",
+        "relation_norm": "baseline",
+        "delta": "What changed: Contrastive decoding uses two different models (expert fs and weak fw): fs(x|y) − fw(x|y); CFG uses a single model with and without prompt\nWhy: Single-model approach avoids need for a second model; CFG is more practical",
+        "adopted": "Vector arithmetic in logit space; idea of subtracting a weaker/less-informed distribution",
+        "grounding": [
+          {
+            "raw": "arXiv:2210.15097",
+            "kind": "arxiv",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C01",
+          "C02"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW05",
+        "inferred_id": false,
+        "name": "Wei et al., 2022 (Chain-of-Thought Prompting)",
+        "relation_raw": "extends",
+        "relation_norm": "extends",
+        "delta": "What changed: CoT was shown to improve reasoning; this paper shows CFG further improves CoT validity rate and accuracy at low γ\nWhy: CFG helps keep CoT chains on-track, reducing drift from the task prompt",
+        "adopted": "CoT prompting methodology; few-shot prompt structure for reasoning tasks",
+        "grounding": [],
+        "claims": [
+          "C03"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW06",
+        "inferred_id": false,
+        "name": "Wang et al., 2023 (Self-Consistency CoT)",
+        "relation_raw": "extends",
+        "relation_norm": "extends",
+        "delta": "What changed: Self-consistency uses majority voting over multiple CoT paths; this paper adds CFG to the CoT generation step within this framework\nWhy: CFG improves individual chain quality, which compounds with self-consistency's ensemble benefit",
+        "adopted": "Few-shot prompt format for GSM8K and AQuA; parsing settings",
+        "grounding": [],
+        "claims": [
+          "C03"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW07",
+        "inferred_id": false,
+        "name": "Yang & Klein, 2021 (FUDGE)",
+        "relation_raw": "baseline",
+        "relation_norm": "baseline",
+        "delta": "What changed: FUDGE uses a future discriminator (auxiliary classifier) to guide generation; CFG uses the model's own conditional vs unconditional distributions\nWhy: CFG requires no auxiliary model; FUDGE requires training a discriminator per attribute",
+        "adopted": "Controlled generation evaluation methodology (toxicity, sentiment)",
+        "grounding": [
+          {
+            "raw": "arXiv:2104.05218",
+            "kind": "arxiv",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C01",
+          "C04"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW08",
+        "inferred_id": false,
+        "name": "Nijkamp et al., 2023 (CodeGen)",
+        "relation_raw": "baseline",
+        "relation_norm": "baseline",
+        "delta": "What changed: CodeGen is evaluated without CFG; this paper applies CFG to CodeGen for HumanEval\nWhy: Code generation represents a formal-language distribution distinct from natural language, testing CFG robustness",
+        "adopted": "CodeGen-350M/2B/6B-mono model checkpoints; HumanEval evaluation framework",
+        "grounding": [],
+        "claims": [
+          "C04"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW09",
+        "inferred_id": false,
+        "name": "Touvron et al., 2023 (LLaMA)",
+        "relation_raw": "baseline",
+        "relation_norm": "baseline",
+        "delta": "What changed: LLaMA evaluated at γ=1 (vanilla); this paper shows LLaMA-7B with CFG (γ=1.5) achieves new SOTA on Lambada\nWhy: LLaMA-7B is a strong open-source baseline; demonstrating CFG improvement on it is significant",
+        "adopted": "LLaMA 7B/13B/30B/65B model checkpoints; TriviaQA evaluation uses substring match per LLaMA methodology",
+        "grounding": [
+          {
+            "raw": "arXiv:2302.13971",
+            "kind": "arxiv",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C01",
+          "C02"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW10",
+        "inferred_id": false,
+        "name": "Biderman et al., 2023 (Pythia)",
+        "relation_raw": "baseline",
+        "relation_norm": "baseline",
+        "delta": "What changed: Pythia provides a controlled model family for scaling analysis; CFG is applied across all sizes\nWhy: Pythia's consistent training setup makes it ideal for studying CFG's effect across model scales",
+        "adopted": "Pythia 160M/410M/1B/1.4B/2.8B/6.9B/12B checkpoints; EleutherAI LM Evaluation Harness",
+        "grounding": [
+          {
+            "raw": "arXiv (2023)",
+            "kind": "arxiv",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C01",
+          "C02"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      }
+    ],
+    "footprint": []
+  },
+  "recipes": {
+    "title": "Solution",
+    "files": [
+      {
+        "file": "algorithm.md",
+        "role": "algorithm",
+        "file_title": "algorithm",
+        "sections": [
+          {
+            "sec_id": null,
+            "heading": "Mathematical Formulation",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "### Standard CFG for Diffusion Models\nGiven conditional model $P_\\theta(x|c)$ and unconditional $P_\\theta(x)$:\n$$\\hat{P}(x|c) \\propto P_\\theta(x|c)^\\gamma \\cdot P_\\theta(x)^{1-\\gamma}$$\n\nIn noise-prediction form (Eq. 3):\n$$\\log \\hat{P}_\\theta(\\epsilon_t | x_{t+1}, c) = \\gamma \\log P_\\theta(\\epsilon_t | x_{t+1}, c) - (\\gamma - 1) \\log P_\\theta(\\epsilon_t | x_{t+1})$$\n\n### CFG for Autoregressive Language Models (Eq. 7)\nFor token $w_i$ given context $w_{j&lt;i}$ and prompt $c$:\n$$\\log \\hat{P}_\\theta(w_i | w_{j&lt;i}, c) = \\log P_\\theta(w_i | w_{j&lt;i}) + \\gamma \\left( \\log P_\\theta(w_i | w_{j&lt;i}, c) - \\log P_\\theta(w_i | w_{j&lt;i}) \\right)$$\n\nThis arises from the factorization (Eq. 6):\n$$\\hat{P}_\\theta(w|c) \\propto \\frac{P_\\theta(w|c)^\\gamma}{P_\\theta(w)^{\\gamma-1}} = \\prod_i \\frac{P_\\theta(w_i | w_{j&lt;i}, c)^\\gamma}{P_\\theta(w_i | w_{j&lt;i})^{\\gamma-1}}$$\n\n### Negative Prompting Extension (Eq. 5 adapted to LMs)\nWith negative prompt $\\bar{c}$:\n$$\\log \\hat{P}_\\theta(w_i | w_{j&lt;i}, c, \\bar{c}) = \\log P_\\theta(w_i | w_{j&lt;i}, \\bar{c}) + \\gamma \\left( \\log P_\\theta(w_i | w_{j&lt;i}, c) - \\log P_\\theta(w_i | w_{j&lt;i}, \\bar{c}) \\right)$$\n\n### Token Upweighting Visualization\nThe token importance score at step $t$ is:\n$$\\Delta_t(w) = \\log P_\\theta(w_t | w_{&lt;t}, c) - \\log P_\\theta(w_T | \\hat{w})$$\n\nRanking vocabulary by $\\Delta_t$ shows which tokens are encouraged (top) vs discouraged (bottom) by CFG at each step.",
+            "text": "### Standard CFG for Diffusion Models\nGiven conditional model $P_\\theta(x|c)$ and unconditional $P_\\theta(x)$:\n$$\\hat{P}(x|c) \\propto P_\\theta(x|c)^\\gamma \\cdot P_\\theta(x)^{1-\\gamma}$$\n\nIn noise-prediction form (Eq. 3):\n$$\\log \\hat{P}_\\theta(\\epsilon_t | x_{t+1}, c) = \\gamma \\log P_\\theta(\\epsilon_t | x_{t+1}, c) - (\\gamma - 1) \\log P_\\theta(\\epsilon_t | x_{t+1})$$\n\n### CFG for Autoregressive Language Models (Eq. 7)\nFor token $w_i$ given context $w_{j&lt;i}$ and prompt $c$:\n$$\\log \\hat{P}_\\theta(w_i | w_{j&lt;i}, c) = \\log P_\\theta(w_i | w_{j&lt;i}) + \\gamma \\left( \\log P_\\theta(w_i | w_{j&lt;i}, c) - \\log P_\\theta(w_i | w_{j&lt;i}) \\right)$$\n\nThis arises from the factorization (Eq. 6):\n$$\\hat{P}_\\theta(w|c) \\propto \\frac{P_\\theta(w|c)^\\gamma}{P_\\theta(w)^{\\gamma-1}} = \\prod_i \\frac{P_\\theta(w_i | w_{j&lt;i}, c)^\\gamma}{P_\\theta(w_i | w_{j&lt;i})^{\\gamma-1}}$$\n\n### Negative Prompting Extension (Eq. 5 adapted to LMs)\nWith negative prompt $\\bar{c}$:\n$$\\log \\hat{P}_\\theta(w_i | w_{j&lt;i}, c, \\bar{c}) = \\log P_\\theta(w_i | w_{j&lt;i}, \\bar{c}) + \\gamma \\left( \\log P_\\theta(w_i | w_{j&lt;i}, c) - \\log P_\\theta(w_i | w_{j&lt;i}, \\bar{c}) \\right)$$\n\n### Token Upweighting Visualization\nThe token importance score at step $t$ is:\n$$\\Delta_t(w) = \\log P_\\theta(w_t | w_{&lt;t}, c) - \\log P_\\theta(w_T | \\hat{w})$$\n\nRanking vocabulary by $\\Delta_t$ shows which tokens are encouraged (top) vs discouraged (bottom) by CFG at each step.",
+            "warn": "",
+            "refs": [],
+            "kind": "math"
+          },
+          {
+            "sec_id": null,
+            "heading": "Pseudocode",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "def cfg_decode(model, prompt_tokens, gamma, max_new_tokens,\n               negative_prompt_tokens=None, temperature=1.0):\n    \"\"\"\n    Classifier-Free Guidance decoding for autoregressive LMs.\n    \n    Args:\n        model: Autoregressive LM with logits output\n        prompt_tokens: Tokenized prompt [seq_len]\n        gamma: Guidance strength (γ); 1.0 = no guidance\n        max_new_tokens: Number of tokens to generate\n        negative_prompt_tokens: If None, use last prompt token as uncond prefix\n        temperature: Sampling temperature\n    \n    Returns:\n        generated_tokens: List of generated token ids\n    \"\"\"\n    context = list(prompt_tokens)\n    \n    # Unconditional prefix: last prompt token (or negative prompt)\n    if negative_prompt_tokens is None:\n        uncond_prefix = [prompt_tokens[-1]]  # last token of prompt\n    else:\n        uncond_prefix = list(negative_prompt_tokens)\n    \n    generated = []\n    for step in range(max_new_tokens):\n        # Forward pass 1: Conditional (full prompt + generated so far)\n        cond_input = context + generated\n        logits_cond = model(cond_input)[-1]  # [vocab_size], last position\n        \n        # Forward pass 2: Unconditional (uncond prefix + generated so far)\n        uncond_input = uncond_prefix + generated\n        logits_uncond = model(uncond_input)[-1]  # [vocab_size], last position\n        \n        # CFG combination (Equation 7)\n        logits_cfg = logits_uncond + gamma * (logits_cond - logits_uncond)\n        \n        # Sample next token\n        logits_cfg = logits_cfg / temperature\n        probs = softmax(logits_cfg)\n        next_token = sample(probs)\n        generated.append(next_token)\n        \n        if is_eos(next_token):\n            break\n    \n    return generated",
+            "text": "```python\ndef cfg_decode(model, prompt_tokens, gamma, max_new_tokens,\n               negative_prompt_tokens=None, temperature=1.0):\n    \"\"\"\n    Classifier-Free Guidance decoding for autoregressive LMs.\n    \n    Args:\n        model: Autoregressive LM with logits output\n        prompt_tokens: Tokenized prompt [seq_len]\n        gamma: Guidance strength (γ); 1.0 = no guidance\n        max_new_tokens: Number of tokens to generate\n        negative_prompt_tokens: If None, use last prompt token as uncond prefix\n        temperature: Sampling temperature\n    \n    Returns:\n        generated_tokens: List of generated token ids\n    \"\"\"\n    context = list(prompt_tokens)\n    \n    # Unconditional prefix: last prompt token (or negative prompt)\n    if negative_prompt_tokens is None:\n        uncond_prefix = [prompt_tokens[-1]]  # last token of prompt\n    else:\n        uncond_prefix = list(negative_prompt_tokens)\n    \n    generated = []\n    for step in range(max_new_tokens):\n        # Forward pass 1: Conditional (full prompt + generated so far)\n        cond_input = context + generated\n        logits_cond = model(cond_input)[-1]  # [vocab_size], last position\n        \n        # Forward pass 2: Unconditional (uncond prefix + generated so far)\n        uncond_input = uncond_prefix + generated\n        logits_uncond = model(uncond_input)[-1]  # [vocab_size], last position\n        \n        # CFG combination (Equation 7)\n        logits_cfg = logits_uncond + gamma * (logits_cond - logits_uncond)\n        \n        # Sample next token\n        logits_cfg = logits_cfg / temperature\n        probs = softmax(logits_cfg)\n        next_token = sample(probs)\n        generated.append(next_token)\n        \n        if is_eos(next_token):\n            break\n    \n    return generated\n```",
+            "warn": "",
+            "refs": [],
+            "kind": "code"
+          },
+          {
+            "sec_id": null,
+            "heading": "Step-by-Step Explanation",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "1. **Initialize**: Start with the tokenized prompt $c$ as the conditional context.\n2. **Set unconditional prefix**: Use the last token of the prompt as the unconditional prefix (approximates dropping $c$). For negative prompting, replace with the tokenized negative prompt $\\bar{c}$.\n3. **For each new token**:\n   a. Run forward pass on `[prompt] + [generated_so_far]` → `logits_cond`\n   b. Run forward pass on `[uncond_prefix] + [generated_so_far]` → `logits_uncond`\n   c. Compute CFG logits: `logits_cfg = logits_uncond + γ * (logits_cond - logits_uncond)`\n   d. Apply temperature; sample next token from softmax of `logits_cfg`\n4. **Append** the sampled token to `generated`; continue until max_new_tokens or EOS.",
+            "text": "1. **Initialize**: Start with the tokenized prompt $c$ as the conditional context.\n2. **Set unconditional prefix**: Use the last token of the prompt as the unconditional prefix (approximates dropping $c$). For negative prompting, replace with the tokenized negative prompt $\\bar{c}$.\n3. **For each new token**:\n   a. Run forward pass on `[prompt] + [generated_so_far]` → `logits_cond`\n   b. Run forward pass on `[uncond_prefix] + [generated_so_far]` → `logits_uncond`\n   c. Compute CFG logits: `logits_cfg = logits_uncond + γ * (logits_cond - logits_uncond)`\n   d. Apply temperature; sample next token from softmax of `logits_cfg`\n4. **Append** the sampled token to `generated`; continue until max_new_tokens or EOS.",
+            "warn": "",
+            "refs": [],
+            "kind": "math"
+          },
+          {
+            "sec_id": null,
+            "heading": "Complexity Analysis",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Time Per Token",
+                "value": "2× forward passes vs 1× for vanilla decoding → roughly 2× inference latency"
+              },
+              {
+                "label": "Memory",
+                "value": "No additional model parameters; KV-cache needed for two sequences simultaneously → slightly higher memory than vanilla"
+              },
+              {
+                "label": "Training Cost",
+                "value": "0 additional training compute (inference-only method)"
+              },
+              {
+                "label": "Flops",
+                "value": "Approximately 2× inference FLOPs per token compared to vanilla; empirically shown to be equivalent to running a 2× larger model without CFG (for 5/9 benchmarks, ANCOVA p>0.01)"
+              }
+            ],
+            "code": "",
+            "text": "- **Time per token**: 2× forward passes vs 1× for vanilla decoding → roughly 2× inference latency\n- **Memory**: No additional model parameters; KV-cache needed for two sequences simultaneously → slightly higher memory than vanilla\n- **Training cost**: 0 additional training compute (inference-only method)\n- **FLOPs**: Approximately 2× inference FLOPs per token compared to vanilla; empirically shown to be equivalent to running a 2× larger model without CFG (for 5/9 benchmarks, ANCOVA p>0.01)",
+            "warn": "",
+            "refs": [],
+            "kind": "kv"
+          }
+        ]
+      },
+      {
+        "file": "architecture.md",
+        "role": "architecture",
+        "file_title": "architecture",
+        "sections": [
+          {
+            "sec_id": null,
+            "heading": "Overview",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "",
+            "text": "CFG for language models is implemented as a **decoding wrapper** that intercepts the token generation loop of any autoregressive language model. It requires two forward passes per token: one with the full prompt (conditional) and one with a truncated prompt (unconditional). The logits from both passes are combined using the CFG formula before sampling.",
+            "warn": "",
+            "refs": [],
+            "kind": "prose"
+          },
+          {
+            "sec_id": null,
+            "heading": "Components",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Purpose",
+                "value": "Provides conditional logits P(wᵢ|w&lt;ᵢ, c) and unconditional logits P(wᵢ|w&lt;ᵢ) at each step\nCombines conditional and unconditional logits using the CFG formula (Eq. 7)\nConstructs the \"unconditional\" input by truncating the prompt to only the last token\nReplaces the unconditional prefix with a \"negative prompt\" for more granular control\nSamples the next token from the CFG-adjusted logit distribution"
+              },
+              {
+                "label": "Inputs",
+                "value": "Token sequences (with and without prompt prefix)\n`logits_cond` [vocab_size], `logits_uncond` [vocab_size], scalar γ\nFull prompt token sequence [seq_len]\nNegative prompt token sequence $\\bar{c}$ (e.g., default system prompt)\n`logits_cfg` [vocab_size], temperature parameter, top-p nucleus"
+              },
+              {
+                "label": "Outputs",
+                "value": "Logit tensors of shape [vocab_size]\n`logits_cfg` [vocab_size] = `logits_uncond + γ * (logits_cond - logits_uncond)`\nTruncated prefix [1] (last token of prompt)\nNegative-conditioned logits P(wᵢ|w&lt;ᵢ, $\\bar{c}$)\nNext token wᵢ"
+              },
+              {
+                "label": "Design Choice",
+                "value": "Any decoder-only transformer (GPT-2, Pythia, LLaMA, CodeGen, etc.) works without modification; no training changes required\nLogit space (pre-softmax) is used because it has linear relationship with last hidden layer and is architecture-agnostic; avoids network editing [9]\nStarting from the last prompt token (rather than a special BOS token) naturally uses the model's in-distribution behavior; aligns with how the model was trained\nUsed in chatbot settings; the default system prompt is the natural \"negative\" to contrast against a user-modified system prompt\nAny standard sampling strategy (greedy, temperature, nucleus) is compatible; CFG adjusts the distribution before sampling"
+              },
+              {
+                "label": "Interaction",
+                "value": "Queried twice per decoding step\n### 2. CFG Logit Combiner\nReceives outputs from LM; sends combined logits to sampler\n### 3. Unconditional Prefix Constructor\nProvides input to the LM's second (unconditional) forward pass\n### 4. Negative Prompt Manager (Optional)\nReplaces the unconditional LM pass; feeds into CFG Logit Combiner\n### 5. Token Sampler\nReceives combined logits; outputs token to append to running context"
+              }
+            ],
+            "code": "",
+            "text": "### 1. Language Model (LM)\n- **Purpose**: Provides conditional logits P(wᵢ|w&lt;ᵢ, c) and unconditional logits P(wᵢ|w&lt;ᵢ) at each step\n- **Inputs**: Token sequences (with and without prompt prefix)\n- **Outputs**: Logit tensors of shape [vocab_size]\n- **Design choice**: Any decoder-only transformer (GPT-2, Pythia, LLaMA, CodeGen, etc.) works without modification; no training changes required\n- **Interaction**: Queried twice per decoding step\n\n### 2. CFG Logit Combiner\n- **Purpose**: Combines conditional and unconditional logits using the CFG formula (Eq. 7)\n- **Inputs**: `logits_cond` [vocab_size], `logits_uncond` [vocab_size], scalar γ\n- **Outputs**: `logits_cfg` [vocab_size] = `logits_uncond + γ * (logits_cond - logits_uncond)`\n- **Design choice**: Logit space (pre-softmax) is used because it has linear relationship with last hidden layer and is architecture-agnostic; avoids network editing [9]\n- **Interaction**: Receives outputs from LM; sends combined logits to sampler\n\n### 3. Unconditional Prefix Constructor\n- **Purpose**: Constructs the \"unconditional\" input by truncating the prompt to only the last token\n- **Inputs**: Full prompt token sequence [seq_len]\n- **Outputs**: Truncated prefix [1] (last token of prompt)\n- **Design choice**: Starting from the last prompt token (rather than a special BOS token) naturally uses the model's in-distribution behavior; aligns with how the model was trained\n- **Interaction**: Provides input to the LM's second (unconditional) forward pass\n\n### 4. Negative Prompt Manager (Optional)\n- **Purpose**: Replaces the unconditional prefix with a \"negative prompt\" for more granular control\n- **Inputs**: Negative prompt token sequence $\\bar{c}$ (e.g., default system prompt)\n- **Outputs**: Negative-conditioned logits P(wᵢ|w&lt;ᵢ, $\\bar{c}$)\n- **Design choice**: Used in chatbot settings; the default system prompt is the natural \"negative\" to contrast against a user-modified system prompt\n- **Interaction**: Replaces the unconditional LM pass; feeds into CFG Logit Combiner\n\n### 5. Token Sampler\n- **Purpose**: Samples the next token from the CFG-adjusted logit distribution\n- **Inputs**: `logits_cfg` [vocab_size], temperature parameter, top-p nucleus\n- **Outputs**: Next token wᵢ\n- **Design choice**: Any standard sampling strategy (greedy, temperature, nucleus) is compatible; CFG adjusts the distribution before sampling\n- **Interaction**: Receives combined logits; outputs token to append to running context",
+            "warn": "",
+            "refs": [],
+            "kind": "kv"
+          },
+          {
+            "sec_id": null,
+            "heading": "Component Graph",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "Prompt (c) ──────────────────────┐\n                                 ▼\n                         ┌─────────────┐\n                         │  LM Forward │ → logits_cond\n                         │ (full prompt)│\n                         └─────────────┘\n                                 ↓\nLast prompt token ──────────────────────┐\n(or negative prompt c̄)                 ▼\n                         ┌─────────────┐\n                         │  LM Forward │ → logits_uncond\n                         │(uncond/neg) │\n                         └─────────────┘\n                                 ↓\n                         ┌─────────────────┐\n                         │ CFG Combiner    │\n                         │ logits_uncond + │ → logits_cfg\n                         │ γ*(cond-uncond) │\n                         └─────────────────┘\n                                 ↓\n                         ┌─────────────┐\n                         │   Sampler   │ → next token wᵢ\n                         └─────────────┘",
+            "text": "```\nPrompt (c) ──────────────────────┐\n                                 ▼\n                         ┌─────────────┐\n                         │  LM Forward │ → logits_cond\n                         │ (full prompt)│\n                         └─────────────┘\n                                 ↓\nLast prompt token ──────────────────────┐\n(or negative prompt c̄)                 ▼\n                         ┌─────────────┐\n                         │  LM Forward │ → logits_uncond\n                         │(uncond/neg) │\n                         └─────────────┘\n                                 ↓\n                         ┌─────────────────┐\n                         │ CFG Combiner    │\n                         │ logits_uncond + │ → logits_cfg\n                         │ γ*(cond-uncond) │\n                         └─────────────────┘\n                                 ↓\n                         ┌─────────────┐\n                         │   Sampler   │ → next token wᵢ\n                         └─────────────┘\n```",
+            "warn": "",
+            "refs": [],
+            "kind": "code"
+          },
+          {
+            "sec_id": null,
+            "heading": "Design Rationale",
+            "markdown": "",
+            "steps": [
+              "**Logit space vs hidden space**: CFG is applied in logit space (not hidden states) to be architecture-agnostic and avoid network editing.",
+              "**No training required**: Unlike diffusion CFG which needs conditioning dropout, LM CFG works out-of-the-box.",
+              "**Last-token unconditional**: Starting the unconditional forward pass from the last prompt token (not a start token) was found to work well in practice.",
+              "**Negative prompting extension**: The unconditional pass can be replaced with any negative prompt, enabling fine-grained control over what aspects are emphasized."
+            ],
+            "fields": [],
+            "code": "",
+            "text": "1. **Logit space vs hidden space**: CFG is applied in logit space (not hidden states) to be architecture-agnostic and avoid network editing.\n2. **No training required**: Unlike diffusion CFG which needs conditioning dropout, LM CFG works out-of-the-box.\n3. **Last-token unconditional**: Starting the unconditional forward pass from the last prompt token (not a start token) was found to work well in practice.\n4. **Negative prompting extension**: The unconditional pass can be replaced with any negative prompt, enabling fine-grained control over what aspects are emphasized.",
+            "warn": "",
+            "refs": [],
+            "kind": "steps"
+          },
+          {
+            "sec_id": null,
+            "heading": "Code Reference",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "",
+            "text": "- Core implementation: [src/execution/cfg_decoding.py](../../src/execution/cfg_decoding.py)",
+            "warn": "",
+            "refs": [],
+            "kind": "prose"
+          }
+        ]
+      },
+      {
+        "file": "constraints.md",
+        "role": "constraints",
+        "file_title": "constraints",
+        "sections": [
+          {
+            "sec_id": null,
+            "heading": "Boundary Conditions",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Condition",
+                "value": "The optimal γ value varies significantly across tasks and prompting paradigms.\nγ values too high (task-dependent) reduce output diversity and quality.\nIn zero-shot benchmarks where desired continuations are 1-2 tokens, the main benefit of CFG is variance reduction, not long-range coherence.\nCFG with γ=1.5 does not consistently improve ARC (challenge) and WinoGrande benchmarks.\nModels that are already at the \"pinnacle\" of zero-shot performance (e.g., mT0 prompt-tuned model) show no significant CFG gains.\nCFG requires two forward passes per token, approximately doubling compute."
+              },
+              {
+                "label": "Evidence",
+                "value": "Zero-shot tasks work well with γ=1.5; CoT tasks degrade at γ>1.5; assistant tasks peak at γ=3; machine translation works best at γ∈[1.1, 1.25].\nHumanEval pass@k degrades at γ≥1.5 for k=100; CoT accuracy drops at γ>1.5; assistant tasks degrade at γ≥4.\nSection 3.1 acknowledges risks of meandering are low in short-answer settings; improvements are primarily in entropy reduction.\nFigure 2 / Tables 2a, 2b show mixed results on these two benchmarks; authors note \"reasons for these discrepancies are still unknown.\"\nTable 11 shows mT0 does not benefit from CFG on machine translation; 1-shot Bloom-3B also shows no benefit.\nSection 4 explicitly calculates FLOPs; this is the key trade-off analyzed."
+              },
+              {
+                "label": "Implication",
+                "value": "CFG cannot be applied with a single fixed γ across all tasks; requires exploration/tuning per application.\n### BC2: High Gamma Degrades Quality\nThere is an optimal γ range per task; overstepping it harms performance.\n### BC3: Limited Benefit for Short-Continuation Tasks\nFor very short continuations, alternative methods may be equally effective with less overhead.\n### BC4: Inconsistent on ARC-Challenge and WinoGrande\nCFG may not universally benefit all reasoning task types; adversarially constructed datasets may resist CFG.\n### BC5: Already-Tuned Models May Not Benefit\nCFG's benefit is largest when there is a gap between prompt adherence and model's default behavior; already well-aligned models may not improve.\n### BC6: 2× Inference Cost\nFor compute-constrained (not VRAM-constrained) deployments, running a larger model may be preferable. VRAM advantage of CFG+small model is significant."
+              }
+            ],
+            "code": "",
+            "text": "### BC1: Gamma Must Be Task-Tuned\n- **Condition**: The optimal γ value varies significantly across tasks and prompting paradigms.\n- **Evidence**: Zero-shot tasks work well with γ=1.5; CoT tasks degrade at γ>1.5; assistant tasks peak at γ=3; machine translation works best at γ∈[1.1, 1.25].\n- **Implication**: CFG cannot be applied with a single fixed γ across all tasks; requires exploration/tuning per application.\n\n### BC2: High Gamma Degrades Quality\n- **Condition**: γ values too high (task-dependent) reduce output diversity and quality.\n- **Evidence**: HumanEval pass@k degrades at γ≥1.5 for k=100; CoT accuracy drops at γ>1.5; assistant tasks degrade at γ≥4.\n- **Implication**: There is an optimal γ range per task; overstepping it harms performance.\n\n### BC3: Limited Benefit for Short-Continuation Tasks\n- **Condition**: In zero-shot benchmarks where desired continuations are 1-2 tokens, the main benefit of CFG is variance reduction, not long-range coherence.\n- **Evidence**: Section 3.1 acknowledges risks of meandering are low in short-answer settings; improvements are primarily in entropy reduction.\n- **Implication**: For very short continuations, alternative methods may be equally effective with less overhead.\n\n### BC4: Inconsistent on ARC-Challenge and WinoGrande\n- **Condition**: CFG with γ=1.5 does not consistently improve ARC (challenge) and WinoGrande benchmarks.\n- **Evidence**: Figure 2 / Tables 2a, 2b show mixed results on these two benchmarks; authors note \"reasons for these discrepancies are still unknown.\"\n- **Implication**: CFG may not universally benefit all reasoning task types; adversarially constructed datasets may resist CFG.\n\n### BC5: Already-Tuned Models May Not Benefit\n- **Condition**: Models that are already at the \"pinnacle\" of zero-shot performance (e.g., mT0 prompt-tuned model) show no significant CFG gains.\n- **Evidence**: Table 11 shows mT0 does not benefit from CFG on machine translation; 1-shot Bloom-3B also shows no benefit.\n- **Implication**: CFG's benefit is largest when there is a gap between prompt adherence and model's default behavior; already well-aligned models may not improve.\n\n### BC6: 2× Inference Cost\n- **Condition**: CFG requires two forward passes per token, approximately doubling compute.\n- **Evidence**: Section 4 explicitly calculates FLOPs; this is the key trade-off analyzed.\n- **Implication**: For compute-constrained (not VRAM-constrained) deployments, running a larger model may be preferable. VRAM advantage of CFG+small model is significant.",
+            "warn": "",
+            "refs": [],
+            "kind": "kv"
+          },
+          {
+            "sec_id": null,
+            "heading": "Known Limitations (from paper)",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Security Risk",
+                "value": "CFG has not been tested against prompt injection attacks; increased prompt adherence could amplify malicious prompts."
+              },
+              {
+                "label": "Alignment Risk",
+                "value": "CFG's effects on alignment-breaking prompts are unknown; potential for misuse as a tool to override safety guardrails."
+              },
+              {
+                "label": "Theoretical Incompleteness",
+                "value": "The exact mechanism by which CFG affects generation quality is not fully understood; authors note this as future work."
+              },
+              {
+                "label": "No Llama-Family Cot/Code Evaluation",
+                "value": "LLaMA models are only evaluated zero-shot; CoT uses WizardLM/Guanaco, code uses CodeGen."
+              },
+              {
+                "label": "Human Evaluation Scope",
+                "value": "Only chatbot-style prompts with GPT4All; may not generalize to other assistant models."
+              }
+            ],
+            "code": "",
+            "text": "- **Security risk**: CFG has not been tested against prompt injection attacks; increased prompt adherence could amplify malicious prompts.\n- **Alignment risk**: CFG's effects on alignment-breaking prompts are unknown; potential for misuse as a tool to override safety guardrails.\n- **Theoretical incompleteness**: The exact mechanism by which CFG affects generation quality is not fully understood; authors note this as future work.\n- **No LLaMA-family CoT/Code evaluation**: LLaMA models are only evaluated zero-shot; CoT uses WizardLM/Guanaco, code uses CodeGen.\n- **Human evaluation scope**: Only chatbot-style prompts with GPT4All; may not generalize to other assistant models.",
+            "warn": "- **Theoretical incompleteness**: The exact mechanism by which CFG affects generation quality is not fully understood; authors note this as future work.",
+            "refs": [],
+            "kind": "kv"
+          },
+          {
+            "sec_id": null,
+            "heading": "Assumptions",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "",
+            "text": "- The unconditional distribution P(w) is well-approximated by starting from the last prompt token.\n- Token logits form a semantically structured space where arithmetic interpolation is meaningful.\n- Prompt adherence is generally beneficial for downstream task performance.",
+            "warn": "",
+            "refs": [],
+            "kind": "prose"
+          }
+        ]
+      },
+      {
+        "file": "heuristics.md",
+        "role": "heuristics",
+        "file_title": "heuristics",
+        "sections": [
+          {
+            "sec_id": "H01",
+            "heading": "H01: Start Unconditional Prompt at Last Prompt Token",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "The last token of the user's prompt is in-distribution as a generation start point; it provides minimal context (essentially unconditional) while staying within the model's training distribution. Using a BOS token or random token may cause distribution mismatch."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "high"
+              },
+              {
+                "label": "Bounds",
+                "value": "Must be exactly one token (the last token of the prompt); do not use a full stop or special padding token unless that is naturally the last prompt token."
+              },
+              {
+                "label": "Code Ref",
+                "value": "[src/execution/cfg_decoding.py]"
+              },
+              {
+                "label": "Source",
+                "value": "Section 3.1, \"we implement CFG by starting the unconditional prompt at the last token of the initial prompt\""
+              }
+            ],
+            "code": "",
+            "text": "- **Rationale**: The last token of the user's prompt is in-distribution as a generation start point; it provides minimal context (essentially unconditional) while staying within the model's training distribution. Using a BOS token or random token may cause distribution mismatch.\n- **Sensitivity**: high\n- **Bounds**: Must be exactly one token (the last token of the prompt); do not use a full stop or special padding token unless that is naturally the last prompt token.\n- **Code ref**: [src/execution/cfg_decoding.py]\n- **Source**: Section 3.1, \"we implement CFG by starting the unconditional prompt at the last token of the initial prompt\"",
+            "warn": "",
+            "refs": [],
+            "kind": "kv"
+          },
+          {
+            "sec_id": "H02",
+            "heading": "H02: Gamma of 1.5 for Zero-Shot / Short Benchmarks",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "γ=1.5 provides a good balance between prompt adherence and output quality for zero-shot NLP benchmarks with 1-2 token expected answers. Smaller values show less improvement; larger values risk over-constraining diversity."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "medium"
+              },
+              {
+                "label": "Bounds",
+                "value": "γ∈[1.1, 1.5] for zero-shot tasks; do not exceed 2.0 for short-answer benchmarks."
+              },
+              {
+                "label": "Code Ref",
+                "value": "[src/execution/cfg_decoding.py]"
+              },
+              {
+                "label": "Source",
+                "value": "Section 3.1; Figure 2; benchmark results comparing γ=1 vs γ=1.5"
+              }
+            ],
+            "code": "",
+            "text": "- **Rationale**: γ=1.5 provides a good balance between prompt adherence and output quality for zero-shot NLP benchmarks with 1-2 token expected answers. Smaller values show less improvement; larger values risk over-constraining diversity.\n- **Sensitivity**: medium\n- **Bounds**: γ∈[1.1, 1.5] for zero-shot tasks; do not exceed 2.0 for short-answer benchmarks.\n- **Code ref**: [src/execution/cfg_decoding.py]\n- **Source**: Section 3.1; Figure 2; benchmark results comparing γ=1 vs γ=1.5",
+            "warn": "",
+            "refs": [],
+            "kind": "kv"
+          },
+          {
+            "sec_id": "H03",
+            "heading": "H03: Low Gamma for CoT and Long-Form Generation",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "Chain-of-Thought and code generation require long, creative continuations. High γ over-constrains the search space, reducing the quality of multi-step reasoning chains while still keeping invalid-answer rate low."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "high"
+              },
+              {
+                "label": "Bounds",
+                "value": "γ∈[1.1, 1.5] for CoT; γ∈[1.0, 1.25] for machine translation; degrade rapidly above 1.5."
+              },
+              {
+                "label": "Code Ref",
+                "value": "[src/execution/cfg_decoding.py]"
+              },
+              {
+                "label": "Source",
+                "value": "Section 3.2 (CoT results), Section 3.3 (HumanEval), Appendix D.1 (machine translation)"
+              }
+            ],
+            "code": "",
+            "text": "- **Rationale**: Chain-of-Thought and code generation require long, creative continuations. High γ over-constrains the search space, reducing the quality of multi-step reasoning chains while still keeping invalid-answer rate low.\n- **Sensitivity**: high\n- **Bounds**: γ∈[1.1, 1.5] for CoT; γ∈[1.0, 1.25] for machine translation; degrade rapidly above 1.5.\n- **Code ref**: [src/execution/cfg_decoding.py]\n- **Source**: Section 3.2 (CoT results), Section 3.3 (HumanEval), Appendix D.1 (machine translation)",
+            "warn": "",
+            "refs": [],
+            "kind": "kv"
+          },
+          {
+            "sec_id": "H04",
+            "heading": "H04: Apply CFG Only to Prompt (Not CoT Chain)",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "In CoT prompting, applying CFG to the entire continuation (including the reasoning chain $w_{cot}$) would over-constrain the chain. The insight is that only the initial task prompt $w_p$ should be upweighted; the CoT chain should be allowed to develop more freely."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "high"
+              },
+              {
+                "label": "Bounds",
+                "value": "In CoT: CFG applied only during generation of $w_p$'s continuation up-weighting; $w_{cot}$ and $w_a$ are generated with the same prompt context but the CFG target is only $w_p$."
+              },
+              {
+                "label": "Code Ref",
+                "value": "[src/execution/cfg_decoding.py]"
+              },
+              {
+                "label": "Source",
+                "value": "Section 3.2, end of section: \"instead of upweighting just wp, we might upweight wp, wcot, or other variations\""
+              }
+            ],
+            "code": "",
+            "text": "- **Rationale**: In CoT prompting, applying CFG to the entire continuation (including the reasoning chain $w_{cot}$) would over-constrain the chain. The insight is that only the initial task prompt $w_p$ should be upweighted; the CoT chain should be allowed to develop more freely.\n- **Sensitivity**: high\n- **Bounds**: In CoT: CFG applied only during generation of $w_p$'s continuation up-weighting; $w_{cot}$ and $w_a$ are generated with the same prompt context but the CFG target is only $w_p$.\n- **Code ref**: [src/execution/cfg_decoding.py]\n- **Source**: Section 3.2, end of section: \"instead of upweighting just wp, we might upweight wp, wcot, or other variations\"",
+            "warn": "",
+            "refs": [],
+            "kind": "kv"
+          },
+          {
+            "sec_id": "H05",
+            "heading": "H05: Negative Prompt = Default System Prompt for Chatbots",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "For chatbot/assistant tasks, the most effective negative prompt is the model's own default system prompt. This explicitly emphasizes the difference between the user's modified system prompt and the model's default behavior, rather than contrasting against an arbitrary unconditional distribution."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "medium"
+              },
+              {
+                "label": "Bounds",
+                "value": "Negative prompt should be semantically related to but distinct from the positive prompt; using completely unrelated text as negative prompt may produce unpredictable results. Optimal γ for chatbots is around 3; degrade at γ≥4."
+              },
+              {
+                "label": "Code Ref",
+                "value": "[src/execution/cfg_decoding.py]"
+              },
+              {
+                "label": "Source",
+                "value": "Section 3.4; Figure 5 showing peak at γ=3 with 75% preference"
+              }
+            ],
+            "code": "",
+            "text": "- **Rationale**: For chatbot/assistant tasks, the most effective negative prompt is the model's own default system prompt. This explicitly emphasizes the difference between the user's modified system prompt and the model's default behavior, rather than contrasting against an arbitrary unconditional distribution.\n- **Sensitivity**: medium\n- **Bounds**: Negative prompt should be semantically related to but distinct from the positive prompt; using completely unrelated text as negative prompt may produce unpredictable results. Optimal γ for chatbots is around 3; degrade at γ≥4.\n- **Code ref**: [src/execution/cfg_decoding.py]\n- **Source**: Section 3.4; Figure 5 showing peak at γ=3 with 75% preference",
+            "warn": "",
+            "refs": [],
+            "kind": "kv"
+          }
+        ]
+      }
+    ]
+  }
+}
+/* __ARA_DATA_END__ */
+</script>
+
+<script>
+"use strict";
+(function () {
+  const GLYPH = { question:"Q", experiment:"✦", decision:"→", dead_end:"✗", pivot:"↻", insight:"!", default:"•" };
+  const TYPES = ["question","experiment","decision","dead_end","pivot","insight"];
+
+  let DATA;
+  try {
+    // The payload sits between the BEGIN/END marker comments (kept in-file so the
+    // skill can re-inject). Strip ONLY those two named markers before parsing; the
+    // rest of textContent is pure JSON. (Marker text is not written literally here,
+    // so it stays a single injection site.)
+    var raw = document.getElementById("ara-data").textContent
+                .replace(/\/\*\s*__ARA_DATA_(?:BEGIN|END)__\s*\*\//g, "");
+    DATA = JSON.parse(raw);
+  } catch (e) {
+    document.getElementById("detail").innerHTML =
+      '<div class="none">Could not parse embedded ARA data: ' + String(e) + '</div>';
+    return;
+  }
+
+  const nodes = DATA.nodes || [];
+  const byId = new Map(nodes.map(n => [n.id, n]));
+  const kids = new Map();
+  nodes.forEach(n => kids.set(n.id, []));
+  let roots = [];
+  nodes.forEach(n => {
+    if (n.parent && byId.has(n.parent)) kids.get(n.parent).push(n.id);
+    else roots.push(n.id);
+  });
+  // Traversal order: explicit DATA.order if given, else DFS from roots.
+  let order = Array.isArray(DATA.order) && DATA.order.length ? DATA.order.filter(id => byId.has(id)) : [];
+  if (!order.length) { const seen=new Set(); const dfs=id=>{if(seen.has(id))return;seen.add(id);order.push(id);(kids.get(id)||[]).forEach(dfs)}; roots.forEach(dfs); }
+
+  const esc = s => String(s==null?"":s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  const glyph = t => GLYPH[t] || GLYPH.default;
+  const cls = t => TYPES.includes(t) ? t : "default";
+
+  // ---- header ----
+  const m = DATA.meta || {};
+  document.getElementById("h-title").textContent = m.title || "ARA Trajectory";
+  document.getElementById("h-sub").textContent =
+    [ (m.authors||[]).join(", "), m.venue, m.year ].filter(Boolean).join(" · ");
+  if (m.abstract) document.getElementById("h-abstract").textContent = m.abstract;
+  else document.getElementById("h-abstract-wrap").style.display = "none";
+
+  const ftype = document.getElementById("ftype");
+  const present = [...new Set(nodes.map(n => n.type))];
+  TYPES.concat(present.filter(t=>!TYPES.includes(t))).filter(t=>present.includes(t))
+    .forEach(t => { const o=document.createElement("option"); o.value=t; o.textContent=t; ftype.appendChild(o); });
+
+  // ---- minimal markdown-table renderer ----
+  function renderMd(md){
+    if(!md) return "";
+    const lines = String(md).split("\n");
+    let out=[], i=0;
+    while(i<lines.length){
+      if(/^\s*\|/.test(lines[i]) && i+1<lines.length && /^\s*\|?[\s:|-]+\|?\s*$/.test(lines[i+1])){
+        const row = l => l.replace(/^\s*\|/,"").replace(/\|\s*$/,"").split("|").map(c=>c.trim());
+        const head = row(lines[i]); i+=2; const body=[];
+        while(i<lines.length && /^\s*\|/.test(lines[i])){ body.push(row(lines[i])); i++; }
+        out.push('<table class="md"><thead><tr>'+head.map(h=>"<th>"+esc(h)+"</th>").join("")+
+          '</tr></thead><tbody>'+body.map(r=>"<tr>"+r.map(c=>"<td>"+esc(c)+"</td>").join("")+"</tr>").join("")+"</tbody></table>");
+      } else { if(lines[i].trim()) out.push("<div>"+esc(lines[i])+"</div>"); i++; }
+    }
+    return out.join("");
+  }
+
+  // ---- detail pane ----
+  function block(title, tag, inner, open, cls){
+    return '<details class="block'+(cls?" "+cls:"")+'"'+(open?" open":"")+'><summary>'+esc(title)+
+      (tag?'<span class="tag">'+esc(tag)+'</span>':'')+'</summary><div class="body">'+inner+'</div></details>';
+  }
+  function chips(arr, klass){ return arr&&arr.length ? '<div class="chips">'+arr.map(x=>'<span class="chip '+(klass||"")+'">'+esc(x)+'</span>').join("")+'</div>' : ""; }
+
+  function renderDetail(n){
+    const d = document.getElementById("detail");
+    let h = '<div class="dhead"><span class="badge '+cls(n.type)+'">'+esc(n.type)+'</span>'+
+      '<span class="did">'+esc(n.id)+'</span>'+
+      (n.support_level?'<span class="pill '+esc(n.support_level)+'">'+esc(n.support_level)+'</span>':'')+
+      (n.isolated?'<span class="pill iso">isolated</span>':'')+'</div>';
+    h += '<div class="dtitle">'+esc(n.title||"(untitled)")+'</div>';
+
+    // reasoning (primary, always open) — the agent's thinking IS the content of a step
+    let reason="";
+    if(n.thinking){
+      reason += '<div class="lead">'+esc(n.thinking)+'</div>';
+      if(n.body) reason += '<div class="didwhat">what it did</div><div>'+esc(n.body)+'</div>';
+    } else {
+      reason += n.body ? '<div class="lead">'+esc(n.body)+'</div>' : '<div class="empty">No description.</div>';
+    }
+    if(n.depends_on&&n.depends_on.length) reason += chips(n.depends_on.map(x=>"⇠ depends on "+x));
+    if(n.source_refs&&n.source_refs.length) reason += chips(n.source_refs, "ext");
+    if(n.built_on&&n.built_on.length) reason += chipRow("built on", n.built_on, "chip-built");
+    if(n.rejected_here&&n.rejected_here.length) reason += chipRow("rejected here", n.rejected_here, "chip-rej");
+    if(n.recipe_refs&&n.recipe_refs.length) reason += recipeChips(n.recipe_refs);
+    h += block(n.thinking?"reasoning":"what", n.type, reason, true, "reason");
+
+    // result (the grounded payload) — open
+    const r = n.result||{};
+    if((r.sources&&r.sources.length)||(r.figures&&r.figures.length)||(r.tables&&r.tables.length)||(r.data&&r.data.length)){
+      let s="";
+      (r.figures||[]).forEach(f=>{ s+='<figure><img src="'+esc(f.img)+'" alt="'+esc(f.caption||f.id)+'"/>'+
+        (f.caption?'<figcaption>'+esc(f.caption)+'</figcaption>':'')+'</figure>'; });
+      (r.tables||[]).forEach(t=>{ s+=(t.caption?'<div class="empty">'+esc(t.caption)+'</div>':'')+renderMd(t.markdown); });
+      (r.sources||[]).forEach(q=>{ s+='<div class="quote">'+esc(q.quote)+(q.ref?'<div class="ref">← '+esc(q.ref)+'</div>':'')+'</div>'; });
+      (r.data||[]).forEach(x=>{ s+='<div class="ptr">⛁ <span class="path">'+esc(x.path)+'</span>'+(x.note?' — '+esc(x.note):'')+'</div>'; });
+      h += block("result", "", s, true);
+    }
+
+    // why (claims) — supporting detail, collapsed
+    if(n.why&&n.why.length){
+      const w = n.why.map(c=>{
+        let s='<div class="claim"><h4>'+esc(c.id)+(c.title?' — '+esc(c.title):'')+'</h4>';
+        if(c.statement) s+='<div class="kv">'+esc(c.statement)+'</div>';
+        if(c.status) s+='<div class="kv"><b>status</b> <span class="status '+esc(String(c.status).toLowerCase())+'">'+esc(c.status)+'</span></div>';
+        if(c.conditions) s+='<div class="kv"><b>conditions</b> '+esc(c.conditions)+'</div>';
+        if(c.falsification) s+='<div class="kv"><b>falsified if</b> '+esc(c.falsification)+'</div>';
+        if(c.dependencies&&c.dependencies.length) s+='<div class="kv"><b>depends on</b> '+esc(c.dependencies.join(", "))+'</div>';
+        if(c.provenance) s+='<div class="kv"><span class="prov">provenance: '+esc(c.provenance)+'</span></div>';
+        return s+'</div>';
+      }).join("");
+      h += block("why", n.why.map(c=>c.id).join(" · "), w);
+    }
+
+    // how verified (experiments) — supporting detail, collapsed
+    if(n.verified_by&&n.verified_by.length){
+      const v = n.verified_by.map(e=>'<div class="claim"><h4>'+esc(e.id)+(e.title?' — '+esc(e.title):'')+'</h4>'+
+        (e.run?'<div class="kv"><b>run</b> <span class="path mono">'+esc(e.run)+'</span></div>':'')+
+        (e.setup?'<div class="kv"><b>setup</b> '+esc(e.setup)+'</div>':'')+
+        (e.metrics?'<div class="kv"><b>metrics</b> '+esc(e.metrics)+'</div>':'')+'</div>').join("");
+      h += block("how verified", n.verified_by.map(e=>e.id).join(" · "), v);
+    }
+
+    // artifact pointers (src/artifacts.md) — collapsed
+    if(n.artifact&&n.artifact.length){
+      const a = n.artifact.map(x=>'<div class="ptr">▸ <b>'+esc(x.name)+'</b> — <span class="path">'+esc(x.pointer)+'</span>'+
+        (x.what?'<div class="empty">'+esc(x.what)+'</div>':'')+'</div>').join("");
+      h += block("artifact", "pointer", a);
+    }
+
+    d.innerHTML = h;
+    if(typeof LEX!=="undefined" && LEX) linkifyConcepts(d);
+    d.scrollTop = 0;
+  }
+
+  // ---- map ----
+  let selected = null;
+  function selectNode(id){
+    if(!byId.has(id)) return;
+    selected = id;
+    document.querySelectorAll(".node").forEach(el=>el.classList.toggle("sel", el.dataset.id===id));
+    const el = document.querySelector('.node[data-id="'+CSS.escape(id)+'"]');
+    if(el) el.scrollIntoView({block:"nearest"});
+    renderDetail(byId.get(id));
+    rstat();
+  }
+
+  function nodeRow(n){
+    const row = document.createElement("div");
+    row.className = "node "+(n.type==="dead_end"?"dead":"");
+    row.dataset.id = n.id; row.dataset.type = n.type;
+    // calmer than before: one glyph + id + (quiet) cross-edge marker; the ⊕/⊘ count soup is gone.
+    row.innerHTML = '<span class="glyph '+cls(n.type)+'">'+glyph(n.type)+'</span>'+
+      '<span><span class="meta"><span class="nid">'+esc(n.id)+'</span>'+
+      (n.depends_on&&n.depends_on.length?'<span class="dep" title="depends on '+esc(n.depends_on.join(", "))+'">⇠ '+esc(n.depends_on.join(","))+'</span>':'')+
+      '</span><div class="ntitle">'+esc(n.title||n.body||"(untitled)")+'</div></span>';
+    row.addEventListener("click", ()=>selectNode(n.id));
+    // hover a node to highlight its cross-edge targets (gentler than always-on connectors)
+    if(n.depends_on&&n.depends_on.length){
+      row.addEventListener("mouseenter", ()=>n.depends_on.forEach(t=>{ const el=document.querySelector('.node[data-id="'+CSS.escape(t)+'"]'); if(el) el.classList.add("deptarget"); }));
+      row.addEventListener("mouseleave", ()=>document.querySelectorAll(".node.deptarget").forEach(el=>el.classList.remove("deptarget")));
+    }
+    return row;
+  }
+  function renderSubtree(id, container){
+    const n = byId.get(id); if(!n) return;
+    container.appendChild(nodeRow(n));
+    const cs = kids.get(id)||[];
+    if(cs.length){ const wrap=document.createElement("div"); wrap.className="kid"; cs.forEach(c=>renderSubtree(c,wrap)); container.appendChild(wrap); }
+  }
+  function renderMap(){
+    const map = document.getElementById("map"); map.innerHTML="";
+    const normalRoots = roots.filter(id=>!byId.get(id).isolated);
+    const isoRoots = roots.filter(id=>byId.get(id).isolated);
+    normalRoots.forEach(id=>renderSubtree(id, map));
+    if(isoRoots.length){
+      const box=document.createElement("div"); box.className="isobox";
+      const hdr=document.createElement("div"); hdr.className="isohdr"; hdr.textContent="isolated subtree"; box.appendChild(hdr);
+      isoRoots.forEach(id=>renderSubtree(id, box)); map.appendChild(box);
+    }
+  }
+
+  // ---- filter / search ----
+  function applyFilters(){
+    const q = document.getElementById("q").value.trim().toLowerCase();
+    const ty = document.getElementById("ftype").value;
+    const deadOnly = document.getElementById("fdead").checked;
+    let shown=0;
+    document.querySelectorAll(".node").forEach(el=>{
+      const n = byId.get(el.dataset.id);
+      const text = (n.id+" "+(n.title||"")+" "+(n.body||"")).toLowerCase();
+      const ok = (!q||text.includes(q)) && (!ty||n.type===ty) && (!deadOnly||n.type==="dead_end");
+      el.classList.toggle("dim", !ok);
+      if(ok) shown++;
+    });
+    document.getElementById("rstat").textContent = shown+" / "+nodes.length+" steps";
+  }
+  function rstat(){
+    const i = selected?order.indexOf(selected):-1;
+    document.getElementById("rstat").textContent = (i>=0?("step "+(i+1)+" / "+order.length):(nodes.length+" steps"));
+  }
+
+  // ---- replay ----
+  let timer=null;
+  function step(delta){
+    let i = selected?order.indexOf(selected):-1;
+    i = Math.max(0, Math.min(order.length-1, i+delta));
+    selectNode(order[i]);
+  }
+  function play(){
+    if(timer){ stop(); return; }
+    if(!selected) selectNode(order[0]);
+    document.getElementById("rplay").textContent="⏸ Pause";
+    timer = setInterval(()=>{
+      const i = selected?order.indexOf(selected):-1;
+      if(i>=order.length-1){ stop(); return; }
+      step(1);
+    }, 1300);
+  }
+  function stop(){ if(timer){clearInterval(timer);timer=null;} document.getElementById("rplay").textContent="▶ Replay"; }
+
+  // ======================= v1.1 enrichment layers (all inert unless present) =======================
+  const CTX = DATA.context, GLO = DATA.glossary, DEP = DATA.dependencies, REC = DATA.recipes;
+  const LAYERS = { context:CTX, glossary:GLO, dependencies:DEP, recipes:REC };
+
+  // ---- indexes (built once) ----
+  const claimToNodes = new Map();
+  nodes.forEach(n => (n.why||[]).forEach(c => { if(c&&c.id){ if(!claimToNodes.has(c.id)) claimToNodes.set(c.id,[]); claimToNodes.get(c.id).push(n.id); } }));
+  const firstNodeForClaim = id => (claimToNodes.get(id)||[])[0] || null;
+  const rwById   = new Map(((DEP&&DEP.entries)||[]).map(e => [e.rw_id, e]));
+  const termById = new Map(((GLO&&GLO.terms)||[]).map(t => [t.term_id, t]));
+  // concept "used by" (inferred) from each node's name-matched concepts[]
+  if(GLO){
+    const nameToTerm = new Map();
+    (GLO.terms||[]).forEach(t => { if(t.name) nameToTerm.set(String(t.name).toLowerCase(), t); (t.aliases||[]).forEach(a=>nameToTerm.set(String(a).toLowerCase(), t)); });
+    nodes.forEach(n => (n.concepts||[]).forEach(cn => { const t=nameToTerm.get(String(cn).toLowerCase()); if(t){ (t._used=t._used||[]).push(n.id); } }));
+  }
+
+  // ---- tiny inline-math fallback (no CDN; operates on already-escaped text, adds only safe tags) ----
+  const GK={alpha:"α",beta:"β",gamma:"γ",delta:"δ",epsilon:"ε",eta:"η",theta:"θ",kappa:"κ",lambda:"λ",mu:"μ",nu:"ν",pi:"π",rho:"ρ",sigma:"σ",tau:"τ",phi:"φ",chi:"χ",psi:"ψ",omega:"ω",Delta:"Δ",Sigma:"Σ",Omega:"Ω",Phi:"Φ",Theta:"Θ",Lambda:"Λ",Gamma:"Γ",nabla:"∇",partial:"∂",times:"×",cdot:"·",infty:"∞",approx:"≈",leq:"≤",geq:"≥",neq:"≠",to:"→",in:"∈",sum:"Σ",prod:"Π",sqrt:"√",mathbb:"",mathcal:"",mathbf:"",mathrm:"",left:"",right:""};
+  function texInner(s){
+    s=s.replace(/\\(?:mathbb|mathcal|mathbf|mathrm)\{([^{}]*)\}/g,"$1");
+    s=s.replace(/\\frac\{([^{}]*)\}\{([^{}]*)\}/g,"($1)/($2)");
+    s=s.replace(/\\([A-Za-z]+)/g,(m,w)=>GK[w]!==undefined?GK[w]:m);
+    s=s.replace(/\^\{([^{}]*)\}/g,"<sup>$1</sup>").replace(/\^([\w()+\-])/g,"<sup>$1</sup>");
+    s=s.replace(/_\{([^{}]*)\}/g,"<sub>$1</sub>").replace(/_([\w()+\-])/g,"<sub>$1</sub>");
+    return s;
+  }
+  function mathPass(escaped){
+    if(escaped.indexOf("$")<0) return escaped;
+    return escaped.replace(/\$\$([^$]+)\$\$/g,(m,x)=>'<span class="math">'+texInner(x)+'</span>')
+                  .replace(/\$([^$]+)\$/g,(m,x)=>'<span class="math">'+texInner(x)+'</span>');
+  }
+  function mtext(v){ const e=esc(v); try{ return mathPass(e); }catch(_){ return e; } }
+
+  // ---- typed-ref rendering (off-ARA pointers stay inert; in-ARA targets become jump chips) ----
+  function refUrl(rf){
+    const raw=rf.raw||"";
+    if(rf.kind==="url"){ const m=raw.match(/https?:\/\/\S+/); return m?m[0]:""; }
+    if(rf.kind==="arxiv"){ const m=raw.match(/(\d{4}\.\d{4,5})/); return m?("https://arxiv.org/abs/"+m[1]):""; }
+    if(rf.kind==="doi"){ const m=raw.match(/(10\.\d{4,}\/\S+)/); return m?("https://doi.org/"+m[1]):""; }
+    return "";
+  }
+  function refChip(rf){
+    const raw=esc(rf.raw||""), url=refUrl(rf);
+    if(url) return '<a class="chip ext" href="'+esc(url)+'" target="_blank" rel="noopener">'+raw+'</a>';
+    if(rf.target){
+      if(rf.kind==="claim")        return '<span class="chip jump" data-jump-claim="'+esc(rf.target)+'">'+raw+'</span>';
+      if(rf.kind==="node")         return '<span class="chip jump" data-jump-node="'+esc(rf.target)+'">'+raw+'</span>';
+      if(rf.kind==="concept")      return '<span class="chip jump" data-open-term="'+esc(rf.target)+'">'+raw+'</span>';
+      if(rf.kind==="related_work") return '<span class="chip jump" data-open-panel="dependencies" data-anchor="ov-'+esc(rf.target)+'">'+raw+'</span>';
+      return '<span class="chip jump" data-scroll="ov-'+esc(rf.target)+'">'+raw+'</span>';
+    }
+    const dangle=(rf.kind==="claim"||rf.kind==="related_work"||rf.kind==="concept");
+    return '<span class="chip '+(dangle?'dangle" title="referenced but not found in this ARA':'ext')+'">'+raw+'</span>';
+  }
+  function refRow(refs){ return refs&&refs.length ? '<div class="chips">'+refs.map(refChip).join("")+'</div>' : ""; }
+
+  // ---- per-node provenance chips (consumed by renderDetail) ----
+  function chipRow(label, arr, klass){
+    const cs=arr.map(x=>{
+      const txt=[x.rw_id,x.name].filter(Boolean).join(" · ")||"?";
+      const tip=x.relation_raw?(' title="'+esc(x.relation_raw)+'"'):'';
+      const op =x.rw_id?(' data-open-panel="dependencies" data-anchor="ov-'+esc(x.rw_id)+'"'):'';
+      return '<span class="chip '+klass+(x.rw_id?' jump':'')+'"'+tip+op+'>'+esc(txt)+'</span>';
+    }).join("");
+    return '<div class="chiplabel">'+esc(label)+'</div><div class="chips">'+cs+'</div>';
+  }
+  function recipeChips(arr){
+    const cs=arr.map(x=>{
+      const anchor="ov-sec-"+(x.file||"")+"-"+(x.sec_id||"");
+      return '<span class="chip chip-recipe jump" data-open-panel="recipes" data-anchor="'+esc(anchor)+'" title="'+esc((x.file||"")+(x.role?(" · "+x.role):""))+'">▦ '+esc(x.heading||x.file||"recipe")+'</span>';
+    }).join("");
+    return '<div class="chiplabel">recipe</div><div class="chips">'+cs+'</div>';
+  }
+
+  // ---- the four overlay renderers (reuse block/chips/renderMd) ----
+  function renderContext(){
+    let h=""; if(CTX.summary) h+='<div class="ribbon">'+esc(CTX.summary)+'</div>';
+    (CTX.sections||[]).forEach(sec=>{
+      let inner="";
+      if(sec.present===false){ inner='<div class="muted grey">(not specified in this ARA)</div>'; }
+      else (sec.entries||[]).forEach(en=>{
+        let c='<div class="card" id="ov-'+esc(en.ent_id||"")+'"><h4>'+(en.ent_id?'<span class="did">'+esc(en.ent_id)+'</span> ':'')+esc(en.ent_title||"")+(en.inferred_id?' <span class="sub">(pos.)</span>':'')+'</h4>';
+        if(!en.unstructured && en.fields && en.fields.length) en.fields.forEach(f=>c+='<div class="kv"><b>'+esc(f.label)+'</b> '+mtext(f.value)+'</div>');
+        else if(en.text) c+='<div class="kv">'+mtext(en.text)+'</div>';
+        if(en.unstructured) c+='<div class="sub">unstructured</div>';
+        c+=refRow(en.refs)+'</div>'; inner+=c;
+      });
+      h+=block(sec.heading||sec.role||"section", sec.role||"", inner, sec.role==="insight");
+    });
+    return h || '<div class="muted">No problem context.</div>';
+  }
+  function renderGlossary(filter){
+    const f=(filter||"").trim().toLowerCase();
+    const match=t=>!f||((t.name||"")+" "+(t.aliases||[]).join(" ")+" "+(t.definition||"")).toLowerCase().includes(f);
+    function card(t){
+      let c='<div class="card" id="ov-'+esc(t.term_id)+'"><h4>'+esc(t.name)+(t.group?' <span class="sub">'+esc(t.group)+'</span>':'')+'</h4>';
+      if(t.aliases&&t.aliases.length) c+='<div class="chips">'+t.aliases.map(a=>'<span class="chip">'+esc(a)+'</span>').join("")+'</div>';
+      if(t.definition) c+='<div class="kv">'+mtext(t.definition)+'</div>';
+      (t.fields||[]).forEach(fl=>c+='<div class="kv"><b>'+esc(fl.label)+'</b> '+mtext(fl.value)+'</div>');
+      if(t.related&&t.related.length) c+='<div class="kv"><b>related</b> '+t.related.map(r=>{const rt=termById.get(r);return '<span class="chip jump" data-open-term="'+esc(r)+'">'+esc(rt?rt.name:r)+'</span>';}).join(" ")+'</div>';
+      if(t._used&&t._used.length) c+='<div class="kv"><b>mentions</b> '+[...new Set(t._used)].map(nid=>'<span class="chip jump" data-jump-node="'+esc(nid)+'">'+esc(nid)+'</span>').join(" ")+' <span class="sub">(inferred)</span></div>';
+      return c+refRow(t.refs)+'</div>';
+    }
+    const groups=GLO.groups&&GLO.groups.length?GLO.groups:null; let h="";
+    if(groups){
+      const grouped=new Set();
+      groups.forEach(g=>{ (g.term_ids||[]).forEach(id=>grouped.add(id)); const ts=(g.term_ids||[]).map(id=>termById.get(id)).filter(Boolean).filter(match); if(ts.length) h+=block(g.name||"group", String(ts.length), ts.map(card).join(""), true); });
+      const rest=(GLO.terms||[]).filter(t=>!grouped.has(t.term_id)).filter(match);
+      if(rest.length) h+=block("other", String(rest.length), rest.map(card).join(""), true);
+    } else { const ts=(GLO.terms||[]).filter(match); h=ts.map(card).join(""); }
+    return h || '<div class="muted">No matching terms.</div>';
+  }
+  function renderDeps(filter){
+    const f=(filter||"").trim().toLowerCase(); let h="";
+    if(DEP.preamble) h+='<div class="muted">'+esc(DEP.preamble)+'</div>';
+    if(DEP.attribution) h+='<div class="ribbon">'+esc(DEP.attribution)+'</div>';
+    const ents=(DEP.entries||[]).filter(e=>!e.is_footprint).filter(e=>!f||(((e.rw_id||"")+" "+(e.name||"")+" "+(e.relation_raw||"")+" "+(e.delta||"")).toLowerCase().includes(f)));
+    ents.forEach(e=>{
+      const rn=e.relation_norm, relc=["baseline","imports","extends","bounds","refutes"].includes(rn)?rn:"neutral";
+      let c='<div class="card" id="ov-'+esc(e.rw_id||"")+'"><h4>'+(e.rw_id?'<span class="did">'+esc(e.rw_id)+'</span> ':'')+esc(e.name||"")+'</h4>';
+      c+='<div class="chips"><span class="rel '+relc+'">'+esc(e.relation_raw||rn||"related")+'</span>'+(e.cross_agent?'<span class="chip" title="other-agent provenance">↔ other-agent</span>':'')+'</div>';
+      if(e.delta) c+='<div class="kv">'+mtext(e.delta)+'</div>';
+      if(e.adopted) c+='<div class="kv"><b>adopted</b> '+esc(e.adopted)+'</div>';
+      let prov=(e.grounding||[]).map(refChip).join("");
+      (e.claims||[]).filter(id=>claimToNodes.has(id)).forEach(id=>prov+='<span class="chip jump" data-jump-claim="'+esc(id)+'">'+esc(id)+'</span>');
+      c+= prov?('<div class="kv"><b>grounding</b> '+prov+'</div>'):'<div class="muted">ungrounded</div>';
+      h+=c+'</div>';
+    });
+    if(!ents.length) h+='<div class="muted">No matching dependencies.</div>';
+    const fp=DEP.footprint||[];
+    if(fp.length) h+=block("Citation footprint", String(fp.length), fp.map(x=>'<div class="ptr"><span class="muted">'+esc(x.ref_id||"")+'</span> '+esc(x.citation||"")+'</div>').join(""), false);
+    return h;
+  }
+  function renderRecipes(){
+    let h="";
+    (REC.files||[]).forEach(file=>{
+      let inner="";
+      (file.sections||[]).forEach(sec=>{
+        let c='<div class="card" id="ov-sec-'+esc((file.file||"")+"-"+(sec.sec_id||""))+'"><h4>'+(sec.sec_id?'<span class="did">'+esc(sec.sec_id)+'</span> ':'')+esc(sec.heading||"")+'</h4>';
+        if(sec.kind==="table"&&sec.markdown) c+=renderMd(sec.markdown);
+        else if(sec.kind==="steps"&&sec.steps&&sec.steps.length) c+='<ol>'+sec.steps.map(s=>'<li>'+mtext(String(s).replace(/^\s*\d+\.\s*/,""))+'</li>').join("")+'</ol>';
+        else if(sec.kind==="kv"&&sec.fields&&sec.fields.length) sec.fields.forEach(fl=>c+='<div class="kv"><b>'+esc(fl.label)+'</b> '+mtext(fl.value)+'</div>');
+        else if(sec.kind==="code"&&sec.code) c+='<pre class="snip">'+esc(sec.code)+'</pre>';
+        else if(sec.kind==="math"&&sec.code) c+='<div class="kv math">'+mtext(sec.code)+'</div>';
+        else if(sec.text) c+='<div class="kv">'+mtext(sec.text)+'</div>';
+        if(sec.warn) c+='<div class="warn">'+esc(sec.warn)+'</div>';
+        inner+=c+refRow(sec.refs)+'</div>';
+      });
+      h+=block((file.file_title||file.file||"recipe")+(file.role?("  ·  "+file.role):""), String((file.sections||[]).length), inner, true);
+    });
+    return h || '<div class="muted">No recipe content.</div>';
+  }
+
+  // ---- overlay open/close + layerbar wiring ----
+  const ov=document.getElementById("overlay");
+  let lastTrigger=null;
+  const PANEL_RENDER={ context:renderContext, glossary:()=>renderGlossary(""), dependencies:()=>renderDeps(""), recipes:renderRecipes };
+  function hasContent(name){ const L=LAYERS[name]; if(!L) return false;
+    if(name==="context") return (L.sections||[]).length>0;
+    if(name==="glossary") return (L.terms||[]).length>0;
+    if(name==="dependencies") return (L.entries||[]).length>0||(L.footprint||[]).length>0;
+    if(name==="recipes") return (L.files||[]).length>0; return false; }
+  function panelTitle(name){ const L=LAYERS[name]||{}; return L.title || ({context:"Context",glossary:"Concepts",dependencies:"Dependencies",recipes:"Solution"}[name]); }
+  function panelCount(name){ const L=LAYERS[name]||{};
+    if(name==="glossary") return (L.terms||[]).length;
+    if(name==="dependencies") return (L.entries||[]).length;
+    if(name==="recipes") return (L.files||[]).reduce((a,f)=>a+(f.sections||[]).length,0); return 0; }
+  function openPanel(name, anchor){
+    if(!hasContent(name)) return;
+    stop(); lastTrigger=document.activeElement;
+    document.getElementById("ov-title").textContent=panelTitle(name);
+    const body=document.getElementById("ov-body"); body.innerHTML=PANEL_RENDER[name]();
+    if(LEX) linkifyConcepts(body);
+    const q=document.getElementById("ov-q");
+    if(name==="glossary"||name==="dependencies"){ q.hidden=false; q.value=""; q.dataset.panel=name; } else { q.hidden=true; }
+    ov.hidden=false;
+    if(anchor){ const el=document.getElementById(anchor); if(el) el.scrollIntoView({block:"center"}); } else body.scrollTop=0;
+    (q.hidden?document.getElementById("ov-close"):q).focus();
+  }
+  function closePanel(){ ov.hidden=true; if(lastTrigger&&lastTrigger.focus) lastTrigger.focus(); }
+  document.querySelectorAll(".lbtn").forEach(b=>{ const name=b.dataset.panel;
+    if(hasContent(name)){ b.hidden=false; const c=b.querySelector(".cnt"); if(c){ const n=panelCount(name); if(n) c.textContent=n; } b.addEventListener("click",()=>openPanel(name)); } });
+  document.getElementById("ov-q").addEventListener("input", e=>{ const p=e.target.dataset.panel, body=document.getElementById("ov-body");
+    body.innerHTML = p==="glossary"?renderGlossary(e.target.value):renderDeps(e.target.value); if(LEX) linkifyConcepts(body); });
+
+  // ---- glossary lexicon + popover ----
+  const LEX=(GLO&&GLO.lexicon&&Object.keys(GLO.lexicon).length)?(function(){
+    const surf=Object.keys(GLO.lexicon).filter(s=>s.length>=3).sort((a,b)=>b.length-a.length);
+    if(!surf.length) return null;
+    const re=s=>s.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+    return { re:new RegExp("\\b("+surf.map(re).join("|")+")\\b","i"), map:GLO.lexicon };
+  })():null;
+  const SKIP_TAGS={A:1,CODE:1,PRE:1,BUTTON:1,SCRIPT:1,STYLE:1,H4:1,H5:1,SUMMARY:1};
+  function linkifyConcepts(root){
+    if(!LEX) return;
+    const walker=document.createTreeWalker(root, NodeFilter.SHOW_TEXT, { acceptNode(t){
+      if(!t.nodeValue||!t.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+      let p=t.parentNode; while(p&&p!==root){ if(p.classList&&p.classList.contains("gterm")) return NodeFilter.FILTER_REJECT; if(SKIP_TAGS[p.tagName]) return NodeFilter.FILTER_REJECT; p=p.parentNode; }
+      return NodeFilter.FILTER_ACCEPT; } });
+    const seen=new Set(), hits=[]; let t;
+    while((t=walker.nextNode())){ const m=LEX.re.exec(t.nodeValue); if(!m) continue; const tid=LEX.map[m[1].toLowerCase()]; if(!tid||seen.has(tid)) continue; seen.add(tid); hits.push({node:t,index:m.index,len:m[1].length,tid}); }
+    hits.forEach(hp=>{ const tn=hp.node, txt=tn.nodeValue, par=tn.parentNode; if(!par) return;
+      const span=document.createElement("span"); span.className="gterm"; span.dataset.term=hp.tid; span.tabIndex=0; span.textContent=txt.slice(hp.index,hp.index+hp.len);
+      const after=document.createTextNode(txt.slice(hp.index+hp.len));
+      par.replaceChild(after,tn); par.insertBefore(span,after); par.insertBefore(document.createTextNode(txt.slice(0,hp.index)),span); });
+  }
+  const gpop=document.getElementById("gpop");
+  function gpopShow(span){ const t=termById.get(span.dataset.term); if(!t) return;
+    const def=t.definition||""; gpop.innerHTML='<h5>'+esc(t.name)+'</h5><div>'+mtext(def.slice(0,240))+(def.length>240?'…':'')+'</div><span class="gp-open" data-open-term="'+esc(t.term_id)+'">open in glossary →</span>';
+    gpop.style.display="block"; const r=span.getBoundingClientRect();
+    gpop.style.left=Math.max(6,Math.min(r.left, window.innerWidth-372))+"px"; gpop.style.top=(r.bottom+6)+"px"; }
+  function gpopHide(){ gpop.style.display="none"; }
+
+  // ---- delegated interactions for the new layers ----
+  document.addEventListener("click", e=>{
+    const el=e.target.closest&&e.target.closest("[data-close],[data-jump-node],[data-jump-claim],[data-open-panel],[data-open-term],[data-scroll]");
+    if(!el) return;
+    if(el.hasAttribute("data-close")){ closePanel(); return; }
+    if(el.dataset.jumpNode){ closePanel(); selectNode(el.dataset.jumpNode); return; }
+    if(el.dataset.jumpClaim){ const nid=firstNodeForClaim(el.dataset.jumpClaim); if(nid){ closePanel(); selectNode(nid); } return; }
+    if(el.dataset.openTerm){ openPanel("glossary","ov-"+el.dataset.openTerm); return; }
+    if(el.hasAttribute("data-open-panel")){ openPanel(el.dataset.openPanel, el.dataset.anchor||null); return; }
+    if(el.dataset.scroll){ const t=document.getElementById(el.dataset.scroll); if(t) t.scrollIntoView({block:"center"}); return; }
+  });
+  document.addEventListener("mouseover", e=>{ const g=e.target.closest&&e.target.closest(".gterm"); if(g) gpopShow(g); });
+  document.addEventListener("mouseout",  e=>{ const g=e.target.closest&&e.target.closest(".gterm"); if(g) gpopHide(); });
+  document.addEventListener("focusin",   e=>{ const g=e.target.closest&&e.target.closest(".gterm"); if(g) gpopShow(g); });
+  document.addEventListener("focusout",  e=>{ const g=e.target.closest&&e.target.closest(".gterm"); if(g) gpopHide(); });
+  window.addEventListener("scroll", gpopHide, true);
+
+  document.getElementById("q").addEventListener("input", applyFilters);
+  document.getElementById("ftype").addEventListener("change", applyFilters);
+  document.getElementById("fdead").addEventListener("change", applyFilters);
+  document.getElementById("rplay").addEventListener("click", play);
+  document.getElementById("rprev").addEventListener("click", ()=>{stop();step(-1);});
+  document.getElementById("rnext").addEventListener("click", ()=>{stop();step(1);});
+  document.addEventListener("keydown", e=>{
+    if(e.key==="Escape"){ if(!ov.hidden){ closePanel(); return; } gpopHide(); }
+    if(e.target.tagName==="INPUT"||e.target.tagName==="SELECT") return;
+    if(e.key==="ArrowLeft"){stop();step(-1);} else if(e.key==="ArrowRight"){stop();step(1);}
+    else if(e.key==="c"||e.key==="g"||e.key==="d"||e.key==="r"){ const p={c:"context",g:"glossary",d:"dependencies",r:"recipes"}[e.key]; if(hasContent(p)) openPanel(p); }
+  });
+
+  renderMap();
+  rstat();
+})();
+</script>
+</body>
+</html>

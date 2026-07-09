@@ -1,0 +1,2938 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ARA Trajectory</title>
+<!--
+  ARA Trajectory Viewer — canonical self-contained scaffold for the `research-visualizer` skill.
+
+  HOW THE SKILL USES THIS FILE
+  ----------------------------
+  The rendering logic below is FIXED. The agent does NOT rewrite it. The agent only:
+    1. Parses the ARA into one ARA_DATA object (schema in references/binding.md).
+    2. base64-inlines every referenced figure .png into node.result.figures[].img.
+    3. Replaces ONLY the JSON between the BEGIN/END markers in the <script id="ara-data"> block.
+    4. Writes the result to <ara>/trajectory.html (or --output).
+  Everything is inline (no CDN, no fetch, no server) so the output is one portable file.
+
+  INJECTION CONTRACT
+  ------------------
+  - Replace exactly the lines between  __ARA_DATA_BEGIN__  and  __ARA_DATA_END__.
+  - The payload MUST be valid JSON (it is read with JSON.parse).
+  - JSON must not contain the literal substring "</script>"; escape any "<" in inlined
+    markdown/text as "<" to be safe.
+  - The demo payload shipped here renders a 3-node sample so the bare template opens and
+    shows every node state (experiment, dead_end, isolated). The skill overwrites it.
+-->
+<style>
+  /* Research Visualizer — "field notebook of a machine scientist".
+     Cool archival vellum + ink; monospace is the machine-readout voice for
+     structure / IDs / data, a humanist serif carries the reasoning prose. The
+     signature is a traced trajectory spine that forks at branches and is struck
+     through at dead ends. Type is read from glyph + label; colour is reserved
+     for true epistemic status (teal = chrome, green = supported, amber =
+     tentative, clay-red = dead end) — never decoration. */
+  :root{
+    /* paper & ink — deliberately cool vellum, NOT warm cream */
+    --bg:#e9ece4; --panel:#f4f6f0; --panel2:#e3e7dd; --line:#ccd3c7; --ink:#1b2420;
+    --muted:#67726a; --faint:#8a948b; --accent:#0e6b62; --accent-ink:#0a4f48; --chip:#e6eae0;
+    --ok:#3a6a39; --warn:#a6402c; --tentative:#8a6310; --glyph-bg:#e0e5da; --glyph-ink:#4a544c;
+    --sel-bg:#e3ede7; --code-bg:#eaeee6; --reason-bg:#f4f6f0;
+    --iso-line:#b7c0ae; --iso-bg:#e5eadf; --iso-ink:#5f6b58;
+    --scrim:rgba(20,28,24,.42); --shadow:rgba(20,28,24,.16);
+    --add-bg:#e0ebdb; --add-ink:#2f5a2e; --del-bg:#f1e0da; --del-ink:#8c3623; --hunk:#67726a;
+    --spine:#c3ccbd; --grid:rgba(27,36,32,.05);
+    /* legacy type vars retained so any leftover hooks resolve */
+    --q:var(--glyph-bg); --exp:var(--glyph-bg); --dec:var(--glyph-bg); --piv:var(--glyph-bg); --ins:var(--glyph-bg); --def:var(--glyph-bg); --dead:var(--warn);
+    /* type roles: a serif reads the prose, monospace reads the machine */
+    --serif:ui-serif,"New York","Iowan Old Style",Palatino,Georgia,serif;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--bg);color:var(--ink);font:14px/1.65 var(--sans);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  code,pre,.mono{font-family:var(--mono)}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+
+  /* ---- masthead ---- */
+  header{padding:20px 24px 14px;border-bottom:1px solid var(--line);background:var(--panel)}
+  header .title{font-family:var(--serif);font-size:23px;font-weight:600;margin:0;letter-spacing:-.012em}
+  header .sub{font-family:var(--mono);color:var(--muted);font-size:11.5px;margin-top:5px;letter-spacing:.01em}
+  header details{margin-top:10px;color:var(--ink)}
+  header summary{cursor:pointer;color:var(--accent-ink);font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em}
+  .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:16px}
+  .toolbar input[type=search],.toolbar select{background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:6px 10px;font-size:13px;font-family:var(--sans)}
+  .toolbar input[type=search]{min-width:230px}
+  .toolbar input[type=search]:focus,.toolbar select:focus{border-color:var(--accent);outline:none}
+  .toolbar label{color:var(--muted);font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.06em;display:flex;gap:6px;align-items:center}
+  .btn{background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:6px 11px;font-size:12.5px;font-family:var(--mono);cursor:pointer;transition:border-color .12s,color .12s,background .12s}
+  .btn:hover{border-color:var(--accent);color:var(--accent-ink)}
+  .btn.primary{border-color:var(--accent);color:#fff;background:var(--accent)}
+  .btn.primary:hover{background:var(--accent-ink)}
+  .spacer{flex:1}
+  .count{color:var(--muted);font-family:var(--mono);font-size:11px;letter-spacing:.04em;padding-left:10px;border-left:1px solid var(--line)}
+
+  main{display:grid;grid-template-columns:minmax(300px,36%) 1fr;height:calc(100% - 0px);min-height:0}
+  #map{overflow:auto;border-right:1px solid var(--line);padding:18px 12px 56px;background:var(--bg);
+    background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+    background-size:24px 24px;background-position:-1px -1px}
+  #detail{overflow:auto;padding:26px 32px 80px;background:var(--bg)}
+
+  /* ---- process map: the trajectory spine is the signature ---- */
+  .node{position:relative;display:flex;gap:10px;align-items:flex-start;padding:7px 9px;border-radius:6px;cursor:pointer;border:1px solid transparent}
+  .node:hover{background:var(--panel2)}
+  .node.sel{background:var(--sel-bg);border-color:var(--accent)}
+  .node.deptarget{background:var(--sel-bg);outline:1px dashed var(--accent);outline-offset:-1px}
+  .node.dim{opacity:.32}
+  .node .glyph{flex:none;width:20px;height:20px;border-radius:5px;display:grid;place-items:center;font-family:var(--mono);font-size:11px;font-weight:700;color:var(--glyph-ink);background:var(--glyph-bg);border:1px solid var(--line);margin-top:1px}
+  .node.sel .glyph{border-color:var(--accent);color:var(--accent-ink)}
+  .node .nid{color:var(--muted);font-size:10.5px;font-family:var(--mono);letter-spacing:.02em}
+  .node .ntitle{font-size:13px;line-height:1.45}
+  .node.dead .ntitle{color:var(--warn);text-decoration:line-through;text-decoration-color:rgba(166,64,44,.45)}
+  .node .meta{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  /* the spine + branch connectors: nested steps trace back to their parent */
+  .kid{margin-left:19px;border-left:2px solid var(--spine);padding-left:14px}
+  .kid>.node::before{content:"";position:absolute;left:-14px;top:14px;width:10px;height:2px;background:var(--spine)}
+  .kid>.node.sel::before{background:var(--accent)}
+  .isobox{border:1px dashed var(--iso-line);border-radius:8px;margin:12px 2px;padding:6px 4px;background:var(--iso-bg)}
+  .isobox .isohdr{color:var(--iso-ink);font-family:var(--mono);font-size:10px;padding:3px 8px 7px;text-transform:uppercase;letter-spacing:.1em}
+  .dep{color:var(--muted);font-size:10px;font-family:var(--mono);border:1px solid var(--line);border-radius:4px;padding:0 5px}
+
+  .glyph.dead_end{background:var(--warn);color:#fff;border-color:var(--warn)}
+
+  /* ---- detail pane ---- */
+  .dhead{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-bottom:2px}
+  .badge{font-family:var(--mono);font-size:10px;font-weight:700;border-radius:4px;padding:3px 9px;color:var(--glyph-ink);background:var(--glyph-bg);border:1px solid var(--line);text-transform:uppercase;letter-spacing:.08em}
+  .badge.dead_end{background:var(--warn);color:#fff;border-color:var(--warn)}
+  .pill{font-family:var(--mono);font-size:10px;border:1px solid var(--line);border-radius:20px;padding:2px 9px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+  .pill.explicit{border-color:var(--ok);color:var(--ok)} .pill.inferred{border-color:var(--tentative);color:var(--tentative)}
+  .pill.iso{border-color:var(--iso-line);color:var(--iso-ink)}
+  .dtitle{font-family:var(--serif);font-size:25px;font-weight:600;margin:12px 0 6px;letter-spacing:-.012em;line-height:1.28}
+  .did{color:var(--muted);font-family:var(--mono);font-size:11.5px}
+
+  .block{border:1px solid var(--line);border-radius:7px;margin:15px 0;background:var(--panel)}
+  .block>summary{cursor:pointer;padding:11px 15px;font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);list-style:none;display:flex;align-items:center;gap:8px}
+  .block>summary::-webkit-details-marker{display:none}
+  .block>summary:hover{color:var(--accent-ink)}
+  .block>summary .tag{margin-left:auto;color:var(--faint);font-size:10.5px;font-weight:400;font-family:var(--mono);text-transform:none;letter-spacing:0}
+  .block .body{padding:4px 16px 16px}
+  /* the primary reasoning block: the agent's thinking, set as typeset prose */
+  .block.reason{border-left:3px solid var(--accent);background:var(--reason-bg)}
+  .block.reason>summary{color:var(--accent-ink)}
+  .block.reason .lead{font-family:var(--serif);font-size:17px;line-height:1.7;color:var(--ink)}
+  .didwhat{color:var(--muted);font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.09em;margin:16px 0 4px}
+  .lead{font-family:var(--serif);color:#2a322c;font-size:16px;line-height:1.7}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:11px}
+  .chip{background:var(--chip);border:1px solid var(--line);border-radius:4px;padding:2px 8px;font-size:11px;color:#46504a;font-family:var(--mono)}
+  .chip.ext{color:var(--muted)}
+
+  .claim{border:1px solid var(--line);border-left:2px solid var(--accent);border-radius:0 6px 6px 0;padding:11px 13px;margin:11px 0;background:var(--panel2)}
+  .claim h4{margin:0 0 6px;font-family:var(--mono);font-size:12px}
+  .claim .kv{font-size:13px;line-height:1.6;margin:4px 0;color:#3a423c}
+  .claim .kv b{color:var(--muted);font-weight:600;font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em}
+  .status{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.05em;border-radius:4px;padding:1px 7px;border:1px solid var(--line)}
+  .status.supported{color:var(--ok);border-color:var(--ok)}
+  .status.refuted{color:var(--warn);border-color:var(--warn)}
+  .status.hypothesis{color:var(--tentative);border-color:var(--tentative)}
+  .prov{font-size:11px;color:var(--iso-ink);font-family:var(--mono)}
+
+  .quote{border-left:3px solid var(--accent);background:var(--panel);border-radius:0 6px 6px 0;padding:9px 13px;margin:9px 0;font-size:13.5px;line-height:1.6;color:#2a322c}
+  .quote .ref{color:var(--muted);font-size:10.5px;font-family:var(--mono);margin-top:5px}
+  figure{margin:14px 0}
+  figure img{max-width:100%;border:1px solid var(--line);border-radius:5px;background:#fff;padding:6px}
+  figcaption{color:var(--muted);font-family:var(--mono);font-size:11px;margin-top:7px}
+
+  table.md{border-collapse:collapse;width:100%;font-family:var(--mono);font-size:12px;margin:10px 0}
+  table.md th,table.md td{border:1px solid var(--line);padding:5px 9px;text-align:left}
+  table.md th{background:var(--panel2);color:var(--ink);font-weight:700;text-transform:uppercase;font-size:10.5px;letter-spacing:.04em}
+  pre.snip{background:var(--code-bg);border:1px solid var(--line);border-radius:6px;padding:10px 12px;overflow:auto;font-size:12px;color:var(--ink);white-space:pre-wrap}
+
+  .ptr{font-size:13px;margin:7px 0}
+  .ptr .path{font-family:var(--mono);color:#46504a}
+  .truncated{color:var(--muted);font-size:11.5px;font-style:italic}
+  .empty{color:var(--muted);font-size:13px}
+  .none{color:var(--muted);padding:40px 24px;text-align:center;font-family:var(--mono);font-size:12px;letter-spacing:.02em}
+  kbd{background:var(--panel2);border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 5px;font-family:var(--mono);font-size:11px}
+
+  /* ---- enrichment layers (all inert unless the data is present) ---- */
+  .layerbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+  .lbtn .cnt{color:var(--muted);font-size:10.5px}
+  .chiplabel{color:var(--muted);font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.08em;margin:12px 0 3px}
+  .chip.jump{cursor:pointer}
+  .chip.jump:hover{border-color:var(--accent);color:var(--accent-ink)}
+  .chip.dangle{color:#9aa49b;text-decoration:line-through;cursor:not-allowed}
+  .chip.infer{border-style:dashed}
+  .chip-built{border-color:var(--ok);color:var(--ok)}
+  .chip-rej{border-color:var(--warn);color:var(--warn)}
+  .chip-recipe{border-color:var(--accent);color:var(--accent-ink)}
+  .nmark{color:var(--muted);font-size:10px;margin-left:5px;font-family:var(--mono)}
+  .rel{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.05em;border-radius:4px;padding:2px 8px;color:var(--glyph-ink);background:var(--glyph-bg);font-weight:700}
+  .rel.bounds,.rel.refutes{background:var(--warn);color:#fff}
+  .rel.neutral{background:var(--chip);color:var(--ink);border:1px solid var(--line);font-weight:400}
+  .ribbon{border-left:3px solid var(--accent);background:var(--panel2);border-radius:0 6px 6px 0;padding:9px 13px;margin:9px 0;color:#3a423c;font-size:13px;line-height:1.6}
+  .warn{border-left:3px solid var(--warn);background:var(--del-bg);border-radius:0 6px 6px 0;padding:9px 13px;margin:9px 0;font-size:13px;line-height:1.6}
+  .muted{color:var(--muted);font-size:11.5px}
+  .math{font-family:var(--serif);font-style:italic}
+  .gterm{border-bottom:1px dashed var(--accent);cursor:help}
+  #gpop{position:fixed;max-width:360px;background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:11px 13px;z-index:60;box-shadow:0 8px 28px var(--shadow);font-size:13px;line-height:1.55;display:none}
+  #gpop h5{margin:0 0 5px;font-family:var(--mono);font-size:12px;text-transform:uppercase;letter-spacing:.05em}
+  #gpop .gp-open{color:var(--accent);cursor:pointer;font-family:var(--mono);font-size:11px;margin-top:7px;display:inline-block}
+  .ov{position:fixed;inset:0;z-index:50}
+  .ov[hidden]{display:none}
+  .ov-scrim{position:absolute;inset:0;background:var(--scrim)}
+  .ov-sheet{position:relative;margin:5vh auto;max-width:920px;max-height:86vh;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 16px 48px var(--shadow)}
+  .ov-head{position:sticky;top:0;display:flex;gap:10px;align-items:center;padding:13px 17px;border-bottom:1px solid var(--line);background:var(--panel);z-index:1}
+  .ov-head #ov-title{font-family:var(--mono);font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.09em;color:var(--accent-ink)}
+  .ov-head input[type=search]{flex:1;max-width:260px;background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:5px 10px;font-size:13px}
+  .ov-body{padding:10px 17px 26px}
+  .ov-body .spacer{flex:1}
+  .card{border:1px solid var(--line);border-radius:6px;padding:11px 13px;margin:11px 0;background:var(--panel2)}
+  .card h4{margin:0 0 6px;font-family:var(--mono);font-size:12px}
+  .card .sub{color:var(--muted);font-family:var(--mono);font-size:10.5px}
+  .grey{opacity:.5}
+
+  /* responsive: stack the two panes on a narrow screen */
+  @media (max-width:720px){
+    main{grid-template-columns:1fr;grid-template-rows:42vh 1fr}
+    #map{border-right:none;border-bottom:1px solid var(--line)}
+    #detail{padding:20px 18px 64px}
+    .dtitle{font-size:21px}
+  }
+  /* honour reduced-motion */
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<header>
+  <h1 class="title" id="h-title">ARA Trajectory</h1>
+  <div class="sub" id="h-sub"></div>
+  <details id="h-abstract-wrap"><summary>Abstract</summary><div class="lead" id="h-abstract"></div></details>
+  <div class="toolbar">
+    <input type="search" id="q" placeholder="search steps…" autocomplete="off" />
+    <label>type
+      <select id="ftype"><option value="">all</option></select>
+    </label>
+    <label><input type="checkbox" id="fdead" /> dead ends only</label>
+    <span class="spacer"></span>
+    <button class="btn" id="rprev" title="previous (←)">‹</button>
+    <button class="btn primary" id="rplay">▶ Replay</button>
+    <button class="btn" id="rnext" title="next (→)">›</button>
+    <span class="count" id="rstat"></span>
+  </div>
+  <div class="layerbar" id="layerbar">
+    <button class="btn lbtn" data-panel="context" hidden>◧ Context</button>
+    <button class="btn lbtn" data-panel="glossary" hidden>▤ Glossary <span class="cnt"></span></button>
+    <button class="btn lbtn" data-panel="dependencies" hidden>⇄ Dependencies <span class="cnt"></span></button>
+    <button class="btn lbtn" data-panel="recipes" hidden>▦ Recipes <span class="cnt"></span></button>
+  </div>
+</header>
+
+<main>
+  <aside id="map"></aside>
+  <section id="detail"><div class="none">Select a step on the left, or press <kbd>▶ Replay</kbd>.</div></section>
+</main>
+
+<!-- v1.1: one shared modal overlay for the Context/Glossary/Dependencies/Recipes panels, + a glossary popover. Both inert unless their data is present. -->
+<div id="overlay" class="ov" hidden role="dialog" aria-modal="true">
+  <div class="ov-scrim" data-close></div>
+  <div class="ov-sheet">
+    <div class="ov-head"><span id="ov-title"></span>
+      <input type="search" id="ov-q" placeholder="filter…" hidden autocomplete="off" />
+      <span class="spacer"></span>
+      <button class="btn" id="ov-close" data-close>✕ <kbd>Esc</kbd></button>
+    </div>
+    <div class="ov-body" id="ov-body"></div>
+  </div>
+</div>
+<div id="gpop"></div>
+
+<!-- The skill replaces ONLY the JSON between the two markers below. -->
+<script id="ara-data" type="application/json">
+/* __ARA_DATA_BEGIN__ */
+{
+  "meta": {
+    "title": "Unsupervised Zero-Shot Reinforcement Learning via Functional Reward Encodings",
+    "authors": [
+      "Kevin Frans",
+      "Seohong Park",
+      "Pieter Abbeel",
+      "Sergey Levine"
+    ],
+    "year": "2024",
+    "venue": "arXiv",
+    "ara_dir": "fre",
+    "abstract": "Can we pre-train a generalist agent from a large amount of unlabeled offline trajectories such that it can be immediately adapted to any new downstream tasks in a zero-shot manner? In this work, we present a functional reward encoding (FRE) as a general, scalable solution to this zero-shot RL problem. Our main idea is to learn functional representations of any arbitrary tasks by encoding their state-reward samples using a transformer-based variational auto-encoder. This functional encoding not only enables the pre-training of an agent from a wide diversity of general unsupervised reward functions, but also provides a way to solve any new downstream tasks in a zero-shot manner, given a small number of reward-annotated samples. We empirically show that FRE agents trained on diverse random unsupervised reward functions can generalize to solve novel tasks in a range of simulated robotic benchmarks, often outperforming previous zero-shot RL and offline RL methods."
+  },
+  "order": [
+    "N01",
+    "N02",
+    "N03",
+    "N04",
+    "N05",
+    "N06",
+    "N07",
+    "N08",
+    "N09",
+    "N10",
+    "N11",
+    "N12"
+  ],
+  "nodes": [
+    {
+      "id": "N01",
+      "type": "question",
+      "parent": null,
+      "title": "Can a generalist agent be pre-trained zero-shot from unlabeled offline data?",
+      "body": "The central question: given only state-action trajectories (no reward labels), can we pre-train a single policy that can immediately solve any new reward-specified task at test time using a tiny sample of reward annotations, without any fine-tuning?",
+      "thinking": "This is the question that frames the whole project. Offline datasets are full of recorded state-action trajectories, but almost never come with reward labels attached, since labeling is expensive and task-specific. The question is whether a single policy can be pre-trained purely from that unlabeled data so that, later, it can be pointed at any new task, defined only by a reward function, and immediately act well, using just a handful of reward-annotated examples and no further training.",
+      "support_level": "explicit",
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": []
+    },
+    {
+      "id": "N02",
+      "type": "experiment",
+      "parent": "N01",
+      "title": "Do successor feature methods generalize to arbitrary reward functions?",
+      "body": "No — SF/FB methods are limited to the linear span of pre-defined state features. They fail on directional, simplex, and path tasks that require nonlinear reward representations.",
+      "thinking": "The first thing to check was whether the existing zero-shot RL toolbox already solved this: successor-feature (SF) and forward-backward (FB) methods represent value functions as linear combinations of a fixed set of learned state features. Testing this against the benchmark showed the answer is no: these linear methods do fine on goal-reaching, but collapse on tasks whose reward can't be expressed in that linear span, such as directional movement, random-simplex rewards, or structured paths. That ruled out linear reward representations as a general solution.",
+      "support_level": "explicit",
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [
+        "§2 Related Work"
+      ],
+      "why": [
+        {
+          "id": "C02",
+          "title": "FRE outperforms SF/FB baselines on goal-reaching tasks despite using 160× fewer evaluation samples",
+          "statement": "On goal-reaching evaluations (ant-goal-reaching, exorl-walker-goals, exorl-cheetah-goals, kitchen), FRE with K=32 encoding samples significantly outperforms SF and FB methods that use K=5120 samples, demonstrating that functional encoding is more sample-efficient than linear regression adaptation.",
+          "status": "supported",
+          "falsification": "SF or FB achieve equal or higher scores on goal-reaching tasks when given 32 samples (matching FRE's budget).",
+          "dependencies": [
+            "C01"
+          ],
+          "proof": [
+            "E01"
+          ],
+          "provenance": null
+        }
+      ],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [
+          {
+            "id": "Table 1",
+            "caption": "Offline zero-shot RL comparisons on AntMaze, ExORL, and Kitchen. FRE-conditioned policies match or outperform state-of-the-art prior methods on many standard evaluation objectives including goal-reaching, directional movement, and structured locomotion paths. FRE utilizes only 32 examples of (state, reward) pairs during evaluation, while the FB and SF methods require 5120 examples to be consistent with prior work. Results are normalized between 0 and 100. (Note: OPAL is evaluated with privileged access: 10 skills sampled online per episode, best skill selected.)",
+            "markdown": "| Eval Task | FRE | GC-IQL | GC-BC | OPAL¹ | FB | SF |\n|-----------|-----|--------|-------|-------|----|----|\n| ant-goal-reaching | 48.8 ± 6 | 0.0 ± 0 | 0.4 ± 2 | 40.0 ± 14 | 12.0 ± 18 | 19.4 ± 12 |\n| ant-directional | 55.2 ± 8 | 4.8 ± 14 | 6.5 ± 16 | — | — | 39.4 ± 13 |\n| ant-random-simplex | 21.3 ± 4 | 9.7 ± 2 | 8.5 ± 10 | — | — | 27.3 ± 8 |\n| ant-path-loop | 67.2 ± 36 | 46.6 ± 40 | 13.6 ± 16 | — | — | 44.4 ± 22 |\n| ant-path-edges | 60.0 ± 17 | 23.5 ± 25 | 2.2 ± 5 | — | — | 85.0 ± 10 |\n| ant-path-center | 64.4 ± 38 | 70.3 ± 37 | 39.4 ± 27 | — | — | 58.1 ± 36 |\n| antmaze-all | 52.8 ± 18.2 | 25.8 ± 19.8 | 11.8 ± 12.6 | — | — | 45.6 ± 17.0 |\n| exorl-walker-goals | 94 ± 2 | 58 ± 30 | 100 ± 0 | 92 ± 4 | 52 ± 18 | 88 ± 8 |\n| exorl-cheetah-goals | 58 ± 8 | 1 ± 2 | 0 ± 0 | 100 ± 0 | 14 ± 6 | 0 ± 0 |\n| exorl-walker-velocity | 34 ± 13 | 64 ± 1 | 38 ± 4 | — | — | 8 ± 0 |\n| exorl-cheetah-velocity | 20 ± 2 | 51 ± 3 | 25 ± 3 | — | — | 17 ± 8 |\n| exorl-all | 51.5 ± 6.3 | 43.4 ± 9.1 | 40.9 ± 1.9 | — | — | 28.2 ± 4.0 |\n| kitchen | 66 ± 3 | 3 ± 6 | 1 ± 1 | 59 ± 4 | 35 ± 9 | 26 ± 16 |\n| all | 57 ± 9 | 24 ± 12 | 18 ± 5 | — | — | 33 ± 12 |"
+          }
+        ],
+        "data": []
+      },
+      "verified_by": [
+        {
+          "id": "E01",
+          "title": "Main Zero-Shot Comparison on AntMaze, ExORL, and Kitchen",
+          "verifies": [
+            "C01",
+            "C02",
+            "C03"
+          ],
+          "setup": "Model: FRE (FRE-all prior), GC-IQL, GC-BC, FB, SF, OPAL; Hardware: Not specified in paper; Dataset: antmaze-large-diverse-v2 (D4RL), ExORL walker/cheetah RND, kitchen-complete-v0; System: FRE encoder training 150K steps (AntMaze) / 1M steps (ExORL/Kitchen); policy training 850K steps (AntMaze) / 1M steps (ExORL/Kitchen)",
+          "metrics": "Normalized cumulative reward averaged over episodes and seeds; mean ± std across 5 seeds",
+          "run": ""
+        }
+      ],
+      "artifact": [],
+      "built_on": [
+        {
+          "rw_id": "RW01",
+          "name": "Touati & Ollivier, 2021 (Forward-Backward Representations)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW02",
+          "name": "Touati et al., 2022 (Does Zero-Shot RL Exist?)",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW04",
+          "name": "Barreto et al., 2017 (Successor Features)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW09",
+          "name": "Fu et al., 2020 (D4RL)",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW10",
+          "name": "Yarats et al., 2022 (ExORL)",
+          "relation_raw": "imports"
+        }
+      ],
+      "concepts": [
+        "Functional Reward Encoding (FRE)"
+      ]
+    },
+    {
+      "id": "N03",
+      "type": "dead_end",
+      "parent": "N02",
+      "title": "Use linear reward structure (SF/FB) for zero-shot generalization",
+      "body": "Hypothesis: A linearized value function over learned features can cover the full space of downstream rewards. Failure mode: Tasks outside the linear span of features (directional movement, random simplex rewards, structured path tasks) receive near-zero performance; the approach is fundamentally limited to linear reward families. Lesson: General zero-shot RL requires moving beyond linear reward structure; we need a functional representation that can encode arbitrary reward functions.",
+      "thinking": "The working hypothesis going in was that a linearized value function built on top of learned state features could, in principle, be steered to cover any downstream reward just by changing the linear weights. That turned out to be false: any task whose reward function falls outside the linear span of those features, such as directional movement, random simplex objectives, or multi-step paths, gets solved essentially at chance. The lesson carried forward was that the representation itself needs to be able to encode arbitrary, nonlinear reward functions, not just re-weight a fixed feature basis.",
+      "support_level": "inferred",
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": []
+    },
+    {
+      "id": "N04",
+      "type": "decision",
+      "parent": "N02",
+      "title": "Encode reward functions directly by their functional output on states",
+      "body": "Choice: Learn a latent z from (state, reward) samples that compresses the reward function using a permutation-invariant encoder + information bottleneck. alternatives: SF/FB: linearized value functions over pre-specified features; Goal-conditioned RL: restrict to goal-reaching reward family; Meta-RL: require compartmentalized per-task datasets (not available)",
+      "thinking": "Instead of trying to patch the linear-span limitation, the decision was to represent a reward function by how it actually behaves: its functional output on states. Any reward function can be approximated by a lookup table of (state, reward) pairs, so encoding a set of such pairs with a permutation-invariant encoder plus an information bottleneck gives a universal, task-agnostic descriptor. This was chosen over sticking with SF/FB's linear features, restricting to goal-conditioned RL (which only covers goal-reaching rewards), or a meta-RL setup requiring per-task datasets that aren't available in this offline, unlabeled setting.",
+      "support_level": "explicit",
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [
+        {
+          "name": "FRE core encoder/decoder",
+          "pointer": "src/execution/fre.py",
+          "what": "Reward discretization, permutation-invariant transformer encoder, feedforward decoder, and random reward samplers implementing the functional-encoding idea."
+        }
+      ]
+    },
+    {
+      "id": "N05",
+      "type": "experiment",
+      "parent": "N04",
+      "title": "Can a VAE over (state, reward) sets encode diverse reward functions?",
+      "body": "Yes — a transformer VAE trained with an information bottleneck loss learns compact latent representations that accurately decode rewards on held-out states.",
+      "thinking": "The functional-encoding idea from the previous decision needed to be tested directly: can a variational autoencoder, built around a transformer that reads sets of (state, reward) samples, actually learn to compress a reward function and then reconstruct its value on states it never saw during encoding? The result was yes: training with an information-bottleneck objective on top of the transformer produced compact latent codes that decoded held-out rewards accurately, validating the core representational idea before it was scaled up to a full training prior and policy.",
+      "support_level": "explicit",
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [
+        "Figure 3",
+        "§4.1",
+        "Eq. 6"
+      ],
+      "why": [
+        {
+          "id": "C01",
+          "title": "FRE achieves competitive zero-shot performance across diverse reward families using only 32 samples",
+          "statement": "An FRE agent pre-trained on a mixture of random unsupervised reward functions can solve novel downstream tasks in zero-shot by encoding 32 (state, reward) samples, achieving performance competitive with or better than methods using 5120 samples (FB, SF) and methods specialized for specific task types (GC-IQL, GC-BC, OPAL).",
+          "status": "supported",
+          "falsification": "FRE performs statistically significantly worse than all baselines on a majority of evaluation tasks, or requires more than 32 samples to match baseline performance.",
+          "dependencies": [
+            "C02",
+            "C03"
+          ],
+          "proof": [
+            "E01",
+            "E02"
+          ],
+          "provenance": null
+        }
+      ],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [
+        {
+          "id": "E01",
+          "title": "Main Zero-Shot Comparison on AntMaze, ExORL, and Kitchen",
+          "verifies": [
+            "C01",
+            "C02",
+            "C03"
+          ],
+          "setup": "Model: FRE (FRE-all prior), GC-IQL, GC-BC, FB, SF, OPAL; Hardware: Not specified in paper; Dataset: antmaze-large-diverse-v2 (D4RL), ExORL walker/cheetah RND, kitchen-complete-v0; System: FRE encoder training 150K steps (AntMaze) / 1M steps (ExORL/Kitchen); policy training 850K steps (AntMaze) / 1M steps (ExORL/Kitchen)",
+          "metrics": "Normalized cumulative reward averaged over episodes and seeds; mean ± std across 5 seeds",
+          "run": ""
+        },
+        {
+          "id": "E02",
+          "title": "Kitchen Zero-Shot Evaluation",
+          "verifies": [
+            "C01",
+            "C02",
+            "C03"
+          ],
+          "setup": "Model: FRE (FRE-all), GC-IQL, GC-BC, FB, SF, OPAL; Hardware: Not specified in paper; Dataset: kitchen-complete-v0 from D4RL; System: 7 evaluation subtasks (bottom-burner, kettle, light-switch, microwave, slide-cabinet, hinge-cabinet, top-burner); sparse rewards from D4RL Kitchen",
+          "metrics": "Normalized cumulative reward per subtask; average across 7 subtasks; mean ± std across 5 seeds",
+          "run": ""
+        }
+      ],
+      "artifact": [
+        {
+          "name": "FRE core encoder/decoder",
+          "pointer": "src/execution/fre.py",
+          "what": "FREEncoder/FREDecoder classes and fre_elbo_loss implementing the VAE + information-bottleneck training objective."
+        }
+      ],
+      "built_on": [
+        {
+          "rw_id": "RW01",
+          "name": "Touati & Ollivier, 2021 (Forward-Backward Representations)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW02",
+          "name": "Touati et al., 2022 (Does Zero-Shot RL Exist?)",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW03",
+          "name": "Kostrikov et al., 2021 (IQL)",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW04",
+          "name": "Barreto et al., 2017 (Successor Features)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW05",
+          "name": "Ajay et al., 2020 (OPAL)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW06",
+          "name": "Alemi et al., 2016 (Deep VIB)",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW07",
+          "name": "Vaswani et al., 2017 (Transformer)",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW08",
+          "name": "Garnelo et al., 2018 (Neural Processes)",
+          "relation_raw": "extends"
+        },
+        {
+          "rw_id": "RW09",
+          "name": "Fu et al., 2020 (D4RL)",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW10",
+          "name": "Yarats et al., 2022 (ExORL)",
+          "relation_raw": "imports"
+        }
+      ],
+      "concepts": [
+        "Functional Reward Encoding (FRE)",
+        "Implicit Q-Learning (IQL)"
+      ]
+    },
+    {
+      "id": "N06",
+      "type": "decision",
+      "parent": "N05",
+      "title": "Choose encoder architecture: transformer vs. RNN vs. DeepSets",
+      "body": "Choice: Permutation-invariant transformer (no causal mask, no positional encoding) with 4 layers, 256 hidden dim, mean pooling. alternatives: RNN/LSTM: would impose a sequential ordering on the unordered set; DeepSets: simpler but less expressive than full attention; Deterministic neural process: no information bottleneck regularization",
+      "thinking": "Because the encoder input is an unordered set of (state, reward) pairs, not a sequence, the architecture needed to be permutation-invariant by construction. An RNN or LSTM was ruled out since it would silently impose an arbitrary ordering on the samples. A DeepSets architecture would guarantee permutation invariance too, but was judged less expressive than full self-attention. A deterministic neural process was also considered but lacks the information-bottleneck regularization the chosen approach relies on. The final choice was a transformer with no causal mask and no positional encoding, so attention treats every sample symmetrically: 4 layers, 256 hidden dim, with mean pooling to produce a single latent summary.",
+      "support_level": "explicit",
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [
+        {
+          "name": "Permutation-invariant transformer encoder",
+          "pointer": "src/execution/fre_network.py",
+          "what": "TransformerEncoder / TransformerBlock classes implementing the 4-layer, 256-hidden-dim, no-causal-mask, no-positional-encoding transformer."
+        }
+      ]
+    },
+    {
+      "id": "N07",
+      "type": "experiment",
+      "parent": "N06",
+      "title": "What prior reward distribution should FRE train on?",
+      "body": "A mixture of singleton goal-reaching, random linear, and random MLP rewards (each 1/3) provides broad coverage without domain knowledge.",
+      "thinking": "With the encoder architecture settled, the next question was what distribution of reward functions to pre-train it on, since the encoder can only generalize to the kinds of rewards it has seen. The tested answer was a uniform 1/3-1/3-1/3 mixture of singleton goal-reaching rewards, random linear rewards, and random 2-layer MLP rewards, which together span a wide range of reward shapes without hand-coding any domain-specific knowledge about the downstream tasks.",
+      "support_level": "explicit",
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [
+        "§4.2",
+        "§5.3"
+      ],
+      "why": [
+        {
+          "id": "C04",
+          "title": "Performance scales smoothly with reward diversity; FRE-all dominates all reward-subset ablations",
+          "statement": "An FRE agent trained on all three reward families (FRE-all) achieves the highest total score and competitive per-task scores compared to agents trained on any strict subset of reward families, demonstrating that disparate reward families can be jointly encoded without interference.",
+          "status": "supported",
+          "falsification": "Any single-family agent (FRE-goals, FRE-lin, or FRE-mlp) outperforms FRE-all in total score, suggesting negative transfer from reward diversity.",
+          "dependencies": [
+            "C01"
+          ],
+          "proof": [
+            "E03"
+          ],
+          "provenance": null
+        }
+      ],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [
+          {
+            "id": "Table 4",
+            "caption": "Full results comparing FRE agents trained on different subsets of random reward functions in AntMaze. All agents trained on antmaze-large-diverse-v2 with identical training budgets; FRE-all receives 1/3 as many samples of each reward type as single-family agents.",
+            "markdown": "| Eval Task | FRE-all | FRE-goals | FRE-lin | FRE-mlp | FRE-lin-mlp | FRE-goal-mlp | FRE-goal-lin |\n|-----------|---------|-----------|---------|---------|-------------|--------------|--------------|\n| goal-reaching | 48.8 ± 6 | 66.0 ± 4 | 6.0 ± 1 | 24.0 ± 6 | 8.0 ± 4 | 52.0 ± 6 | 54.0 ± 12 |\n| directional | 55.2 ± 8 | 6.6 ± 13 | 55.5 ± 6 | −6.6 ± 14 | 47.9 ± 6 | 5.1 ± 25 | 67.1 ± 5 |\n| random-simplex | 21.3 ± 4 | 23.5 ± 6 | 14.4 ± 3 | 18.5 ± 6 | 14.8 ± 4 | 19.7 ± 5 | 10.7 ± 3 |\n| path-all | 63.8 ± 10 | 8.3 ± 11 | 50.5 ± 9 | 65.4 ± 5 | 58.5 ± 7 | 58.6 ± 23 | 55.8 ± 8 |\n| total | 47.3 ± 7 | 26.1 ± 8 | 31.6 ± 5 | 25.3 ± 8 | 32.3 ± 5 | 33.8 ± 15 | 46.9 ± 7 |"
+          },
+          {
+            "id": "Figure 5",
+            "caption": "Reward diversity scaling (AntMaze). “The general capabilities of a FRE agent scales with diversity of random functions used in training. FRE-all represents an agent trained on a uniform mixture of three random reward families, while each other column represents a specific agent trained on only a subset of the three. The robust FRE-all agent displays the largest total score, and competitive performance among all evaluation tasks, showing that the FRE encoding can combine reward function distributions without losing performance.” Key finding: FRE-all achieves the highest total score (47.3 ± 7) and competitive per-task scores, demonstrating smooth scaling with reward diversity. (No raster image in this ARA -- data table reproduced from the figure's source markdown.)",
+            "markdown": "| FRE Variant | Goal-Reaching | Directional | Random-Simplex | Path-All | Total |\n|-------------|---------------|-------------|----------------|----------|-------|\n| FRE-all | 48.8 ± 6 | 55.2 ± 8 | 21.3 ± 4 | 63.8 ± 10 | 47.3 ± 7 |\n| FRE-goals | 66.0 ± 4 | 6.6 ± 13 | 23.5 ± 6 | 8.3 ± 11 | 26.1 ± 8 |\n| FRE-lin | 6.0 ± 1 | 55.5 ± 6 | 14.4 ± 3 | 50.5 ± 9 | 31.6 ± 5 |\n| FRE-mlp | 24.0 ± 6 | −6.6 ± 14 | 18.5 ± 6 | 65.4 ± 5 | 25.3 ± 8 |\n| FRE-lin-mlp | 8.0 ± 4 | 47.9 ± 6 | 14.8 ± 4 | 58.5 ± 7 | 32.3 ± 5 |\n| FRE-goal-mlp | 52.0 ± 6 | 5.1 ± 25 | 19.7 ± 5 | 58.6 ± 23 | 33.8 ± 15 |\n| FRE-goal-lin | 54.0 ± 12 | 67.1 ± 5 | 10.7 ± 3 | 55.8 ± 8 | 46.9 ± 7 |"
+          }
+        ],
+        "data": []
+      },
+      "verified_by": [
+        {
+          "id": "E03",
+          "title": "Reward Diversity Scaling Ablation (AntMaze)",
+          "verifies": [
+            "C04"
+          ],
+          "setup": "Model: FRE-all, FRE-goals, FRE-lin, FRE-mlp, FRE-lin-mlp, FRE-goal-mlp, FRE-goal-lin (7 variants); Hardware: Not specified in paper; Dataset: antmaze-large-diverse-v2; System: Each agent receives the same total training budget; FRE-all has 1/3 as many goal-reaching samples as FRE-goals",
+          "metrics": "Normalized cumulative reward per task family; total score (average of all tasks); mean ± std across 5 seeds",
+          "run": ""
+        }
+      ],
+      "artifact": [
+        {
+          "name": "Prior reward distribution",
+          "pointer": "src/execution/reward_functions.py",
+          "what": "GoalReachingRewardFunction, LinearRewardFunction, RandomRewardFunction and sample_reward_function implementing the three random reward families."
+        }
+      ],
+      "concepts": [
+        "Prior Reward Distribution",
+        "Functional Reward Encoding (FRE)"
+      ]
+    },
+    {
+      "id": "N08",
+      "type": "dead_end",
+      "parent": "N07",
+      "title": "Use purely random functions (e.g., white noise) as reward prior",
+      "body": "Hypothesis: Maximally diverse random rewards would span all possible tasks. Failure mode: No Free Lunch theorem: purely random functions produce incompressible representations; the encoder cannot learn useful structure. Lesson: The prior needs structured (but domain-agnostic) components; goal-reaching and polynomial-like functions provide useful inductive biases.",
+      "thinking": "One tempting shortcut was to make the training prior as diverse as possible by using purely random, unstructured reward functions like white noise, on the theory that maximal diversity would cover any downstream task. This failed for a fundamental reason: by a No-Free-Lunch-style argument, a reward function with no structure at all cannot be compressed into a useful latent code, so the encoder had nothing learnable to latch onto. The lesson was that the prior still needs structure, just not structure tied to any specific domain; goal-reaching and smooth polynomial-like functions turned out to provide exactly that kind of useful, general-purpose inductive bias.",
+      "support_level": "inferred",
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": []
+    },
+    {
+      "id": "N09",
+      "type": "decision",
+      "parent": "N07",
+      "title": "Use uniform mixture of three random reward families (FRE-all)",
+      "body": "Choice: 1/3 singleton goal-reaching (HER), 1/3 sparse random linear, 1/3 random 2-layer MLP. alternatives: FRE-goals only: specializes to goal-reaching, fails on other tasks; FRE-lin only: specializes to directional, fails on goal-reaching; FRE-mlp only: covers complex rewards but struggles with sparse goal rewards; Adversarial reward generation: too complex, adds hyperparameters",
+      "thinking": "Having established that a mixture of goal, linear, and MLP rewards was the right kind of prior, the remaining question was how to weight the three families. Training on only one family at a time specializes and fails elsewhere: goal-only rewards excel at goal-reaching but fail on other task types, linear-only excels at directional tasks but fails at goal-reaching, and MLP-only handles complex rewards but struggles with sparse goal signals. An adversarial reward-generation scheme was also considered but rejected as adding unnecessary complexity and hyperparameters. The uniform 1/3 mixture across all three families (FRE-all) was chosen because it achieves the highest total score across all AntMaze task families compared to any single-family or pairwise mixture.",
+      "support_level": "explicit",
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [
+          {
+            "id": "Table 4",
+            "caption": "Full results comparing FRE agents trained on different subsets of random reward functions in AntMaze. All agents trained on antmaze-large-diverse-v2 with identical training budgets; FRE-all receives 1/3 as many samples of each reward type as single-family agents.",
+            "markdown": "| Eval Task | FRE-all | FRE-goals | FRE-lin | FRE-mlp | FRE-lin-mlp | FRE-goal-mlp | FRE-goal-lin |\n|-----------|---------|-----------|---------|---------|-------------|--------------|--------------|\n| goal-reaching | 48.8 ± 6 | 66.0 ± 4 | 6.0 ± 1 | 24.0 ± 6 | 8.0 ± 4 | 52.0 ± 6 | 54.0 ± 12 |\n| directional | 55.2 ± 8 | 6.6 ± 13 | 55.5 ± 6 | −6.6 ± 14 | 47.9 ± 6 | 5.1 ± 25 | 67.1 ± 5 |\n| random-simplex | 21.3 ± 4 | 23.5 ± 6 | 14.4 ± 3 | 18.5 ± 6 | 14.8 ± 4 | 19.7 ± 5 | 10.7 ± 3 |\n| path-all | 63.8 ± 10 | 8.3 ± 11 | 50.5 ± 9 | 65.4 ± 5 | 58.5 ± 7 | 58.6 ± 23 | 55.8 ± 8 |\n| total | 47.3 ± 7 | 26.1 ± 8 | 31.6 ± 5 | 25.3 ± 8 | 32.3 ± 5 | 33.8 ± 15 | 46.9 ± 7 |"
+          }
+        ],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [
+        {
+          "name": "Prior reward distribution",
+          "pointer": "src/execution/reward_functions.py",
+          "what": "sample_reward_function implements the uniform 1/3-1/3-1/3 mixture selection across goal, linear, and MLP reward families (FRE-all)."
+        }
+      ],
+      "concepts": [
+        "Functional Reward Encoding (FRE)"
+      ]
+    },
+    {
+      "id": "N10",
+      "type": "decision",
+      "parent": "N09",
+      "title": "Strided vs. joint training of encoder and policy",
+      "body": "Choice: Strided: train FRE encoder-decoder to convergence, then freeze encoder and train IQL policy with frozen z. alternatives: Joint end-to-end training: unstable due to non-stationarity of TD targets when encoder changes; Alternating updates: partial stability improvement but still non-stationary",
+      "thinking": "Once the reward-encoding prior was fixed, the next design decision was how to train the encoder and the downstream IQL policy together. Training both end-to-end was tried and found unstable, because the encoder's output z keeps shifting during training, which makes the TD targets for the Q-function non-stationary. Alternating updates between encoder and policy improved stability somewhat but still left the targets non-stationary. The chosen approach was strided training: train the FRE encoder-decoder to convergence first, then freeze it and train the IQL policy on top of the now-fixed latent representation, guaranteeing a stationary reward-to-z mapping during policy learning.",
+      "support_level": "explicit",
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [
+        {
+          "name": "Strided training pipeline",
+          "pointer": "src/execution/train_fre.py",
+          "what": "Full training script implementing Phase 1 (encoder-decoder pre-training) then Phase 2 (IQL policy training with frozen encoder)."
+        },
+        {
+          "name": "FREAgent training logic",
+          "pointer": "src/execution/fre_network.py",
+          "what": "encoder_train_step / policy_train_step and train_fre implementing the two-phase strided procedure."
+        }
+      ],
+      "concepts": [
+        "Functional Reward Encoding (FRE)",
+        "Implicit Q-Learning (IQL)"
+      ]
+    },
+    {
+      "id": "N11",
+      "type": "experiment",
+      "parent": "N10",
+      "title": "Main zero-shot comparison on AntMaze, ExORL, Kitchen",
+      "body": "FRE (FRE-all) achieves competitive or superior performance vs. FB, SF, GC-IQL, GC-BC, OPAL across all domain/task combinations.",
+      "thinking": "With the architecture, prior, and training procedure all settled, the design was tested end to end against the field: FB, SF, GC-IQL, GC-BC, and OPAL, across AntMaze, ExORL (walker and cheetah), and Kitchen. A single FRE agent trained once, using only 32 (state, reward) samples to identify each task at evaluation time, matched or beat these baselines across the full range of domain and task combinations, including both the goal-reaching tasks that goal-conditioned baselines are built for and the directional/structured tasks that linear methods are built for.",
+      "support_level": "explicit",
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [
+        "§5.2"
+      ],
+      "why": [
+        {
+          "id": "C01",
+          "title": "FRE achieves competitive zero-shot performance across diverse reward families using only 32 samples",
+          "statement": "An FRE agent pre-trained on a mixture of random unsupervised reward functions can solve novel downstream tasks in zero-shot by encoding 32 (state, reward) samples, achieving performance competitive with or better than methods using 5120 samples (FB, SF) and methods specialized for specific task types (GC-IQL, GC-BC, OPAL).",
+          "status": "supported",
+          "falsification": "FRE performs statistically significantly worse than all baselines on a majority of evaluation tasks, or requires more than 32 samples to match baseline performance.",
+          "dependencies": [
+            "C02",
+            "C03"
+          ],
+          "proof": [
+            "E01",
+            "E02"
+          ],
+          "provenance": null
+        },
+        {
+          "id": "C02",
+          "title": "FRE outperforms SF/FB baselines on goal-reaching tasks despite using 160× fewer evaluation samples",
+          "statement": "On goal-reaching evaluations (ant-goal-reaching, exorl-walker-goals, exorl-cheetah-goals, kitchen), FRE with K=32 encoding samples significantly outperforms SF and FB methods that use K=5120 samples, demonstrating that functional encoding is more sample-efficient than linear regression adaptation.",
+          "status": "supported",
+          "falsification": "SF or FB achieve equal or higher scores on goal-reaching tasks when given 32 samples (matching FRE's budget).",
+          "dependencies": [
+            "C01"
+          ],
+          "proof": [
+            "E01"
+          ],
+          "provenance": null
+        },
+        {
+          "id": "C03",
+          "title": "FRE generalizes to non-goal-reaching structured rewards while maintaining goal-reaching competitiveness",
+          "statement": "The same FRE agent trained with the FRE-all mixture prior achieves competitive goal-reaching performance AND solves directional, simplex, and path tasks, whereas GC-IQL and GC-BC score near zero on non-goal-reaching tasks.",
+          "status": "supported",
+          "falsification": "FRE performance on goal-reaching tasks is significantly lower than GC-IQL/GC-BC, OR FRE fails to improve on directional/simplex tasks relative to GC-IQL/GC-BC.",
+          "dependencies": [
+            "C01"
+          ],
+          "proof": [
+            "E01"
+          ],
+          "provenance": null
+        }
+      ],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [
+          {
+            "id": "Table 1",
+            "caption": "Offline zero-shot RL comparisons on AntMaze, ExORL, and Kitchen. FRE-conditioned policies match or outperform state-of-the-art prior methods on many standard evaluation objectives including goal-reaching, directional movement, and structured locomotion paths. FRE utilizes only 32 examples of (state, reward) pairs during evaluation, while the FB and SF methods require 5120 examples to be consistent with prior work. Results are normalized between 0 and 100. (Note: OPAL is evaluated with privileged access: 10 skills sampled online per episode, best skill selected.)",
+            "markdown": "| Eval Task | FRE | GC-IQL | GC-BC | OPAL¹ | FB | SF |\n|-----------|-----|--------|-------|-------|----|----|\n| ant-goal-reaching | 48.8 ± 6 | 0.0 ± 0 | 0.4 ± 2 | 40.0 ± 14 | 12.0 ± 18 | 19.4 ± 12 |\n| ant-directional | 55.2 ± 8 | 4.8 ± 14 | 6.5 ± 16 | — | — | 39.4 ± 13 |\n| ant-random-simplex | 21.3 ± 4 | 9.7 ± 2 | 8.5 ± 10 | — | — | 27.3 ± 8 |\n| ant-path-loop | 67.2 ± 36 | 46.6 ± 40 | 13.6 ± 16 | — | — | 44.4 ± 22 |\n| ant-path-edges | 60.0 ± 17 | 23.5 ± 25 | 2.2 ± 5 | — | — | 85.0 ± 10 |\n| ant-path-center | 64.4 ± 38 | 70.3 ± 37 | 39.4 ± 27 | — | — | 58.1 ± 36 |\n| antmaze-all | 52.8 ± 18.2 | 25.8 ± 19.8 | 11.8 ± 12.6 | — | — | 45.6 ± 17.0 |\n| exorl-walker-goals | 94 ± 2 | 58 ± 30 | 100 ± 0 | 92 ± 4 | 52 ± 18 | 88 ± 8 |\n| exorl-cheetah-goals | 58 ± 8 | 1 ± 2 | 0 ± 0 | 100 ± 0 | 14 ± 6 | 0 ± 0 |\n| exorl-walker-velocity | 34 ± 13 | 64 ± 1 | 38 ± 4 | — | — | 8 ± 0 |\n| exorl-cheetah-velocity | 20 ± 2 | 51 ± 3 | 25 ± 3 | — | — | 17 ± 8 |\n| exorl-all | 51.5 ± 6.3 | 43.4 ± 9.1 | 40.9 ± 1.9 | — | — | 28.2 ± 4.0 |\n| kitchen | 66 ± 3 | 3 ± 6 | 1 ± 1 | 59 ± 4 | 35 ± 9 | 26 ± 16 |\n| all | 57 ± 9 | 24 ± 12 | 18 ± 5 | — | — | 33 ± 12 |"
+          }
+        ],
+        "data": []
+      },
+      "verified_by": [
+        {
+          "id": "E01",
+          "title": "Main Zero-Shot Comparison on AntMaze, ExORL, and Kitchen",
+          "verifies": [
+            "C01",
+            "C02",
+            "C03"
+          ],
+          "setup": "Model: FRE (FRE-all prior), GC-IQL, GC-BC, FB, SF, OPAL; Hardware: Not specified in paper; Dataset: antmaze-large-diverse-v2 (D4RL), ExORL walker/cheetah RND, kitchen-complete-v0; System: FRE encoder training 150K steps (AntMaze) / 1M steps (ExORL/Kitchen); policy training 850K steps (AntMaze) / 1M steps (ExORL/Kitchen)",
+          "metrics": "Normalized cumulative reward averaged over episodes and seeds; mean ± std across 5 seeds",
+          "run": ""
+        },
+        {
+          "id": "E02",
+          "title": "Kitchen Zero-Shot Evaluation",
+          "verifies": [
+            "C01",
+            "C02",
+            "C03"
+          ],
+          "setup": "Model: FRE (FRE-all), GC-IQL, GC-BC, FB, SF, OPAL; Hardware: Not specified in paper; Dataset: kitchen-complete-v0 from D4RL; System: 7 evaluation subtasks (bottom-burner, kettle, light-switch, microwave, slide-cabinet, hinge-cabinet, top-burner); sparse rewards from D4RL Kitchen",
+          "metrics": "Normalized cumulative reward per subtask; average across 7 subtasks; mean ± std across 5 seeds",
+          "run": ""
+        }
+      ],
+      "artifact": [
+        {
+          "name": "Strided training pipeline",
+          "pointer": "src/execution/train_fre.py",
+          "what": "End-to-end training and evaluation pipeline used for the main comparison (evaluate_policy, K=32 encoding, 20 episodes x 5 seeds)."
+        },
+        {
+          "name": "FRE-conditioned IQL policy",
+          "pointer": "src/execution/iql.py",
+          "what": "IQL actor/critic/value networks conditioned on the frozen FRE latent z."
+        }
+      ],
+      "built_on": [
+        {
+          "rw_id": "RW01",
+          "name": "Touati & Ollivier, 2021 (Forward-Backward Representations)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW02",
+          "name": "Touati et al., 2022 (Does Zero-Shot RL Exist?)",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW03",
+          "name": "Kostrikov et al., 2021 (IQL)",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW04",
+          "name": "Barreto et al., 2017 (Successor Features)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW05",
+          "name": "Ajay et al., 2020 (OPAL)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW06",
+          "name": "Alemi et al., 2016 (Deep VIB)",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW07",
+          "name": "Vaswani et al., 2017 (Transformer)",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW08",
+          "name": "Garnelo et al., 2018 (Neural Processes)",
+          "relation_raw": "extends"
+        },
+        {
+          "rw_id": "RW09",
+          "name": "Fu et al., 2020 (D4RL)",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW10",
+          "name": "Yarats et al., 2022 (ExORL)",
+          "relation_raw": "imports"
+        }
+      ],
+      "concepts": [
+        "Functional Reward Encoding (FRE)",
+        "Implicit Q-Learning (IQL)"
+      ]
+    },
+    {
+      "id": "N12",
+      "type": "experiment",
+      "parent": "N11",
+      "title": "Domain knowledge augmentation (FRE-hint)",
+      "body": "Augmenting the prior with domain-specific reward families (directional for AntMaze, velocity for ExORL) further improves performance on targeted tasks without algorithmic changes.",
+      "thinking": "A final question was whether the general-purpose FRE-all prior leaves performance on the table when some domain knowledge about the downstream tasks IS available. Augmenting the training prior with task-relevant reward families (directional rewards for AntMaze, velocity rewards for ExORL) and otherwise changing nothing about the algorithm improved performance specifically on the targeted task types. This shows the same functional-encoding machinery can absorb domain knowledge when it is available, without requiring any architectural changes.",
+      "support_level": "explicit",
+      "isolated": false,
+      "depends_on": [
+        "N09"
+      ],
+      "source_refs": [
+        "§5.4"
+      ],
+      "why": [
+        {
+          "id": "C05",
+          "title": "Domain-specific reward priors (FRE-hint) further improve performance on targeted task distributions",
+          "statement": "Augmenting the random reward prior with task-specific distributions (e.g., directional movement rewards for AntMaze, velocity rewards for ExORL) improves FRE performance on corresponding downstream tasks without requiring algorithmic changes.",
+          "status": "supported",
+          "falsification": "FRE-hint does not improve over FRE-all on the targeted task types for which the domain knowledge was incorporated.",
+          "dependencies": [
+            "C01",
+            "C04"
+          ],
+          "proof": [
+            "E04"
+          ],
+          "provenance": null
+        }
+      ],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [
+          {
+            "id": "Figure 6",
+            "caption": "Domain knowledge augmentation (FRE-hint). “By augmenting the random reward families with specific reward distributions, FRE can utilize domain knowledge without algorithmic changes.” Key finding: FRE-hint improves over FRE-all on all three targeted evaluation tasks by incorporating domain-specific reward distributions into the prior, without any algorithmic changes. Note: exact numerical values for FRE-hint are not explicitly listed in the paper; the figure shows FRE-hint bars visually higher than FRE-all on each targeted task (values below are best-effort reads from the figure description). (No raster image in this ARA -- data table reproduced from the figure's source markdown.)",
+            "markdown": "| Task | FRE-all | FRE-hint |\n|------|---------|----------|\n| ant-directional | 55.2 ± 8 | ≈ 39.4 ± 13 (FB column in Table 1 for reference) |\n| exorl-cheetah-velocity | 20 ± 2 | ≈ higher than FRE-all (exact value not specified in paper) |\n| exorl-walker-velocity | 34 ± 13 | ≈ higher than FRE-all (exact value not specified in paper) |"
+          }
+        ],
+        "data": []
+      },
+      "verified_by": [
+        {
+          "id": "E04",
+          "title": "Domain Knowledge Augmentation (FRE-hint)",
+          "verifies": [
+            "C05"
+          ],
+          "setup": "Model: FRE-all (general), FRE-hint (domain-augmented); Hardware: Not specified in paper; Dataset: antmaze-large-diverse-v2, ExORL cheetah/walker RND; System: FRE-hint augments the prior with domain-specific reward functions (directional rewards for AntMaze; velocity rewards for ExORL)",
+          "metrics": "Normalized cumulative reward; mean ± std across 5 seeds",
+          "run": ""
+        }
+      ],
+      "artifact": [
+        {
+          "name": "Prior reward distribution",
+          "pointer": "src/execution/reward_functions.py",
+          "what": "sample_reward_function's FRE-hint path: domain-specific rewards added (e.g., velocity for DMC)."
+        }
+      ],
+      "concepts": [
+        "Functional Reward Encoding (FRE)"
+      ]
+    }
+  ],
+  "context": {
+    "title": "Problem",
+    "summary": "A reward function η : S → ℝ can be fully characterized by its values on a finite set of states drawn from the offline dataset.",
+    "sections": [
+      {
+        "role": "setting",
+        "heading": "Setting",
+        "present": false,
+        "entries": []
+      },
+      {
+        "role": "observations",
+        "heading": "Observations",
+        "present": true,
+        "entries": [
+          {
+            "ent_id": "O1",
+            "inferred_id": false,
+            "ent_title": "Large unlabeled offline datasets exist but lack reward annotations",
+            "text": "",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "Large offline RL datasets such as ExORL (Yarats et al., 2022) consist of trajectories collected by exploratory policies without any reward labels or task intent."
+              },
+              {
+                "label": "Evidence",
+                "value": "ExORL benchmark contains trajectories from DMControl tasks with no reward signal; D4RL AntMaze and Kitchen provide state-action data with limited task coverage."
+              },
+              {
+                "label": "Implication",
+                "value": "Reward annotation is expensive; any general pre-training method must work from raw trajectory data alone."
+              }
+            ],
+            "refs": []
+          },
+          {
+            "ent_id": "O2",
+            "inferred_id": false,
+            "ent_title": "Prior zero-shot RL methods impose linear reward structure constraints",
+            "text": "",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "Successor Feature (SF) methods (Barreto et al., 2017; Borsa et al., 2018) and Forward-Backward (FB) methods (Touati & Ollivier, 2021; Touati et al., 2022) learn value functions only in the linear span of state features, restricting generalization to non-linear reward functions."
+              },
+              {
+                "label": "Evidence",
+                "value": "FB/SF performance collapses on non-goal-reaching tasks (directional, simplex, path tasks) as shown in Table 1 of the paper."
+              },
+              {
+                "label": "Implication",
+                "value": "Linear reward structure is a fundamental limitation for general zero-shot RL."
+              }
+            ],
+            "refs": []
+          },
+          {
+            "ent_id": "O3",
+            "inferred_id": false,
+            "ent_title": "Goal-conditioned methods cannot solve non-goal-reaching tasks",
+            "text": "",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "GC-IQL and GC-BC score near zero on directional, random-simplex, and structured-path tasks (Table 1), since they specialize in goal-conditioned policies."
+              },
+              {
+                "label": "Evidence",
+                "value": "ant-directional: GC-IQL=4.8±14, GC-BC=6.5±16 vs. FRE=55.2±8; ant-random-simplex: GC-IQL=9.7±2, GC-BC=8.5±10 vs. FRE=21.3±4."
+              },
+              {
+                "label": "Implication",
+                "value": "A general zero-shot agent must handle arbitrary reward structures beyond goal-reaching."
+              }
+            ],
+            "refs": []
+          },
+          {
+            "ent_id": "O4",
+            "inferred_id": false,
+            "ent_title": "At test time, reward annotations are available only as a small sample",
+            "text": "",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "Downstream tasks are specified as reward functions η : S → ℝ, but only a small number of (s, η(s)) tuples are available. FRE uses K=32 samples; FB/SF methods use 5120."
+              },
+              {
+                "label": "Evidence",
+                "value": "Section 3 problem setting; Table 1 footnote specifying evaluation sample counts."
+              },
+              {
+                "label": "Implication",
+                "value": "Test-time task identification must be efficient in sample count."
+              }
+            ],
+            "refs": []
+          }
+        ]
+      },
+      {
+        "role": "gaps",
+        "heading": "Gaps",
+        "present": true,
+        "entries": [
+          {
+            "ent_id": "G1",
+            "inferred_id": false,
+            "ent_title": "No method simultaneously handles goal-reaching AND arbitrary reward functions",
+            "text": "",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "Existing zero-shot RL methods either handle goal-reaching well (GC-IQL, GC-BC) or structured linear rewards (FB, SF), but not both."
+              },
+              {
+                "label": "Caused by",
+                "value": "O2, O3"
+              },
+              {
+                "label": "Existing attempts",
+                "value": "FB unifies tasks through linearized value functions; OPAL learns skills via behavioral cloning but lacks zero-shot adaptation."
+              },
+              {
+                "label": "Why they fail",
+                "value": "Linear function approximation in SF/FB limits coverage; goal-conditioning restricts the reward family to {reach state g}."
+              }
+            ],
+            "refs": [
+              {
+                "raw": "O2",
+                "kind": "observation",
+                "target": "O2"
+              },
+              {
+                "raw": "O3",
+                "kind": "observation",
+                "target": "O3"
+              }
+            ]
+          },
+          {
+            "ent_id": "G2",
+            "inferred_id": false,
+            "ent_title": "No domain-agnostic prior over reward functions for unsupervised pre-training",
+            "text": "",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "Without knowing downstream tasks, we need a prior p(η) that broadly spans possible objectives without requiring domain-specific task annotations."
+              },
+              {
+                "label": "Caused by",
+                "value": "O1, O4"
+              },
+              {
+                "label": "Existing attempts",
+                "value": "Random MDP reward functions are too unstructured (No Free Lunch); manually designed task sets require human effort."
+              },
+              {
+                "label": "Why they fail",
+                "value": "Purely random functions lead to incompressible representations; structured priors require domain knowledge."
+              }
+            ],
+            "refs": [
+              {
+                "raw": "O1",
+                "kind": "observation",
+                "target": "O1"
+              },
+              {
+                "raw": "O4",
+                "kind": "observation",
+                "target": "O4"
+              }
+            ]
+          },
+          {
+            "ent_id": "G3",
+            "inferred_id": false,
+            "ent_title": "Offline RL with multi-task non-stationary reward encoding is unstable",
+            "text": "",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "Jointly training a task encoder and policy via TD learning leads to non-stationarity in the Q-function targets, since z changes during training."
+              },
+              {
+                "label": "Caused by",
+                "value": "O1 (offline setting), G1"
+              },
+              {
+                "label": "Existing attempts",
+                "value": "End-to-end training of encoder and policy."
+              },
+              {
+                "label": "Why they fail",
+                "value": "Changing encoder outputs break the assumption of a stationary reward signal required for convergent TD learning."
+              }
+            ],
+            "refs": [
+              {
+                "raw": "O1",
+                "kind": "observation",
+                "target": "O1"
+              },
+              {
+                "raw": "G1",
+                "kind": "gap",
+                "target": "G1"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "role": "insight",
+        "heading": "Key Insight",
+        "present": true,
+        "entries": [
+          {
+            "ent_id": "1",
+            "inferred_id": true,
+            "ent_title": "Insight",
+            "text": "A reward function η : S → ℝ can be fully characterized by its values on a finite set of states drawn from the offline dataset. By training a permutation-invariant encoder to compress these (s, η(s)) pairs into a latent z that can predict η on held-out states, we obtain a universal and data-scalable task representation that supports both pre-training (over random η) and zero-shot inference (encoding any new η from K samples).",
+            "unstructured": true,
+            "fields": [],
+            "refs": []
+          },
+          {
+            "ent_id": "2",
+            "inferred_id": true,
+            "ent_title": "Derived from",
+            "text": "O1, O2, O3, O4",
+            "unstructured": true,
+            "fields": [],
+            "refs": [
+              {
+                "raw": "O1",
+                "kind": "observation",
+                "target": "O1"
+              },
+              {
+                "raw": "O2",
+                "kind": "observation",
+                "target": "O2"
+              },
+              {
+                "raw": "O3",
+                "kind": "observation",
+                "target": "O3"
+              },
+              {
+                "raw": "O4",
+                "kind": "observation",
+                "target": "O4"
+              }
+            ]
+          },
+          {
+            "ent_id": "3",
+            "inferred_id": true,
+            "ent_title": "Enables",
+            "text": "(1) Training an FRE-conditioned policy on a diverse mixture of unsupervised reward functions, and (2) zero-shot identification of any downstream task by encoding K=32 annotated samples through the frozen FRE encoder.",
+            "unstructured": true,
+            "fields": [],
+            "refs": []
+          }
+        ]
+      },
+      {
+        "role": "assumptions",
+        "heading": "Assumptions",
+        "present": true,
+        "entries": [
+          {
+            "ent_id": "A1",
+            "inferred_id": false,
+            "ent_title": "Downstream reward functions are approximately “compressible” from a modest number of state-reward samples",
+            "text": "Downstream reward functions are approximately “compressible” from a modest number of state-reward samples (K=32 is sufficient for encoding).",
+            "unstructured": true,
+            "fields": [],
+            "refs": []
+          },
+          {
+            "ent_id": "A2",
+            "inferred_id": false,
+            "ent_title": "The offline dataset covers states relevant to downstream tasks",
+            "text": "The offline dataset covers states relevant to downstream tasks (i.e., distribution shift between training and test states is manageable).",
+            "unstructured": true,
+            "fields": [],
+            "refs": []
+          },
+          {
+            "ent_id": "A3",
+            "inferred_id": false,
+            "ent_title": "The prior reward distribution sufficiently spans the space of downstream rewards",
+            "text": "The prior reward distribution (singleton goals, random linear, random MLP) sufficiently spans the space of downstream rewards encountered at test time.",
+            "unstructured": true,
+            "fields": [],
+            "refs": []
+          },
+          {
+            "ent_id": "A4",
+            "inferred_id": false,
+            "ent_title": "Offline RL (IQL) can learn good multi-task policies given fixed (frozen) task embeddings z",
+            "text": "Offline RL (IQL) can learn good multi-task policies given fixed (frozen) task embeddings z.",
+            "unstructured": true,
+            "fields": [],
+            "refs": []
+          }
+        ]
+      }
+    ]
+  },
+  "glossary": {
+    "title": "Concepts",
+    "groups": [],
+    "terms": [
+      {
+        "term_id": "G01",
+        "name": "Functional Reward Encoding (FRE)",
+        "aliases": [
+          "FRE"
+        ],
+        "group": "",
+        "definition": "A latent representation $z \\in \\mathbb{R}^d$ of a reward function $\\eta: \\mathcal{S} \\to \\mathbb{R}$, obtained by passing $K$ state-reward samples through a permutation-invariant transformer encoder with a variational information bottleneck. The encoding is trained to predict reward values on held-out states via a feedforward decoder.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "$z \\sim p_\\theta(z \\mid s_1^e, \\eta(s_1^e), \\ldots, s_K^e, \\eta(s_K^e))$"
+          },
+          {
+            "label": "Boundary conditions",
+            "value": "Requires an offline dataset $\\mathcal{D}$ to sample encoding states from. Assumes reward functions are pure functions of state (or state-action). Fixed $K=32$ encoder samples; not designed for variable-length context like neural processes."
+          }
+        ],
+        "related": [
+          "G02",
+          "G05",
+          "G06",
+          "G04"
+        ],
+        "refs": []
+      },
+      {
+        "term_id": "G02",
+        "name": "Information Bottleneck Objective",
+        "aliases": [],
+        "group": "",
+        "definition": "The training objective for FRE, derived from the information bottleneck principle (Tishby et al., 2000). $L^e_\\eta = \\{(s_k^e, \\eta(s_k^e))\\}_{k=1}^K$ is the encoding context set; $L^d_\\eta = \\{(s_k^d, \\eta(s_k^d))\\}_{k=1}^{K'}$ is the decoding target set; $Z$ is the latent variable; $\\beta=0.01$ is the compression weight. Maximized via a variational lower bound using ELBO-style objectives.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "$\\max_\\theta \\; I(L^d_\\eta; Z) - \\beta \\, I(L^e_\\eta; Z)$"
+          },
+          {
+            "label": "Boundary conditions",
+            "value": "Mutual information is intractable; approximated via KL penalty to unit Gaussian prior $u(z)$. Encoding and decoding states must be disjoint samples from $\\mathcal{D}$."
+          }
+        ],
+        "related": [
+          "G01"
+        ],
+        "refs": []
+      },
+      {
+        "term_id": "G03",
+        "name": "Variational Lower Bound (FRE ELBO)",
+        "aliases": [
+          "FRE ELBO"
+        ],
+        "group": "",
+        "definition": "The tractable surrogate for the information bottleneck objective. The reconstruction term $\\log q_\\theta(\\eta(s^d) \\mid s^d, z)$ is implemented as mean-squared error between predicted and true rewards. The KL term $D_\\text{KL}(p_\\theta(z|L^e_\\eta) \\| \\mathcal{N}(0,I))$ regularizes the latent distribution toward a unit Gaussian.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "$\\mathcal{L} = \\mathbb{E}_{\\eta, L^e_\\eta, L^d_\\eta, z \\sim p_\\theta(z|L^e_\\eta)}\\!\\left[\\sum_{k=1}^{K'} \\log q_\\theta(\\eta(s_k^d) \\mid s_k^d, z) - \\beta \\, D_\\text{KL}(p_\\theta(z \\mid L^e_\\eta) \\,\\|\\, u(z))\\right]$"
+          },
+          {
+            "label": "Boundary conditions",
+            "value": "Assumes decoder is a Gaussian likelihood over scalar rewards. MSE reconstruction assumes constant variance."
+          }
+        ],
+        "related": [
+          "G02",
+          "G01"
+        ],
+        "refs": []
+      },
+      {
+        "term_id": "G04",
+        "name": "Prior Reward Distribution",
+        "aliases": [],
+        "group": "",
+        "definition": "The training-time distribution over reward functions used to pre-train FRE. Implemented as a uniform mixture of three families: (1) singleton goal-reaching rewards ($\\eta(s) = -\\mathbf{1}[\\text{dist}(s, g) > \\epsilon]$ with HER-style goal sampling), (2) random linear functions ($\\eta(s) = w^\\top s$ with sparse binary mask), (3) random 2-layer MLPs ($\\eta(s) = \\text{clip}(\\text{MLP}(s), -1, 1)$).",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "$p(\\eta)$"
+          },
+          {
+            "label": "Boundary conditions",
+            "value": "Each family contributes 1/3 probability in FRE-all. For AntMaze, XY positions are excluded from linear reward generation due to scale instability. Random MLPs use architecture (state_dim → 32 → 1) with tanh activation and normal init scaled by average layer dimension."
+          }
+        ],
+        "related": [
+          "G01"
+        ],
+        "refs": []
+      },
+      {
+        "term_id": "G05",
+        "name": "Permutation-Invariant Transformer Encoder",
+        "aliases": [],
+        "group": "",
+        "definition": "A transformer with 4 layers of hidden size 256, no causal masking, no positional encodings, treating K input tokens as an unordered set. Scalar rewards are first discretized into one of 32 bins and embedded via a learned embedding table; state features are projected via a linear layer; the two embeddings are concatenated per token. The average of final-layer representations is projected to mean and log-std of a Gaussian over $z$.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "$p_\\theta(z \\mid \\{(s_k^e, \\eta(s_k^e))\\}_{k=1}^K)$"
+          },
+          {
+            "label": "Boundary conditions",
+            "value": "Permutation invariance ensures the encoding is independent of token ordering. K is fixed at 32. No positional encoding by design."
+          }
+        ],
+        "related": [
+          "G01",
+          "G08",
+          "G03"
+        ],
+        "refs": []
+      },
+      {
+        "term_id": "G06",
+        "name": "Implicit Q-Learning (IQL)",
+        "aliases": [
+          "IQL"
+        ],
+        "group": "",
+        "definition": "An offline RL algorithm (Kostrikov et al., 2021) that avoids out-of-distribution action queries by learning a value function via expectile regression and updating the actor via advantage-weighted regression (AWR). Critic update: $Q(s,a,z) \\leftarrow \\eta(s) + \\gamma \\cdot \\text{mask} \\cdot V(s', z)$. Value update: expectile regression on $Q(s,a,z)$ with $\\tau=0.8$. Actor update: AWR with temperature $\\beta_\\text{AWR}=3.0$.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "$\\pi(a \\mid s, z)$, $Q(s, a, z)$, $V(s, z)$"
+          },
+          {
+            "label": "Boundary conditions",
+            "value": "Policy is conditioned on frozen latent $z$ (encoder frozen during policy training). Discount factor $\\gamma=0.88$."
+          }
+        ],
+        "related": [
+          "G01",
+          "G07",
+          "G10"
+        ],
+        "refs": []
+      },
+      {
+        "term_id": "G07",
+        "name": "Strided Training",
+        "aliases": [],
+        "group": "",
+        "definition": "A two-phase training procedure where the FRE encoder-decoder is trained to convergence first (150K steps for AntMaze, 1M for ExORL/Kitchen), then the encoder is frozen and the IQL policy is trained using the fixed encoder's outputs (850K steps for AntMaze, 1M for ExORL/Kitchen). This ensures a stationary mapping from $\\eta$ to $z$ during TD learning.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "Phase 1: train $p_\\theta(z|\\cdot), q_\\theta(\\eta|\\cdot)$ only. Phase 2: freeze $p_\\theta$, train $\\pi, Q, V$."
+          },
+          {
+            "label": "Boundary conditions",
+            "value": "Required for stable multi-task Q-value estimation. If encoder changes during policy training, TD targets become non-stationary."
+          }
+        ],
+        "related": [
+          "G06",
+          "G01",
+          "G02"
+        ],
+        "refs": []
+      },
+      {
+        "term_id": "G08",
+        "name": "Reward Discretization",
+        "aliases": [],
+        "group": "",
+        "definition": "Scalar reward values are mapped to integers in $\\{0, \\ldots, 31\\}$ (32 bins) by rescaling to $[0,1]$ and flooring. Each bin index is then mapped to a continuous vector via a learned embedding table of size $32 \\times d_\\text{emb}$.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "$r_\\text{disc} = \\lfloor \\text{clip}((r + 1) / 2, 0, 1) \\times 32 \\rfloor$"
+          },
+          {
+            "label": "Boundary conditions",
+            "value": "Assumes rewards are normalized to approximately $[-1, 1]$. Number of embeddings = 32; embedding dimension not specified in paper."
+          }
+        ],
+        "related": [
+          "G05",
+          "G04"
+        ],
+        "refs": []
+      },
+      {
+        "term_id": "G09",
+        "name": "Zero-Shot RL Problem",
+        "aliases": [],
+        "group": "",
+        "definition": "A two-phase RL setting (Touati et al., 2022) where an agent is pre-trained from unlabeled offline data, then at test time must solve a new downstream reward function $\\eta: \\mathcal{S} \\to \\mathbb{R}$ specified only via a small set of $(s, \\eta(s))$ tuples, without any further gradient updates to the policy.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "Phase 1: unsupervised pre-training from $\\mathcal{D}$; Phase 2: zero-shot evaluation with no fine-tuning."
+          },
+          {
+            "label": "Boundary conditions",
+            "value": "No online interaction during pre-training. Tasks share the same environment dynamics. FRE uses K=32 evaluation samples."
+          }
+        ],
+        "related": [
+          "G01",
+          "G07",
+          "G04"
+        ],
+        "refs": []
+      },
+      {
+        "term_id": "G10",
+        "name": "Advantage-Weighted Regression (AWR)",
+        "aliases": [
+          "AWR"
+        ],
+        "group": "",
+        "definition": "The actor update rule in IQL, where actions from the dataset are re-weighted by their exponentiated advantage with temperature $\\beta_\\text{AWR}=3.0$. Higher-advantage actions receive larger gradient weight.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "$\\mathcal{L}_\\pi = -\\mathbb{E}_{(s,a) \\sim \\mathcal{D}} \\left[ \\exp\\!\\left(\\frac{Q(s,a,z) - V(s,z)}{\\beta_\\text{AWR}}\\right) \\log \\pi(a \\mid s, z) \\right]$"
+          },
+          {
+            "label": "Boundary conditions",
+            "value": "Large $\\beta_\\text{AWR}$ reduces to behavioral cloning; small $\\beta_\\text{AWR}$ reduces to policy gradient. Set to 3.0 in all experiments."
+          }
+        ],
+        "related": [
+          "G06",
+          "G01"
+        ],
+        "refs": []
+      }
+    ],
+    "lexicon": {
+      "functional reward encoding (fre)": "G01",
+      "fre": "G01",
+      "information bottleneck objective": "G02",
+      "variational lower bound (fre elbo)": "G03",
+      "fre elbo": "G03",
+      "prior reward distribution": "G04",
+      "permutation-invariant transformer encoder": "G05",
+      "implicit q-learning (iql)": "G06",
+      "iql": "G06",
+      "strided training": "G07",
+      "reward discretization": "G08",
+      "zero-shot rl problem": "G09",
+      "advantage-weighted regression (awr)": "G10",
+      "awr": "G10"
+    }
+  },
+  "dependencies": {
+    "title": "Related Work / Dependencies",
+    "preamble": "",
+    "legend": [],
+    "attribution": "",
+    "entries": [
+      {
+        "rw_id": "RW01",
+        "inferred_id": false,
+        "name": "Touati & Ollivier, 2021 (Forward-Backward Representations)",
+        "relation_raw": "baseline",
+        "relation_norm": "baseline",
+        "delta": "What changed: FRE replaces the linearized value function assumption of FB with a learned functional encoding over arbitrary reward distributions. Why: FB can only represent tasks in the linear span of learned state representations; FRE encodes nonlinear reward functions directly from samples.",
+        "adopted": "Problem framing of zero-shot RL; evaluation on ExORL benchmarks.",
+        "grounding": [
+          {
+            "raw": "arXiv:2103.07945",
+            "kind": "arxiv",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C01",
+          "C02",
+          "C03"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW02",
+        "inferred_id": false,
+        "name": "Touati et al., 2022 (Does Zero-Shot RL Exist?)",
+        "relation_raw": "imports",
+        "relation_norm": "imports",
+        "delta": "What changed: FRE provides a practical solution to the zero-shot RL problem posed in this work. Why: This work formally defines the zero-shot RL setting and provides FB/SF baselines.",
+        "adopted": "Zero-shot RL problem formulation; ExORL Walker/Cheetah evaluation protocol; FB and SF as primary baselines.",
+        "grounding": [
+          {
+            "raw": "arXiv:2209.14935",
+            "kind": "arxiv",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C01",
+          "C02"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW03",
+        "inferred_id": false,
+        "name": "Kostrikov et al., 2021 (IQL)",
+        "relation_raw": "imports",
+        "relation_norm": "imports",
+        "delta": "What changed: FRE conditions IQL on latent task vector z; otherwise uses standard IQL for offline policy learning. Why: IQL avoids out-of-distribution action queries, crucial for offline RL stability.",
+        "adopted": "Expectile regression for value function, AWR actor update, target network soft update, all hyperparameters (tau=0.8, AWR temperature=3.0, target rate=0.001).",
+        "grounding": [
+          {
+            "raw": "arXiv:2110.06169",
+            "kind": "arxiv",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C01"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW04",
+        "inferred_id": false,
+        "name": "Barreto et al., 2017 (Successor Features)",
+        "relation_raw": "baseline",
+        "relation_norm": "baseline",
+        "delta": "What changed: FRE does not require pre-defined state features or a linear task structure; functional encoding generalizes beyond the linear span. Why: SF methods are limited to tasks expressible as linear combinations of pre-specified features.",
+        "adopted": "General framework of task-conditioned value functions.",
+        "grounding": [],
+        "claims": [
+          "C01",
+          "C02"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW05",
+        "inferred_id": false,
+        "name": "Ajay et al., 2020 (OPAL)",
+        "relation_raw": "baseline",
+        "relation_norm": "baseline",
+        "delta": "What changed: FRE encodes reward functions rather than trajectory chunks; FRE uses offline RL (IQL) rather than behavioral cloning; FRE supports zero-shot task identification. Why: OPAL lacks a mechanism for zero-shot reward-based task adaptation.",
+        "adopted": "Offline unsupervised skill learning paradigm; permutation-invariant transformer architecture (re-implemented in FRE codebase).",
+        "grounding": [
+          {
+            "raw": "arXiv:2010.13611",
+            "kind": "arxiv",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C01",
+          "C03"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW06",
+        "inferred_id": false,
+        "name": "Alemi et al., 2016 (Deep VIB)",
+        "relation_raw": "imports",
+        "relation_norm": "imports",
+        "delta": "What changed: FRE applies the VIB framework to reward function encoding rather than supervised classification. Why: Provides the variational lower bound derivation for the information bottleneck objective.",
+        "adopted": "Variational information bottleneck objective; KL divergence penalty to unit Gaussian; reparameterization trick.",
+        "grounding": [
+          {
+            "raw": "arXiv:1612.00410",
+            "kind": "arxiv",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C01"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW07",
+        "inferred_id": false,
+        "name": "Vaswani et al., 2017 (Transformer)",
+        "relation_raw": "imports",
+        "relation_norm": "imports",
+        "delta": "What changed: FRE uses transformer without causal masking or positional encodings to achieve permutation invariance over (state, reward) sets. Why: Standard transformers use causal/positional structure; FRE requires set processing.",
+        "adopted": "Multi-head self-attention, layer normalization, feedforward sublayers. Architecture: 4 layers, 256 hidden dim.",
+        "grounding": [],
+        "claims": [
+          "C01"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW08",
+        "inferred_id": false,
+        "name": "Garnelo et al., 2018 (Neural Processes)",
+        "relation_raw": "extends",
+        "relation_norm": "extends",
+        "delta": "What changed: FRE uses a probabilistic encoder with an information bottleneck penalty and a fixed K; neural processes use a deterministic encoder and variable K. Why: The information bottleneck adds regularization that encourages compact, generalizable task representations.",
+        "adopted": "Concept of encoding a context set to predict function values at query points.",
+        "grounding": [
+          {
+            "raw": "arXiv:1807.01622",
+            "kind": "arxiv",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C01"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW09",
+        "inferred_id": false,
+        "name": "Fu et al., 2020 (D4RL)",
+        "relation_raw": "imports",
+        "relation_norm": "imports",
+        "delta": "What changed: FRE uses D4RL datasets (antmaze-large-diverse-v2, kitchen-complete-v0) without requiring their original task-specific reward labels. Why: Standard offline RL benchmark providing diverse locomotion and manipulation data.",
+        "adopted": "antmaze-large-diverse-v2, kitchen-complete-v0 datasets; evaluation environment code.",
+        "grounding": [
+          {
+            "raw": "arXiv:2004.07219",
+            "kind": "arxiv",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C01",
+          "C02",
+          "C03"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW10",
+        "inferred_id": false,
+        "name": "Yarats et al., 2022 (ExORL)",
+        "relation_raw": "imports",
+        "relation_norm": "imports",
+        "delta": "What changed: FRE uses ExORL datasets as unlabeled pre-training data and evaluates on velocity/goal tasks without access to reward labels during training. Why: ExORL provides non-expert exploration data from DMControl, ideal for unsupervised pre-training.",
+        "adopted": "Walker RND and Cheetah RND offline datasets; walker/cheetah evaluation protocol (velocity, goal tasks); physics state augmentation for reward encoding.",
+        "grounding": [
+          {
+            "raw": "arXiv:2201.13425",
+            "kind": "arxiv",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C01",
+          "C02"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      }
+    ],
+    "footprint": []
+  },
+  "recipes": {
+    "title": "Solution",
+    "files": [
+      {
+        "file": "algorithm.md",
+        "role": "algorithm",
+        "file_title": "Algorithm",
+        "sections": [
+          {
+            "sec_id": "",
+            "heading": "Information Bottleneck Objective",
+            "kind": "math",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "$$\\max I(L^d_\\eta; Z) - \\beta I(L^e_\\eta; Z) \\tag{2}$$",
+            "text": "$$\\max I(L^d_\\eta; Z) - \\beta I(L^e_\\eta; Z) \\tag{2}$$",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "",
+            "heading": "Variational Lower Bound (Training Objective)",
+            "kind": "math",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "$$\\mathcal{L}_\\text{FRE} = \\mathbb{E}_{\\eta, L^e_\\eta, L^d_\\eta, z \\sim p_\\theta(z|L^e_\\eta)}\\!\\left[\\sum_{k=1}^{K'} \\log q_\\theta(\\eta(s^d_k) \\mid s^d_k, z) - \\beta \\, D_\\text{KL}(p_\\theta(z \\mid L^e_\\eta) \\,\\|\\, \\mathcal{N}(0, I))\\right] \\tag{6}$$\nImplemented as:\n$$\\mathcal{L}_\\text{FRE} = -\\text{MSE}(\\hat{r}, r) - \\beta \\, D_\\text{KL}(\\mathcal{N}(\\mu_\\theta, \\sigma_\\theta) \\| \\mathcal{N}(0, I))$$",
+            "text": "Variational lower bound and its implemented form.",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "",
+            "heading": "Bellman Update (IQL)",
+            "kind": "math",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "$$Q(s, a, z) \\leftarrow \\eta(s) + \\gamma \\cdot \\text{mask} \\cdot \\mathbb{E}_{s' \\sim p(s'|s,a)}[V(s', z)] \\tag{9}$$",
+            "text": "Bellman update.",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "",
+            "heading": "Value Update (Expectile Regression)",
+            "kind": "math",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "$$\\mathcal{L}_V = \\mathbb{E}_{(s,a) \\sim \\mathcal{D}}[L_\\tau^\\text{exp}(Q_{\\bar\\theta}(s,a,z) - V_\\phi(s,z))]$$ where $L_\\tau^\\text{exp}(u) = |\\tau - \\mathbf{1}[u < 0]| u^2$ with $\\tau=0.8$.",
+            "text": "Expectile regression value loss.",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "",
+            "heading": "Actor Update (AWR)",
+            "kind": "math",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "$$\\mathcal{L}_\\pi = -\\mathbb{E}_{(s,a) \\sim \\mathcal{D}}\\!\\left[\\exp\\!\\left(\\frac{Q_{\\bar\\theta}(s,a,z) - V_\\phi(s,z)}{\\beta_\\text{AWR}}\\right) \\log \\pi_\\psi(a \\mid s, z)\\right]$$ with $\\beta_\\text{AWR}=3.0$.",
+            "text": "AWR actor loss.",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "",
+            "heading": "Pseudocode",
+            "kind": "code",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "Algorithm 1: Functional Reward Encodings (FRE)\n\nInput: offline dataset D, prior p(eta)\n\n# === Phase 1: Train encoder-decoder ===\nwhile not converged:\n    eta ~ p(eta)                            # sample reward function\n    {s^e_k} ~ D (K samples)                # encoder context states\n    {s^d_k} ~ D (K' samples)               # decoder target states (disjoint)\n    # label states\n    r^e_k = eta(s^e_k) for k=1..K\n    r^d_k = eta(s^d_k) for k=1..K'\n    # discretize encoder rewards and embed\n    tokens = concat(linear(s^e_k), reward_emb(discretize(r^e_k)))\n    # encode via permutation-invariant transformer\n    h = MeanPool(Transformer(tokens))\n    mu, log_sigma = linear_heads(h)\n    z ~ N(mu, exp(log_sigma))\n    # decode and compute loss\n    r_hat_k = Decoder(s^d_k, z)\n    L = MSE(r_hat_k, r^d_k) + beta * KL(N(mu, sigma) || N(0,I))\n    update encoder and decoder parameters\n\n# === Phase 2: Train policy (encoder frozen) ===\nfreeze encoder\nwhile not converged:\n    eta ~ p(eta)\n    {s^e_k} ~ D (K samples)\n    z ~ p_theta(z | {s^e_k, eta(s^e_k)})   # frozen encoder\n    (s, a, s') ~ D                          # sample transitions\n    r = eta(s)                              # label reward\n    # IQL updates (all networks conditioned on z)\n    update Q(s,a,z) via Bellman backup\n    update V(s,z) via expectile regression (tau=0.8)\n    update target_Q via soft update (rate=0.001)\n    update pi(a|s,z) via AWR (temperature=3.0)",
+            "text": "",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "",
+            "heading": "Complexity Analysis",
+            "kind": "kv",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Encoder forward pass",
+                "value": "O(K² · d) for self-attention over K tokens of dim d"
+              },
+              {
+                "label": "Decoder forward pass",
+                "value": "O(d²) for 3-layer MLP"
+              },
+              {
+                "label": "Policy forward pass",
+                "value": "O(d²) for 3-layer MLP; same for Q and V"
+              },
+              {
+                "label": "Memory",
+                "value": "Linear in batch size; K encoder tokens held in memory per training step"
+              }
+            ],
+            "code": "",
+            "text": "",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "",
+            "heading": "Reward Discretization Detail",
+            "kind": "code",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "def discretize_reward(r, n_bins=32):\n    r_norm = (r + 1.0) / 2.0          # shift to [0, 1]\n    r_clipped = clip(r_norm, 0, 1)\n    bin_idx = floor(r_clipped * n_bins)  # integer in {0,...,31}\n    return min(bin_idx, n_bins - 1)",
+            "text": "",
+            "warn": "",
+            "refs": []
+          }
+        ]
+      },
+      {
+        "file": "architecture.md",
+        "role": "architecture",
+        "file_title": "System Architecture",
+        "sections": [
+          {
+            "sec_id": "",
+            "heading": "Overview",
+            "kind": "prose",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "",
+            "text": "FRE consists of three interacting components: (1) an FRE Encoder, (2) an FRE Decoder, and (3) an FRE-conditioned IQL Policy. Training is strided: encoder-decoder trains first, then the encoder is frozen and the policy trains.",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "",
+            "heading": "Component Graph",
+            "kind": "code",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "Offline Dataset D\n      |\n      |--- Sample {s^e_k} ---------> [FRE Encoder] --> z ~ N(mu, sigma)\n      |--- Sample eta(s^e_k) ------/                        |\n      |                                                      |\n      |--- Sample {s^d_k} ---------> [FRE Decoder] <--------+\n           Sample eta(s^d_k)              |\n                                         MSE Loss (Phase 1)\n\nz (frozen) + s + a --> [IQL Q-Network] --> Q(s,a,z)\nz (frozen) + s     --> [IQL V-Network] --> V(s,z)\nz (frozen) + s     --> [IQL Actor]     --> pi(a|s,z)",
+            "text": "",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "",
+            "heading": "FRE Encoder: `p_theta(z | {s^e_k, eta(s^e_k)})`",
+            "kind": "kv",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Purpose",
+                "value": "Compress K (state, reward) pairs into a latent task vector z"
+              },
+              {
+                "label": "Inputs",
+                "value": "K state vectors s^e_k ∈ R^{state_dim}, K scalar rewards eta(s^e_k) ∈ R"
+              },
+              {
+                "label": "Outputs",
+                "value": "Mean mu ∈ R^{latent_dim}, log-std log_sigma ∈ R^{latent_dim} → z ~ N(mu, sigma)"
+              },
+              {
+                "label": "Architecture",
+                "value": "Reward discretization: scalar → int in {0,...,31} → learned embedding (32 × emb_dim); State projection: linear(state_dim → emb_dim); Token = concat(state_emb, reward_emb) → K tokens of dim 2*emb_dim; Transformer: 4 layers, 256 hidden dim, multi-head attention, NO causal mask, NO positional encoding; Mean pool over K final token representations → two linear heads → (mu, log_sigma)"
+              },
+              {
+                "label": "Key design choice",
+                "value": "Permutation invariance by removing causal masking and positional encodings"
+              }
+            ],
+            "code": "",
+            "text": "",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "",
+            "heading": "FRE Decoder: `q_theta(eta(s^d) | s^d, z)`",
+            "kind": "kv",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Purpose",
+                "value": "Predict reward for individual decoder states given shared latent z"
+              },
+              {
+                "label": "Inputs",
+                "value": "Single state s^d ∈ R^{state_dim}, latent z ∈ R^{latent_dim}"
+              },
+              {
+                "label": "Outputs",
+                "value": "Predicted scalar reward r_hat ∈ R"
+              },
+              {
+                "label": "Architecture",
+                "value": "Feedforward MLP [512, 512, 512] with input = concat(s^d, z)"
+              },
+              {
+                "label": "Loss",
+                "value": "MSE between predicted and true rewards on decoder states"
+              },
+              {
+                "label": "Key design choice",
+                "value": "Decoder states are sampled independently of encoder states"
+              }
+            ],
+            "code": "",
+            "text": "",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "",
+            "heading": "IQL Policy: `pi(a | s, z)`, `Q(s, a, z)`, `V(s, z)`",
+            "kind": "kv",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Purpose",
+                "value": "Learn to maximize expected return for tasks within the prior reward distribution"
+              },
+              {
+                "label": "Inputs",
+                "value": "State s, action a, frozen latent z"
+              },
+              {
+                "label": "Architecture",
+                "value": "All networks are MLPs [512, 512, 512] with input = concat(s, z)"
+              },
+              {
+                "label": "Actor",
+                "value": "Outputs Gaussian distribution (mean, log_std) over actions"
+              },
+              {
+                "label": "Critic",
+                "value": "Two Q-networks (double Q-learning); updated with Bellman target"
+              },
+              {
+                "label": "Value network",
+                "value": "Expectile regression with tau=0.8"
+              },
+              {
+                "label": "Target critic",
+                "value": "Soft update with rate 0.001"
+              },
+              {
+                "label": "Key design choice",
+                "value": "z is frozen during policy training; z is sampled once per reward function and fixed for all transitions in that batch"
+              }
+            ],
+            "code": "",
+            "text": "",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "",
+            "heading": "Phase 1 — Encoder-Decoder Training (strided)",
+            "kind": "steps",
+            "markdown": "",
+            "steps": [
+              "Sample eta ~ p(eta)",
+              "Sample K states {s^e_k} ~ D uniformly",
+              "Encode: z ~ p_theta(z | {s^e_k, eta(s^e_k)})",
+              "Sample K' decoder states {s^d_k} ~ D (disjoint from encoder states)",
+              "Compute FRE ELBO loss; update encoder and decoder"
+            ],
+            "fields": [],
+            "code": "",
+            "text": "",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "",
+            "heading": "Phase 2 — Policy Training (encoder frozen)",
+            "kind": "steps",
+            "markdown": "",
+            "steps": [
+              "Freeze encoder weights",
+              "Sample eta ~ p(eta); encode K states → z (frozen encoder)",
+              "Sample transitions (s, a, s') from D; compute r = eta(s)",
+              "Train IQL: Q, V, pi with input = concat(s, z) [or concat(s,a,z) for Q]"
+            ],
+            "fields": [],
+            "code": "",
+            "text": "",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "",
+            "heading": "Evaluation (zero-shot)",
+            "kind": "steps",
+            "markdown": "",
+            "steps": [
+              "Sample K=32 states from environment; annotate with test reward function eta_eval",
+              "Encode → z_eval via frozen FRE encoder",
+              "Execute pi(a|s, z_eval) without any gradient updates"
+            ],
+            "fields": [],
+            "code": "",
+            "text": "",
+            "warn": "",
+            "refs": []
+          }
+        ]
+      },
+      {
+        "file": "constraints.md",
+        "role": "constraints",
+        "file_title": "Constraints",
+        "sections": [
+          {
+            "sec_id": "BC1",
+            "heading": "BC1: Offline-Only Training",
+            "kind": "prose",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "",
+            "text": "FRE requires an offline dataset D of state-action trajectories. No online environment interaction is permitted during pre-training.\nFailure mode: If the offline dataset has poor coverage of the state space relevant to downstream tasks, the encoder will be unable to generate informative z embeddings at test time.",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "BC2",
+            "heading": "BC2: Fixed K=32 Encoding Budget",
+            "kind": "prose",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "",
+            "text": "The FRE encoder uses exactly K=32 (state, reward) samples to produce z at test time. Performance may degrade if the downstream reward function requires more samples for accurate estimation.\nBoundary: FB/SF methods use K=5120 samples via linear regression; FRE is designed for extreme sample efficiency but is not tested outside K=32 at evaluation.",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "BC3",
+            "heading": "BC3: State-Space Reward Functions",
+            "kind": "prose",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "",
+            "text": "FRE assumes reward functions η: S → ℝ are functions of state (not joint state-action). Physics-based rewards (ExORL velocity/torso) require appending auxiliary physics state information to the observation for encoding.\nExtension: The paper notes reward functions may depend on (s, a) without loss of generality.",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "BC4",
+            "heading": "BC4: Shared Environment Dynamics",
+            "kind": "prose",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "",
+            "text": "All downstream tasks must share the same MDP dynamics as the pre-training environment. FRE does not handle domain adaptation or transfer across different physical systems.",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "BC5",
+            "heading": "BC5: Prior Coverage Assumption",
+            "kind": "prose",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "",
+            "text": "The random unsupervised reward prior p(η) must approximately span the space of downstream tasks. If a test task is fundamentally dissimilar to anything in the prior (e.g., a game-theoretic adversarial reward), FRE may fail to encode it accurately.\nNo Free Lunch: Completely random functions lead to incompressible representations.",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "BC6",
+            "heading": "BC6: Strided Training Required for Stability",
+            "kind": "prose",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "",
+            "text": "Joint training of encoder and IQL policy leads to non-stationary TD targets and unstable learning. The strided protocol (freeze encoder before policy training) is required.",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "L1",
+            "heading": "L1: Ad hoc reward prior",
+            "kind": "prose",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "",
+            "text": "The mixture of goal-reaching, linear, and MLP rewards is chosen empirically. There is no principled method to determine the optimal prior for a given domain.",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "L2",
+            "heading": "L2: No online setting",
+            "kind": "prose",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "",
+            "text": "FRE is formulated as offline RL only. Extension to online interaction is identified as future work.",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "L3",
+            "heading": "L3: AntMaze XY scale instability",
+            "kind": "prose",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "",
+            "text": "Random linear reward functions on AntMaze exclude XY dimensions due to scale differences causing training instability.",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "L4",
+            "heading": "L4: Out-of-distribution state failures",
+            "kind": "prose",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "",
+            "text": "In AntMaze evaluations, policy trajectories occasionally fail when encountering OOD states, consistent with standard offline RL limitations (Kumar et al., 2020).",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "L5",
+            "heading": "L5: Fixed latent dimensionality",
+            "kind": "prose",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "",
+            "text": "The latent dimension of z is fixed; it is not adjusted adaptively based on reward function complexity.",
+            "warn": "",
+            "refs": []
+          }
+        ]
+      },
+      {
+        "file": "heuristics.md",
+        "role": "heuristics",
+        "file_title": "Heuristics",
+        "sections": [
+          {
+            "sec_id": "H01",
+            "heading": "H01: Strided Training (Freeze Encoder Before Policy Training)",
+            "kind": "kv",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "TD learning for multi-task Q-functions requires a stationary mapping from reward functions to latent vectors z. If the encoder is updated simultaneously with Q/V/π, the Q-function targets become non-stationary, leading to divergence or slow convergence."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "high"
+              },
+              {
+                "label": "Bounds",
+                "value": "Encoder must fully converge before policy training begins. Encoder training steps: 150K (AntMaze), 1M (ExORL/Kitchen)."
+              },
+              {
+                "label": "Code ref",
+                "value": "[src/execution/fre.py]"
+              },
+              {
+                "label": "Source",
+                "value": "Section 4.3, Algorithm 1"
+              }
+            ],
+            "code": "",
+            "text": "",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "H02",
+            "heading": "H02: Reward Discretization into 32 Bins",
+            "kind": "kv",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "Discretizing scalar rewards into discrete bins and embedding them via a learned embedding table provides richer representations than passing raw scalars to the transformer, enabling the encoder to learn nonlinear distinctions between reward magnitudes."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "medium"
+              },
+              {
+                "label": "Bounds",
+                "value": "32 bins; rewards assumed in approximately [-1, 1]. Values clipped before binning."
+              },
+              {
+                "label": "Code ref",
+                "value": "[src/execution/fre.py]"
+              },
+              {
+                "label": "Source",
+                "value": "Section 4.1 Practical Implementation; Rubric item 04d679d0"
+              }
+            ],
+            "code": "",
+            "text": "",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "H03",
+            "heading": "H03: Sparse Binary Mask for Random Linear Rewards (p=0.9 zeroing)",
+            "kind": "kv",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "Biasing the random linear prior toward sparse functions (most dimensions zeroed) encourages simpler, more interpretable reward functions that generalize better. A fully dense random vector in high-dimensional spaces would concentrate mass on less interpretable reward functions."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "medium"
+              },
+              {
+                "label": "Bounds",
+                "value": "Mask probability = 0.9 (each dimension zeroed with probability 0.9). Applied to all domains."
+              },
+              {
+                "label": "Code ref",
+                "value": "[src/execution/fre.py]"
+              },
+              {
+                "label": "Source",
+                "value": "Section 4.2, Appendix B"
+              }
+            ],
+            "code": "",
+            "text": "",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "H04",
+            "heading": "H04: Exclude XY Positions from Linear Rewards on AntMaze",
+            "kind": "kv",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "The XY coordinate dimensions in AntMaze have different scale from other state dimensions, causing instability in random linear reward generation (rewards can be dominated by XY terms, reducing diversity)."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "medium"
+              },
+              {
+                "label": "Bounds",
+                "value": "XY positions explicitly excluded from linear reward generation for AntMaze. Applied to antmaze-large-diverse-v2 only."
+              },
+              {
+                "label": "Code ref",
+                "value": "[src/execution/fre.py]"
+              },
+              {
+                "label": "Source",
+                "value": "Appendix B"
+              }
+            ],
+            "code": "",
+            "text": "",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "H05",
+            "heading": "H05: HER-Style Goal Sampling Distribution (0.2/0.5/0.3 split)",
+            "kind": "kv",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "Using a mixture of current-state (0.2), future-trajectory (0.5), and fully-random (0.3) goals produces a diversity of goal-reaching difficulties and avoids goals that are trivially unreachable from training transitions."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "low"
+              },
+              {
+                "label": "Bounds",
+                "value": "Probabilities: current=0.2, future=0.5, random=0.3. Must ensure at least one encoder sample contains the goal state."
+              },
+              {
+                "label": "Code ref",
+                "value": "[src/execution/fre.py]"
+              },
+              {
+                "label": "Source",
+                "value": "Appendix B; HER (Andrychowicz et al., 2017)"
+              }
+            ],
+            "code": "",
+            "text": "",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "H06",
+            "heading": "H06: Discount Factor γ = 0.88 (Lower than Standard 0.99)",
+            "kind": "kv",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "A lower discount factor is appropriate for the diverse multi-task offline setting, where long-horizon credit assignment across highly varied reward functions may lead to instability. Shorter effective horizons improve TD stability."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "medium"
+              },
+              {
+                "label": "Bounds",
+                "value": "γ = 0.88 for all domains and all tasks."
+              },
+              {
+                "label": "Code ref",
+                "value": "[src/execution/iql.py]"
+              },
+              {
+                "label": "Source",
+                "value": "Appendix A, Table 3"
+              }
+            ],
+            "code": "",
+            "text": "",
+            "warn": "",
+            "refs": []
+          }
+        ]
+      }
+    ]
+  }
+}
+/* __ARA_DATA_END__ */
+</script>
+
+<script>
+"use strict";
+(function () {
+  const GLYPH = { question:"Q", experiment:"✦", decision:"→", dead_end:"✗", pivot:"↻", insight:"!", default:"•" };
+  const TYPES = ["question","experiment","decision","dead_end","pivot","insight"];
+
+  let DATA;
+  try {
+    // The payload sits between the BEGIN/END marker comments (kept in-file so the
+    // skill can re-inject). Strip ONLY those two named markers before parsing; the
+    // rest of textContent is pure JSON. (Marker text is not written literally here,
+    // so it stays a single injection site.)
+    var raw = document.getElementById("ara-data").textContent
+                .replace(/\/\*\s*__ARA_DATA_(?:BEGIN|END)__\s*\*\//g, "");
+    DATA = JSON.parse(raw);
+  } catch (e) {
+    document.getElementById("detail").innerHTML =
+      '<div class="none">Could not parse embedded ARA data: ' + String(e) + '</div>';
+    return;
+  }
+
+  const nodes = DATA.nodes || [];
+  const byId = new Map(nodes.map(n => [n.id, n]));
+  const kids = new Map();
+  nodes.forEach(n => kids.set(n.id, []));
+  let roots = [];
+  nodes.forEach(n => {
+    if (n.parent && byId.has(n.parent)) kids.get(n.parent).push(n.id);
+    else roots.push(n.id);
+  });
+  // Traversal order: explicit DATA.order if given, else DFS from roots.
+  let order = Array.isArray(DATA.order) && DATA.order.length ? DATA.order.filter(id => byId.has(id)) : [];
+  if (!order.length) { const seen=new Set(); const dfs=id=>{if(seen.has(id))return;seen.add(id);order.push(id);(kids.get(id)||[]).forEach(dfs)}; roots.forEach(dfs); }
+
+  const esc = s => String(s==null?"":s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  const glyph = t => GLYPH[t] || GLYPH.default;
+  const cls = t => TYPES.includes(t) ? t : "default";
+
+  // ---- header ----
+  const m = DATA.meta || {};
+  document.getElementById("h-title").textContent = m.title || "ARA Trajectory";
+  document.getElementById("h-sub").textContent =
+    [ (m.authors||[]).join(", "), m.venue, m.year ].filter(Boolean).join(" · ");
+  if (m.abstract) document.getElementById("h-abstract").textContent = m.abstract;
+  else document.getElementById("h-abstract-wrap").style.display = "none";
+
+  const ftype = document.getElementById("ftype");
+  const present = [...new Set(nodes.map(n => n.type))];
+  TYPES.concat(present.filter(t=>!TYPES.includes(t))).filter(t=>present.includes(t))
+    .forEach(t => { const o=document.createElement("option"); o.value=t; o.textContent=t; ftype.appendChild(o); });
+
+  // ---- minimal markdown-table renderer ----
+  function renderMd(md){
+    if(!md) return "";
+    const lines = String(md).split("\n");
+    let out=[], i=0;
+    while(i<lines.length){
+      if(/^\s*\|/.test(lines[i]) && i+1<lines.length && /^\s*\|?[\s:|-]+\|?\s*$/.test(lines[i+1])){
+        const row = l => l.replace(/^\s*\|/,"").replace(/\|\s*$/,"").split("|").map(c=>c.trim());
+        const head = row(lines[i]); i+=2; const body=[];
+        while(i<lines.length && /^\s*\|/.test(lines[i])){ body.push(row(lines[i])); i++; }
+        out.push('<table class="md"><thead><tr>'+head.map(h=>"<th>"+esc(h)+"</th>").join("")+
+          '</tr></thead><tbody>'+body.map(r=>"<tr>"+r.map(c=>"<td>"+esc(c)+"</td>").join("")+"</tr>").join("")+"</tbody></table>");
+      } else { if(lines[i].trim()) out.push("<div>"+esc(lines[i])+"</div>"); i++; }
+    }
+    return out.join("");
+  }
+
+  // ---- detail pane ----
+  function block(title, tag, inner, open, cls){
+    return '<details class="block'+(cls?" "+cls:"")+'"'+(open?" open":"")+'><summary>'+esc(title)+
+      (tag?'<span class="tag">'+esc(tag)+'</span>':'')+'</summary><div class="body">'+inner+'</div></details>';
+  }
+  function chips(arr, klass){ return arr&&arr.length ? '<div class="chips">'+arr.map(x=>'<span class="chip '+(klass||"")+'">'+esc(x)+'</span>').join("")+'</div>' : ""; }
+
+  function renderDetail(n){
+    const d = document.getElementById("detail");
+    let h = '<div class="dhead"><span class="badge '+cls(n.type)+'">'+esc(n.type)+'</span>'+
+      '<span class="did">'+esc(n.id)+'</span>'+
+      (n.support_level?'<span class="pill '+esc(n.support_level)+'">'+esc(n.support_level)+'</span>':'')+
+      (n.isolated?'<span class="pill iso">isolated</span>':'')+'</div>';
+    h += '<div class="dtitle">'+esc(n.title||"(untitled)")+'</div>';
+
+    // reasoning (primary, always open) — the agent's thinking IS the content of a step
+    let reason="";
+    if(n.thinking){
+      reason += '<div class="lead">'+esc(n.thinking)+'</div>';
+      if(n.body) reason += '<div class="didwhat">what it did</div><div>'+esc(n.body)+'</div>';
+    } else {
+      reason += n.body ? '<div class="lead">'+esc(n.body)+'</div>' : '<div class="empty">No description.</div>';
+    }
+    if(n.depends_on&&n.depends_on.length) reason += chips(n.depends_on.map(x=>"⇠ depends on "+x));
+    if(n.source_refs&&n.source_refs.length) reason += chips(n.source_refs, "ext");
+    if(n.built_on&&n.built_on.length) reason += chipRow("built on", n.built_on, "chip-built");
+    if(n.rejected_here&&n.rejected_here.length) reason += chipRow("rejected here", n.rejected_here, "chip-rej");
+    if(n.recipe_refs&&n.recipe_refs.length) reason += recipeChips(n.recipe_refs);
+    h += block(n.thinking?"reasoning":"what", n.type, reason, true, "reason");
+
+    // result (the grounded payload) — open
+    const r = n.result||{};
+    if((r.sources&&r.sources.length)||(r.figures&&r.figures.length)||(r.tables&&r.tables.length)||(r.data&&r.data.length)){
+      let s="";
+      (r.figures||[]).forEach(f=>{ s+='<figure><img src="'+esc(f.img)+'" alt="'+esc(f.caption||f.id)+'"/>'+
+        (f.caption?'<figcaption>'+esc(f.caption)+'</figcaption>':'')+'</figure>'; });
+      (r.tables||[]).forEach(t=>{ s+=(t.caption?'<div class="empty">'+esc(t.caption)+'</div>':'')+renderMd(t.markdown); });
+      (r.sources||[]).forEach(q=>{ s+='<div class="quote">'+esc(q.quote)+(q.ref?'<div class="ref">← '+esc(q.ref)+'</div>':'')+'</div>'; });
+      (r.data||[]).forEach(x=>{ s+='<div class="ptr">⛁ <span class="path">'+esc(x.path)+'</span>'+(x.note?' — '+esc(x.note):'')+'</div>'; });
+      h += block("result", "", s, true);
+    }
+
+    // why (claims) — supporting detail, collapsed
+    if(n.why&&n.why.length){
+      const w = n.why.map(c=>{
+        let s='<div class="claim"><h4>'+esc(c.id)+(c.title?' — '+esc(c.title):'')+'</h4>';
+        if(c.statement) s+='<div class="kv">'+esc(c.statement)+'</div>';
+        if(c.status) s+='<div class="kv"><b>status</b> <span class="status '+esc(String(c.status).toLowerCase())+'">'+esc(c.status)+'</span></div>';
+        if(c.conditions) s+='<div class="kv"><b>conditions</b> '+esc(c.conditions)+'</div>';
+        if(c.falsification) s+='<div class="kv"><b>falsified if</b> '+esc(c.falsification)+'</div>';
+        if(c.dependencies&&c.dependencies.length) s+='<div class="kv"><b>depends on</b> '+esc(c.dependencies.join(", "))+'</div>';
+        if(c.provenance) s+='<div class="kv"><span class="prov">provenance: '+esc(c.provenance)+'</span></div>';
+        return s+'</div>';
+      }).join("");
+      h += block("why", n.why.map(c=>c.id).join(" · "), w);
+    }
+
+    // how verified (experiments) — supporting detail, collapsed
+    if(n.verified_by&&n.verified_by.length){
+      const v = n.verified_by.map(e=>'<div class="claim"><h4>'+esc(e.id)+(e.title?' — '+esc(e.title):'')+'</h4>'+
+        (e.run?'<div class="kv"><b>run</b> <span class="path mono">'+esc(e.run)+'</span></div>':'')+
+        (e.setup?'<div class="kv"><b>setup</b> '+esc(e.setup)+'</div>':'')+
+        (e.metrics?'<div class="kv"><b>metrics</b> '+esc(e.metrics)+'</div>':'')+'</div>').join("");
+      h += block("how verified", n.verified_by.map(e=>e.id).join(" · "), v);
+    }
+
+    // artifact pointers (src/artifacts.md) — collapsed
+    if(n.artifact&&n.artifact.length){
+      const a = n.artifact.map(x=>'<div class="ptr">▸ <b>'+esc(x.name)+'</b> — <span class="path">'+esc(x.pointer)+'</span>'+
+        (x.what?'<div class="empty">'+esc(x.what)+'</div>':'')+'</div>').join("");
+      h += block("artifact", "pointer", a);
+    }
+
+    d.innerHTML = h;
+    if(typeof LEX!=="undefined" && LEX) linkifyConcepts(d);
+    d.scrollTop = 0;
+  }
+
+  // ---- map ----
+  let selected = null;
+  function selectNode(id){
+    if(!byId.has(id)) return;
+    selected = id;
+    document.querySelectorAll(".node").forEach(el=>el.classList.toggle("sel", el.dataset.id===id));
+    const el = document.querySelector('.node[data-id="'+CSS.escape(id)+'"]');
+    if(el) el.scrollIntoView({block:"nearest"});
+    renderDetail(byId.get(id));
+    rstat();
+  }
+
+  function nodeRow(n){
+    const row = document.createElement("div");
+    row.className = "node "+(n.type==="dead_end"?"dead":"");
+    row.dataset.id = n.id; row.dataset.type = n.type;
+    // calmer than before: one glyph + id + (quiet) cross-edge marker; the ⊕/⊘ count soup is gone.
+    row.innerHTML = '<span class="glyph '+cls(n.type)+'">'+glyph(n.type)+'</span>'+
+      '<span><span class="meta"><span class="nid">'+esc(n.id)+'</span>'+
+      (n.depends_on&&n.depends_on.length?'<span class="dep" title="depends on '+esc(n.depends_on.join(", "))+'">⇠ '+esc(n.depends_on.join(","))+'</span>':'')+
+      '</span><div class="ntitle">'+esc(n.title||n.body||"(untitled)")+'</div></span>';
+    row.addEventListener("click", ()=>selectNode(n.id));
+    // hover a node to highlight its cross-edge targets (gentler than always-on connectors)
+    if(n.depends_on&&n.depends_on.length){
+      row.addEventListener("mouseenter", ()=>n.depends_on.forEach(t=>{ const el=document.querySelector('.node[data-id="'+CSS.escape(t)+'"]'); if(el) el.classList.add("deptarget"); }));
+      row.addEventListener("mouseleave", ()=>document.querySelectorAll(".node.deptarget").forEach(el=>el.classList.remove("deptarget")));
+    }
+    return row;
+  }
+  function renderSubtree(id, container){
+    const n = byId.get(id); if(!n) return;
+    container.appendChild(nodeRow(n));
+    const cs = kids.get(id)||[];
+    if(cs.length){ const wrap=document.createElement("div"); wrap.className="kid"; cs.forEach(c=>renderSubtree(c,wrap)); container.appendChild(wrap); }
+  }
+  function renderMap(){
+    const map = document.getElementById("map"); map.innerHTML="";
+    const normalRoots = roots.filter(id=>!byId.get(id).isolated);
+    const isoRoots = roots.filter(id=>byId.get(id).isolated);
+    normalRoots.forEach(id=>renderSubtree(id, map));
+    if(isoRoots.length){
+      const box=document.createElement("div"); box.className="isobox";
+      const hdr=document.createElement("div"); hdr.className="isohdr"; hdr.textContent="isolated subtree"; box.appendChild(hdr);
+      isoRoots.forEach(id=>renderSubtree(id, box)); map.appendChild(box);
+    }
+  }
+
+  // ---- filter / search ----
+  function applyFilters(){
+    const q = document.getElementById("q").value.trim().toLowerCase();
+    const ty = document.getElementById("ftype").value;
+    const deadOnly = document.getElementById("fdead").checked;
+    let shown=0;
+    document.querySelectorAll(".node").forEach(el=>{
+      const n = byId.get(el.dataset.id);
+      const text = (n.id+" "+(n.title||"")+" "+(n.body||"")).toLowerCase();
+      const ok = (!q||text.includes(q)) && (!ty||n.type===ty) && (!deadOnly||n.type==="dead_end");
+      el.classList.toggle("dim", !ok);
+      if(ok) shown++;
+    });
+    document.getElementById("rstat").textContent = shown+" / "+nodes.length+" steps";
+  }
+  function rstat(){
+    const i = selected?order.indexOf(selected):-1;
+    document.getElementById("rstat").textContent = (i>=0?("step "+(i+1)+" / "+order.length):(nodes.length+" steps"));
+  }
+
+  // ---- replay ----
+  let timer=null;
+  function step(delta){
+    let i = selected?order.indexOf(selected):-1;
+    i = Math.max(0, Math.min(order.length-1, i+delta));
+    selectNode(order[i]);
+  }
+  function play(){
+    if(timer){ stop(); return; }
+    if(!selected) selectNode(order[0]);
+    document.getElementById("rplay").textContent="⏸ Pause";
+    timer = setInterval(()=>{
+      const i = selected?order.indexOf(selected):-1;
+      if(i>=order.length-1){ stop(); return; }
+      step(1);
+    }, 1300);
+  }
+  function stop(){ if(timer){clearInterval(timer);timer=null;} document.getElementById("rplay").textContent="▶ Replay"; }
+
+  // ======================= v1.1 enrichment layers (all inert unless present) =======================
+  const CTX = DATA.context, GLO = DATA.glossary, DEP = DATA.dependencies, REC = DATA.recipes;
+  const LAYERS = { context:CTX, glossary:GLO, dependencies:DEP, recipes:REC };
+
+  // ---- indexes (built once) ----
+  const claimToNodes = new Map();
+  nodes.forEach(n => (n.why||[]).forEach(c => { if(c&&c.id){ if(!claimToNodes.has(c.id)) claimToNodes.set(c.id,[]); claimToNodes.get(c.id).push(n.id); } }));
+  const firstNodeForClaim = id => (claimToNodes.get(id)||[])[0] || null;
+  const rwById   = new Map(((DEP&&DEP.entries)||[]).map(e => [e.rw_id, e]));
+  const termById = new Map(((GLO&&GLO.terms)||[]).map(t => [t.term_id, t]));
+  // concept "used by" (inferred) from each node's name-matched concepts[]
+  if(GLO){
+    const nameToTerm = new Map();
+    (GLO.terms||[]).forEach(t => { if(t.name) nameToTerm.set(String(t.name).toLowerCase(), t); (t.aliases||[]).forEach(a=>nameToTerm.set(String(a).toLowerCase(), t)); });
+    nodes.forEach(n => (n.concepts||[]).forEach(cn => { const t=nameToTerm.get(String(cn).toLowerCase()); if(t){ (t._used=t._used||[]).push(n.id); } }));
+  }
+
+  // ---- tiny inline-math fallback (no CDN; operates on already-escaped text, adds only safe tags) ----
+  const GK={alpha:"α",beta:"β",gamma:"γ",delta:"δ",epsilon:"ε",eta:"η",theta:"θ",kappa:"κ",lambda:"λ",mu:"μ",nu:"ν",pi:"π",rho:"ρ",sigma:"σ",tau:"τ",phi:"φ",chi:"χ",psi:"ψ",omega:"ω",Delta:"Δ",Sigma:"Σ",Omega:"Ω",Phi:"Φ",Theta:"Θ",Lambda:"Λ",Gamma:"Γ",nabla:"∇",partial:"∂",times:"×",cdot:"·",infty:"∞",approx:"≈",leq:"≤",geq:"≥",neq:"≠",to:"→",in:"∈",sum:"Σ",prod:"Π",sqrt:"√",mathbb:"",mathcal:"",mathbf:"",mathrm:"",left:"",right:""};
+  function texInner(s){
+    s=s.replace(/\\(?:mathbb|mathcal|mathbf|mathrm)\{([^{}]*)\}/g,"$1");
+    s=s.replace(/\\frac\{([^{}]*)\}\{([^{}]*)\}/g,"($1)/($2)");
+    s=s.replace(/\\([A-Za-z]+)/g,(m,w)=>GK[w]!==undefined?GK[w]:m);
+    s=s.replace(/\^\{([^{}]*)\}/g,"<sup>$1</sup>").replace(/\^([\w()+\-])/g,"<sup>$1</sup>");
+    s=s.replace(/_\{([^{}]*)\}/g,"<sub>$1</sub>").replace(/_([\w()+\-])/g,"<sub>$1</sub>");
+    return s;
+  }
+  function mathPass(escaped){
+    if(escaped.indexOf("$")<0) return escaped;
+    return escaped.replace(/\$\$([^$]+)\$\$/g,(m,x)=>'<span class="math">'+texInner(x)+'</span>')
+                  .replace(/\$([^$]+)\$/g,(m,x)=>'<span class="math">'+texInner(x)+'</span>');
+  }
+  function mtext(v){ const e=esc(v); try{ return mathPass(e); }catch(_){ return e; } }
+
+  // ---- typed-ref rendering (off-ARA pointers stay inert; in-ARA targets become jump chips) ----
+  function refUrl(rf){
+    const raw=rf.raw||"";
+    if(rf.kind==="url"){ const m=raw.match(/https?:\/\/\S+/); return m?m[0]:""; }
+    if(rf.kind==="arxiv"){ const m=raw.match(/(\d{4}\.\d{4,5})/); return m?("https://arxiv.org/abs/"+m[1]):""; }
+    if(rf.kind==="doi"){ const m=raw.match(/(10\.\d{4,}\/\S+)/); return m?("https://doi.org/"+m[1]):""; }
+    return "";
+  }
+  function refChip(rf){
+    const raw=esc(rf.raw||""), url=refUrl(rf);
+    if(url) return '<a class="chip ext" href="'+esc(url)+'" target="_blank" rel="noopener">'+raw+'</a>';
+    if(rf.target){
+      if(rf.kind==="claim")        return '<span class="chip jump" data-jump-claim="'+esc(rf.target)+'">'+raw+'</span>';
+      if(rf.kind==="node")         return '<span class="chip jump" data-jump-node="'+esc(rf.target)+'">'+raw+'</span>';
+      if(rf.kind==="concept")      return '<span class="chip jump" data-open-term="'+esc(rf.target)+'">'+raw+'</span>';
+      if(rf.kind==="related_work") return '<span class="chip jump" data-open-panel="dependencies" data-anchor="ov-'+esc(rf.target)+'">'+raw+'</span>';
+      return '<span class="chip jump" data-scroll="ov-'+esc(rf.target)+'">'+raw+'</span>';
+    }
+    const dangle=(rf.kind==="claim"||rf.kind==="related_work"||rf.kind==="concept");
+    return '<span class="chip '+(dangle?'dangle" title="referenced but not found in this ARA':'ext')+'">'+raw+'</span>';
+  }
+  function refRow(refs){ return refs&&refs.length ? '<div class="chips">'+refs.map(refChip).join("")+'</div>' : ""; }
+
+  // ---- per-node provenance chips (consumed by renderDetail) ----
+  function chipRow(label, arr, klass){
+    const cs=arr.map(x=>{
+      const txt=[x.rw_id,x.name].filter(Boolean).join(" · ")||"?";
+      const tip=x.relation_raw?(' title="'+esc(x.relation_raw)+'"'):'';
+      const op =x.rw_id?(' data-open-panel="dependencies" data-anchor="ov-'+esc(x.rw_id)+'"'):'';
+      return '<span class="chip '+klass+(x.rw_id?' jump':'')+'"'+tip+op+'>'+esc(txt)+'</span>';
+    }).join("");
+    return '<div class="chiplabel">'+esc(label)+'</div><div class="chips">'+cs+'</div>';
+  }
+  function recipeChips(arr){
+    const cs=arr.map(x=>{
+      const anchor="ov-sec-"+(x.file||"")+"-"+(x.sec_id||"");
+      return '<span class="chip chip-recipe jump" data-open-panel="recipes" data-anchor="'+esc(anchor)+'" title="'+esc((x.file||"")+(x.role?(" · "+x.role):""))+'">▦ '+esc(x.heading||x.file||"recipe")+'</span>';
+    }).join("");
+    return '<div class="chiplabel">recipe</div><div class="chips">'+cs+'</div>';
+  }
+
+  // ---- the four overlay renderers (reuse block/chips/renderMd) ----
+  function renderContext(){
+    let h=""; if(CTX.summary) h+='<div class="ribbon">'+esc(CTX.summary)+'</div>';
+    (CTX.sections||[]).forEach(sec=>{
+      let inner="";
+      if(sec.present===false){ inner='<div class="muted grey">(not specified in this ARA)</div>'; }
+      else (sec.entries||[]).forEach(en=>{
+        let c='<div class="card" id="ov-'+esc(en.ent_id||"")+'"><h4>'+(en.ent_id?'<span class="did">'+esc(en.ent_id)+'</span> ':'')+esc(en.ent_title||"")+(en.inferred_id?' <span class="sub">(pos.)</span>':'')+'</h4>';
+        if(!en.unstructured && en.fields && en.fields.length) en.fields.forEach(f=>c+='<div class="kv"><b>'+esc(f.label)+'</b> '+mtext(f.value)+'</div>');
+        else if(en.text) c+='<div class="kv">'+mtext(en.text)+'</div>';
+        if(en.unstructured) c+='<div class="sub">unstructured</div>';
+        c+=refRow(en.refs)+'</div>'; inner+=c;
+      });
+      h+=block(sec.heading||sec.role||"section", sec.role||"", inner, sec.role==="insight");
+    });
+    return h || '<div class="muted">No problem context.</div>';
+  }
+  function renderGlossary(filter){
+    const f=(filter||"").trim().toLowerCase();
+    const match=t=>!f||((t.name||"")+" "+(t.aliases||[]).join(" ")+" "+(t.definition||"")).toLowerCase().includes(f);
+    function card(t){
+      let c='<div class="card" id="ov-'+esc(t.term_id)+'"><h4>'+esc(t.name)+(t.group?' <span class="sub">'+esc(t.group)+'</span>':'')+'</h4>';
+      if(t.aliases&&t.aliases.length) c+='<div class="chips">'+t.aliases.map(a=>'<span class="chip">'+esc(a)+'</span>').join("")+'</div>';
+      if(t.definition) c+='<div class="kv">'+mtext(t.definition)+'</div>';
+      (t.fields||[]).forEach(fl=>c+='<div class="kv"><b>'+esc(fl.label)+'</b> '+mtext(fl.value)+'</div>');
+      if(t.related&&t.related.length) c+='<div class="kv"><b>related</b> '+t.related.map(r=>{const rt=termById.get(r);return '<span class="chip jump" data-open-term="'+esc(r)+'">'+esc(rt?rt.name:r)+'</span>';}).join(" ")+'</div>';
+      if(t._used&&t._used.length) c+='<div class="kv"><b>mentions</b> '+[...new Set(t._used)].map(nid=>'<span class="chip jump" data-jump-node="'+esc(nid)+'">'+esc(nid)+'</span>').join(" ")+' <span class="sub">(inferred)</span></div>';
+      return c+refRow(t.refs)+'</div>';
+    }
+    const groups=GLO.groups&&GLO.groups.length?GLO.groups:null; let h="";
+    if(groups){
+      const grouped=new Set();
+      groups.forEach(g=>{ (g.term_ids||[]).forEach(id=>grouped.add(id)); const ts=(g.term_ids||[]).map(id=>termById.get(id)).filter(Boolean).filter(match); if(ts.length) h+=block(g.name||"group", String(ts.length), ts.map(card).join(""), true); });
+      const rest=(GLO.terms||[]).filter(t=>!grouped.has(t.term_id)).filter(match);
+      if(rest.length) h+=block("other", String(rest.length), rest.map(card).join(""), true);
+    } else { const ts=(GLO.terms||[]).filter(match); h=ts.map(card).join(""); }
+    return h || '<div class="muted">No matching terms.</div>';
+  }
+  function renderDeps(filter){
+    const f=(filter||"").trim().toLowerCase(); let h="";
+    if(DEP.preamble) h+='<div class="muted">'+esc(DEP.preamble)+'</div>';
+    if(DEP.attribution) h+='<div class="ribbon">'+esc(DEP.attribution)+'</div>';
+    const ents=(DEP.entries||[]).filter(e=>!e.is_footprint).filter(e=>!f||(((e.rw_id||"")+" "+(e.name||"")+" "+(e.relation_raw||"")+" "+(e.delta||"")).toLowerCase().includes(f)));
+    ents.forEach(e=>{
+      const rn=e.relation_norm, relc=["baseline","imports","extends","bounds","refutes"].includes(rn)?rn:"neutral";
+      let c='<div class="card" id="ov-'+esc(e.rw_id||"")+'"><h4>'+(e.rw_id?'<span class="did">'+esc(e.rw_id)+'</span> ':'')+esc(e.name||"")+'</h4>';
+      c+='<div class="chips"><span class="rel '+relc+'">'+esc(e.relation_raw||rn||"related")+'</span>'+(e.cross_agent?'<span class="chip" title="other-agent provenance">↔ other-agent</span>':'')+'</div>';
+      if(e.delta) c+='<div class="kv">'+mtext(e.delta)+'</div>';
+      if(e.adopted) c+='<div class="kv"><b>adopted</b> '+esc(e.adopted)+'</div>';
+      let prov=(e.grounding||[]).map(refChip).join("");
+      (e.claims||[]).filter(id=>claimToNodes.has(id)).forEach(id=>prov+='<span class="chip jump" data-jump-claim="'+esc(id)+'">'+esc(id)+'</span>');
+      c+= prov?('<div class="kv"><b>grounding</b> '+prov+'</div>'):'<div class="muted">ungrounded</div>';
+      h+=c+'</div>';
+    });
+    if(!ents.length) h+='<div class="muted">No matching dependencies.</div>';
+    const fp=DEP.footprint||[];
+    if(fp.length) h+=block("Citation footprint", String(fp.length), fp.map(x=>'<div class="ptr"><span class="muted">'+esc(x.ref_id||"")+'</span> '+esc(x.citation||"")+'</div>').join(""), false);
+    return h;
+  }
+  function renderRecipes(){
+    let h="";
+    (REC.files||[]).forEach(file=>{
+      let inner="";
+      (file.sections||[]).forEach(sec=>{
+        let c='<div class="card" id="ov-sec-'+esc((file.file||"")+"-"+(sec.sec_id||""))+'"><h4>'+(sec.sec_id?'<span class="did">'+esc(sec.sec_id)+'</span> ':'')+esc(sec.heading||"")+'</h4>';
+        if(sec.kind==="table"&&sec.markdown) c+=renderMd(sec.markdown);
+        else if(sec.kind==="steps"&&sec.steps&&sec.steps.length) c+='<ol>'+sec.steps.map(s=>'<li>'+mtext(String(s).replace(/^\s*\d+\.\s*/,""))+'</li>').join("")+'</ol>';
+        else if(sec.kind==="kv"&&sec.fields&&sec.fields.length) sec.fields.forEach(fl=>c+='<div class="kv"><b>'+esc(fl.label)+'</b> '+mtext(fl.value)+'</div>');
+        else if(sec.kind==="code"&&sec.code) c+='<pre class="snip">'+esc(sec.code)+'</pre>';
+        else if(sec.kind==="math"&&sec.code) c+='<div class="kv math">'+mtext(sec.code)+'</div>';
+        else if(sec.text) c+='<div class="kv">'+mtext(sec.text)+'</div>';
+        if(sec.warn) c+='<div class="warn">'+esc(sec.warn)+'</div>';
+        inner+=c+refRow(sec.refs)+'</div>';
+      });
+      h+=block((file.file_title||file.file||"recipe")+(file.role?("  ·  "+file.role):""), String((file.sections||[]).length), inner, true);
+    });
+    return h || '<div class="muted">No recipe content.</div>';
+  }
+
+  // ---- overlay open/close + layerbar wiring ----
+  const ov=document.getElementById("overlay");
+  let lastTrigger=null;
+  const PANEL_RENDER={ context:renderContext, glossary:()=>renderGlossary(""), dependencies:()=>renderDeps(""), recipes:renderRecipes };
+  function hasContent(name){ const L=LAYERS[name]; if(!L) return false;
+    if(name==="context") return (L.sections||[]).length>0;
+    if(name==="glossary") return (L.terms||[]).length>0;
+    if(name==="dependencies") return (L.entries||[]).length>0||(L.footprint||[]).length>0;
+    if(name==="recipes") return (L.files||[]).length>0; return false; }
+  function panelTitle(name){ const L=LAYERS[name]||{}; return L.title || ({context:"Context",glossary:"Concepts",dependencies:"Dependencies",recipes:"Solution"}[name]); }
+  function panelCount(name){ const L=LAYERS[name]||{};
+    if(name==="glossary") return (L.terms||[]).length;
+    if(name==="dependencies") return (L.entries||[]).length;
+    if(name==="recipes") return (L.files||[]).reduce((a,f)=>a+(f.sections||[]).length,0); return 0; }
+  function openPanel(name, anchor){
+    if(!hasContent(name)) return;
+    stop(); lastTrigger=document.activeElement;
+    document.getElementById("ov-title").textContent=panelTitle(name);
+    const body=document.getElementById("ov-body"); body.innerHTML=PANEL_RENDER[name]();
+    if(LEX) linkifyConcepts(body);
+    const q=document.getElementById("ov-q");
+    if(name==="glossary"||name==="dependencies"){ q.hidden=false; q.value=""; q.dataset.panel=name; } else { q.hidden=true; }
+    ov.hidden=false;
+    if(anchor){ const el=document.getElementById(anchor); if(el) el.scrollIntoView({block:"center"}); } else body.scrollTop=0;
+    (q.hidden?document.getElementById("ov-close"):q).focus();
+  }
+  function closePanel(){ ov.hidden=true; if(lastTrigger&&lastTrigger.focus) lastTrigger.focus(); }
+  document.querySelectorAll(".lbtn").forEach(b=>{ const name=b.dataset.panel;
+    if(hasContent(name)){ b.hidden=false; const c=b.querySelector(".cnt"); if(c){ const n=panelCount(name); if(n) c.textContent=n; } b.addEventListener("click",()=>openPanel(name)); } });
+  document.getElementById("ov-q").addEventListener("input", e=>{ const p=e.target.dataset.panel, body=document.getElementById("ov-body");
+    body.innerHTML = p==="glossary"?renderGlossary(e.target.value):renderDeps(e.target.value); if(LEX) linkifyConcepts(body); });
+
+  // ---- glossary lexicon + popover ----
+  const LEX=(GLO&&GLO.lexicon&&Object.keys(GLO.lexicon).length)?(function(){
+    const surf=Object.keys(GLO.lexicon).filter(s=>s.length>=3).sort((a,b)=>b.length-a.length);
+    if(!surf.length) return null;
+    const re=s=>s.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+    return { re:new RegExp("\\b("+surf.map(re).join("|")+")\\b","i"), map:GLO.lexicon };
+  })():null;
+  const SKIP_TAGS={A:1,CODE:1,PRE:1,BUTTON:1,SCRIPT:1,STYLE:1,H4:1,H5:1,SUMMARY:1};
+  function linkifyConcepts(root){
+    if(!LEX) return;
+    const walker=document.createTreeWalker(root, NodeFilter.SHOW_TEXT, { acceptNode(t){
+      if(!t.nodeValue||!t.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+      let p=t.parentNode; while(p&&p!==root){ if(p.classList&&p.classList.contains("gterm")) return NodeFilter.FILTER_REJECT; if(SKIP_TAGS[p.tagName]) return NodeFilter.FILTER_REJECT; p=p.parentNode; }
+      return NodeFilter.FILTER_ACCEPT; } });
+    const seen=new Set(), hits=[]; let t;
+    while((t=walker.nextNode())){ const m=LEX.re.exec(t.nodeValue); if(!m) continue; const tid=LEX.map[m[1].toLowerCase()]; if(!tid||seen.has(tid)) continue; seen.add(tid); hits.push({node:t,index:m.index,len:m[1].length,tid}); }
+    hits.forEach(hp=>{ const tn=hp.node, txt=tn.nodeValue, par=tn.parentNode; if(!par) return;
+      const span=document.createElement("span"); span.className="gterm"; span.dataset.term=hp.tid; span.tabIndex=0; span.textContent=txt.slice(hp.index,hp.index+hp.len);
+      const after=document.createTextNode(txt.slice(hp.index+hp.len));
+      par.replaceChild(after,tn); par.insertBefore(span,after); par.insertBefore(document.createTextNode(txt.slice(0,hp.index)),span); });
+  }
+  const gpop=document.getElementById("gpop");
+  function gpopShow(span){ const t=termById.get(span.dataset.term); if(!t) return;
+    const def=t.definition||""; gpop.innerHTML='<h5>'+esc(t.name)+'</h5><div>'+mtext(def.slice(0,240))+(def.length>240?'…':'')+'</div><span class="gp-open" data-open-term="'+esc(t.term_id)+'">open in glossary →</span>';
+    gpop.style.display="block"; const r=span.getBoundingClientRect();
+    gpop.style.left=Math.max(6,Math.min(r.left, window.innerWidth-372))+"px"; gpop.style.top=(r.bottom+6)+"px"; }
+  function gpopHide(){ gpop.style.display="none"; }
+
+  // ---- delegated interactions for the new layers ----
+  document.addEventListener("click", e=>{
+    const el=e.target.closest&&e.target.closest("[data-close],[data-jump-node],[data-jump-claim],[data-open-panel],[data-open-term],[data-scroll]");
+    if(!el) return;
+    if(el.hasAttribute("data-close")){ closePanel(); return; }
+    if(el.dataset.jumpNode){ closePanel(); selectNode(el.dataset.jumpNode); return; }
+    if(el.dataset.jumpClaim){ const nid=firstNodeForClaim(el.dataset.jumpClaim); if(nid){ closePanel(); selectNode(nid); } return; }
+    if(el.dataset.openTerm){ openPanel("glossary","ov-"+el.dataset.openTerm); return; }
+    if(el.hasAttribute("data-open-panel")){ openPanel(el.dataset.openPanel, el.dataset.anchor||null); return; }
+    if(el.dataset.scroll){ const t=document.getElementById(el.dataset.scroll); if(t) t.scrollIntoView({block:"center"}); return; }
+  });
+  document.addEventListener("mouseover", e=>{ const g=e.target.closest&&e.target.closest(".gterm"); if(g) gpopShow(g); });
+  document.addEventListener("mouseout",  e=>{ const g=e.target.closest&&e.target.closest(".gterm"); if(g) gpopHide(); });
+  document.addEventListener("focusin",   e=>{ const g=e.target.closest&&e.target.closest(".gterm"); if(g) gpopShow(g); });
+  document.addEventListener("focusout",  e=>{ const g=e.target.closest&&e.target.closest(".gterm"); if(g) gpopHide(); });
+  window.addEventListener("scroll", gpopHide, true);
+
+  document.getElementById("q").addEventListener("input", applyFilters);
+  document.getElementById("ftype").addEventListener("change", applyFilters);
+  document.getElementById("fdead").addEventListener("change", applyFilters);
+  document.getElementById("rplay").addEventListener("click", play);
+  document.getElementById("rprev").addEventListener("click", ()=>{stop();step(-1);});
+  document.getElementById("rnext").addEventListener("click", ()=>{stop();step(1);});
+  document.addEventListener("keydown", e=>{
+    if(e.key==="Escape"){ if(!ov.hidden){ closePanel(); return; } gpopHide(); }
+    if(e.target.tagName==="INPUT"||e.target.tagName==="SELECT") return;
+    if(e.key==="ArrowLeft"){stop();step(-1);} else if(e.key==="ArrowRight"){stop();step(1);}
+    else if(e.key==="c"||e.key==="g"||e.key==="d"||e.key==="r"){ const p={c:"context",g:"glossary",d:"dependencies",r:"recipes"}[e.key]; if(hasContent(p)) openPanel(p); }
+  });
+
+  renderMap();
+  rstat();
+})();
+</script>
+</body>
+</html>

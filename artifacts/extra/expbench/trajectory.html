@@ -1,0 +1,2887 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ARA Trajectory</title>
+<!--
+  ARA Trajectory Viewer — canonical self-contained scaffold for the `research-visualizer` skill.
+
+  HOW THE SKILL USES THIS FILE
+  ----------------------------
+  The rendering logic below is FIXED. The agent does NOT rewrite it. The agent only:
+    1. Parses the ARA into one ARA_DATA object (schema in references/binding.md).
+    2. base64-inlines every referenced figure .png into node.result.figures[].img.
+    3. Replaces ONLY the JSON between the BEGIN/END markers in the <script id="ara-data"> block.
+    4. Writes the result to <ara>/trajectory.html (or --output).
+  Everything is inline (no CDN, no fetch, no server) so the output is one portable file.
+
+  INJECTION CONTRACT
+  ------------------
+  - Replace exactly the lines between  __ARA_DATA_BEGIN__  and  __ARA_DATA_END__.
+  - The payload MUST be valid JSON (it is read with JSON.parse).
+  - JSON must not contain the literal substring "</script>"; escape any "<" in inlined
+    markdown/text as "<" to be safe.
+  - The demo payload shipped here renders a 3-node sample so the bare template opens and
+    shows every node state (experiment, dead_end, isolated). The skill overwrites it.
+-->
+<style>
+  /* Research Visualizer — "field notebook of a machine scientist".
+     Cool archival vellum + ink; monospace is the machine-readout voice for
+     structure / IDs / data, a humanist serif carries the reasoning prose. The
+     signature is a traced trajectory spine that forks at branches and is struck
+     through at dead ends. Type is read from glyph + label; colour is reserved
+     for true epistemic status (teal = chrome, green = supported, amber =
+     tentative, clay-red = dead end) — never decoration. */
+  :root{
+    /* paper & ink — deliberately cool vellum, NOT warm cream */
+    --bg:#e9ece4; --panel:#f4f6f0; --panel2:#e3e7dd; --line:#ccd3c7; --ink:#1b2420;
+    --muted:#67726a; --faint:#8a948b; --accent:#0e6b62; --accent-ink:#0a4f48; --chip:#e6eae0;
+    --ok:#3a6a39; --warn:#a6402c; --tentative:#8a6310; --glyph-bg:#e0e5da; --glyph-ink:#4a544c;
+    --sel-bg:#e3ede7; --code-bg:#eaeee6; --reason-bg:#f4f6f0;
+    --iso-line:#b7c0ae; --iso-bg:#e5eadf; --iso-ink:#5f6b58;
+    --scrim:rgba(20,28,24,.42); --shadow:rgba(20,28,24,.16);
+    --add-bg:#e0ebdb; --add-ink:#2f5a2e; --del-bg:#f1e0da; --del-ink:#8c3623; --hunk:#67726a;
+    --spine:#c3ccbd; --grid:rgba(27,36,32,.05);
+    /* legacy type vars retained so any leftover hooks resolve */
+    --q:var(--glyph-bg); --exp:var(--glyph-bg); --dec:var(--glyph-bg); --piv:var(--glyph-bg); --ins:var(--glyph-bg); --def:var(--glyph-bg); --dead:var(--warn);
+    /* type roles: a serif reads the prose, monospace reads the machine */
+    --serif:ui-serif,"New York","Iowan Old Style",Palatino,Georgia,serif;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--bg);color:var(--ink);font:14px/1.65 var(--sans);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  code,pre,.mono{font-family:var(--mono)}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+
+  /* ---- masthead ---- */
+  header{padding:20px 24px 14px;border-bottom:1px solid var(--line);background:var(--panel)}
+  header .title{font-family:var(--serif);font-size:23px;font-weight:600;margin:0;letter-spacing:-.012em}
+  header .sub{font-family:var(--mono);color:var(--muted);font-size:11.5px;margin-top:5px;letter-spacing:.01em}
+  header details{margin-top:10px;color:var(--ink)}
+  header summary{cursor:pointer;color:var(--accent-ink);font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em}
+  .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:16px}
+  .toolbar input[type=search],.toolbar select{background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:6px 10px;font-size:13px;font-family:var(--sans)}
+  .toolbar input[type=search]{min-width:230px}
+  .toolbar input[type=search]:focus,.toolbar select:focus{border-color:var(--accent);outline:none}
+  .toolbar label{color:var(--muted);font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.06em;display:flex;gap:6px;align-items:center}
+  .btn{background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:6px 11px;font-size:12.5px;font-family:var(--mono);cursor:pointer;transition:border-color .12s,color .12s,background .12s}
+  .btn:hover{border-color:var(--accent);color:var(--accent-ink)}
+  .btn.primary{border-color:var(--accent);color:#fff;background:var(--accent)}
+  .btn.primary:hover{background:var(--accent-ink)}
+  .spacer{flex:1}
+  .count{color:var(--muted);font-family:var(--mono);font-size:11px;letter-spacing:.04em;padding-left:10px;border-left:1px solid var(--line)}
+
+  main{display:grid;grid-template-columns:minmax(300px,36%) 1fr;height:calc(100% - 0px);min-height:0}
+  #map{overflow:auto;border-right:1px solid var(--line);padding:18px 12px 56px;background:var(--bg);
+    background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+    background-size:24px 24px;background-position:-1px -1px}
+  #detail{overflow:auto;padding:26px 32px 80px;background:var(--bg)}
+
+  /* ---- process map: the trajectory spine is the signature ---- */
+  .node{position:relative;display:flex;gap:10px;align-items:flex-start;padding:7px 9px;border-radius:6px;cursor:pointer;border:1px solid transparent}
+  .node:hover{background:var(--panel2)}
+  .node.sel{background:var(--sel-bg);border-color:var(--accent)}
+  .node.deptarget{background:var(--sel-bg);outline:1px dashed var(--accent);outline-offset:-1px}
+  .node.dim{opacity:.32}
+  .node .glyph{flex:none;width:20px;height:20px;border-radius:5px;display:grid;place-items:center;font-family:var(--mono);font-size:11px;font-weight:700;color:var(--glyph-ink);background:var(--glyph-bg);border:1px solid var(--line);margin-top:1px}
+  .node.sel .glyph{border-color:var(--accent);color:var(--accent-ink)}
+  .node .nid{color:var(--muted);font-size:10.5px;font-family:var(--mono);letter-spacing:.02em}
+  .node .ntitle{font-size:13px;line-height:1.45}
+  .node.dead .ntitle{color:var(--warn);text-decoration:line-through;text-decoration-color:rgba(166,64,44,.45)}
+  .node .meta{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  /* the spine + branch connectors: nested steps trace back to their parent */
+  .kid{margin-left:19px;border-left:2px solid var(--spine);padding-left:14px}
+  .kid>.node::before{content:"";position:absolute;left:-14px;top:14px;width:10px;height:2px;background:var(--spine)}
+  .kid>.node.sel::before{background:var(--accent)}
+  .isobox{border:1px dashed var(--iso-line);border-radius:8px;margin:12px 2px;padding:6px 4px;background:var(--iso-bg)}
+  .isobox .isohdr{color:var(--iso-ink);font-family:var(--mono);font-size:10px;padding:3px 8px 7px;text-transform:uppercase;letter-spacing:.1em}
+  .dep{color:var(--muted);font-size:10px;font-family:var(--mono);border:1px solid var(--line);border-radius:4px;padding:0 5px}
+
+  .glyph.dead_end{background:var(--warn);color:#fff;border-color:var(--warn)}
+
+  /* ---- detail pane ---- */
+  .dhead{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-bottom:2px}
+  .badge{font-family:var(--mono);font-size:10px;font-weight:700;border-radius:4px;padding:3px 9px;color:var(--glyph-ink);background:var(--glyph-bg);border:1px solid var(--line);text-transform:uppercase;letter-spacing:.08em}
+  .badge.dead_end{background:var(--warn);color:#fff;border-color:var(--warn)}
+  .pill{font-family:var(--mono);font-size:10px;border:1px solid var(--line);border-radius:20px;padding:2px 9px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+  .pill.explicit{border-color:var(--ok);color:var(--ok)} .pill.inferred{border-color:var(--tentative);color:var(--tentative)}
+  .pill.iso{border-color:var(--iso-line);color:var(--iso-ink)}
+  .dtitle{font-family:var(--serif);font-size:25px;font-weight:600;margin:12px 0 6px;letter-spacing:-.012em;line-height:1.28}
+  .did{color:var(--muted);font-family:var(--mono);font-size:11.5px}
+
+  .block{border:1px solid var(--line);border-radius:7px;margin:15px 0;background:var(--panel)}
+  .block>summary{cursor:pointer;padding:11px 15px;font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);list-style:none;display:flex;align-items:center;gap:8px}
+  .block>summary::-webkit-details-marker{display:none}
+  .block>summary:hover{color:var(--accent-ink)}
+  .block>summary .tag{margin-left:auto;color:var(--faint);font-size:10.5px;font-weight:400;font-family:var(--mono);text-transform:none;letter-spacing:0}
+  .block .body{padding:4px 16px 16px}
+  /* the primary reasoning block: the agent's thinking, set as typeset prose */
+  .block.reason{border-left:3px solid var(--accent);background:var(--reason-bg)}
+  .block.reason>summary{color:var(--accent-ink)}
+  .block.reason .lead{font-family:var(--serif);font-size:17px;line-height:1.7;color:var(--ink)}
+  .didwhat{color:var(--muted);font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.09em;margin:16px 0 4px}
+  .lead{font-family:var(--serif);color:#2a322c;font-size:16px;line-height:1.7}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:11px}
+  .chip{background:var(--chip);border:1px solid var(--line);border-radius:4px;padding:2px 8px;font-size:11px;color:#46504a;font-family:var(--mono)}
+  .chip.ext{color:var(--muted)}
+
+  .claim{border:1px solid var(--line);border-left:2px solid var(--accent);border-radius:0 6px 6px 0;padding:11px 13px;margin:11px 0;background:var(--panel2)}
+  .claim h4{margin:0 0 6px;font-family:var(--mono);font-size:12px}
+  .claim .kv{font-size:13px;line-height:1.6;margin:4px 0;color:#3a423c}
+  .claim .kv b{color:var(--muted);font-weight:600;font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em}
+  .status{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.05em;border-radius:4px;padding:1px 7px;border:1px solid var(--line)}
+  .status.supported{color:var(--ok);border-color:var(--ok)}
+  .status.refuted{color:var(--warn);border-color:var(--warn)}
+  .status.hypothesis{color:var(--tentative);border-color:var(--tentative)}
+  .prov{font-size:11px;color:var(--iso-ink);font-family:var(--mono)}
+
+  .quote{border-left:3px solid var(--accent);background:var(--panel);border-radius:0 6px 6px 0;padding:9px 13px;margin:9px 0;font-size:13.5px;line-height:1.6;color:#2a322c}
+  .quote .ref{color:var(--muted);font-size:10.5px;font-family:var(--mono);margin-top:5px}
+  figure{margin:14px 0}
+  figure img{max-width:100%;border:1px solid var(--line);border-radius:5px;background:#fff;padding:6px}
+  figcaption{color:var(--muted);font-family:var(--mono);font-size:11px;margin-top:7px}
+
+  table.md{border-collapse:collapse;width:100%;font-family:var(--mono);font-size:12px;margin:10px 0}
+  table.md th,table.md td{border:1px solid var(--line);padding:5px 9px;text-align:left}
+  table.md th{background:var(--panel2);color:var(--ink);font-weight:700;text-transform:uppercase;font-size:10.5px;letter-spacing:.04em}
+  pre.snip{background:var(--code-bg);border:1px solid var(--line);border-radius:6px;padding:10px 12px;overflow:auto;font-size:12px;color:var(--ink);white-space:pre-wrap}
+
+  .ptr{font-size:13px;margin:7px 0}
+  .ptr .path{font-family:var(--mono);color:#46504a}
+  .truncated{color:var(--muted);font-size:11.5px;font-style:italic}
+  .empty{color:var(--muted);font-size:13px}
+  .none{color:var(--muted);padding:40px 24px;text-align:center;font-family:var(--mono);font-size:12px;letter-spacing:.02em}
+  kbd{background:var(--panel2);border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 5px;font-family:var(--mono);font-size:11px}
+
+  /* ---- enrichment layers (all inert unless the data is present) ---- */
+  .layerbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+  .lbtn .cnt{color:var(--muted);font-size:10.5px}
+  .chiplabel{color:var(--muted);font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.08em;margin:12px 0 3px}
+  .chip.jump{cursor:pointer}
+  .chip.jump:hover{border-color:var(--accent);color:var(--accent-ink)}
+  .chip.dangle{color:#9aa49b;text-decoration:line-through;cursor:not-allowed}
+  .chip.infer{border-style:dashed}
+  .chip-built{border-color:var(--ok);color:var(--ok)}
+  .chip-rej{border-color:var(--warn);color:var(--warn)}
+  .chip-recipe{border-color:var(--accent);color:var(--accent-ink)}
+  .nmark{color:var(--muted);font-size:10px;margin-left:5px;font-family:var(--mono)}
+  .rel{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.05em;border-radius:4px;padding:2px 8px;color:var(--glyph-ink);background:var(--glyph-bg);font-weight:700}
+  .rel.bounds,.rel.refutes{background:var(--warn);color:#fff}
+  .rel.neutral{background:var(--chip);color:var(--ink);border:1px solid var(--line);font-weight:400}
+  .ribbon{border-left:3px solid var(--accent);background:var(--panel2);border-radius:0 6px 6px 0;padding:9px 13px;margin:9px 0;color:#3a423c;font-size:13px;line-height:1.6}
+  .warn{border-left:3px solid var(--warn);background:var(--del-bg);border-radius:0 6px 6px 0;padding:9px 13px;margin:9px 0;font-size:13px;line-height:1.6}
+  .muted{color:var(--muted);font-size:11.5px}
+  .math{font-family:var(--serif);font-style:italic}
+  .gterm{border-bottom:1px dashed var(--accent);cursor:help}
+  #gpop{position:fixed;max-width:360px;background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:11px 13px;z-index:60;box-shadow:0 8px 28px var(--shadow);font-size:13px;line-height:1.55;display:none}
+  #gpop h5{margin:0 0 5px;font-family:var(--mono);font-size:12px;text-transform:uppercase;letter-spacing:.05em}
+  #gpop .gp-open{color:var(--accent);cursor:pointer;font-family:var(--mono);font-size:11px;margin-top:7px;display:inline-block}
+  .ov{position:fixed;inset:0;z-index:50}
+  .ov[hidden]{display:none}
+  .ov-scrim{position:absolute;inset:0;background:var(--scrim)}
+  .ov-sheet{position:relative;margin:5vh auto;max-width:920px;max-height:86vh;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 16px 48px var(--shadow)}
+  .ov-head{position:sticky;top:0;display:flex;gap:10px;align-items:center;padding:13px 17px;border-bottom:1px solid var(--line);background:var(--panel);z-index:1}
+  .ov-head #ov-title{font-family:var(--mono);font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.09em;color:var(--accent-ink)}
+  .ov-head input[type=search]{flex:1;max-width:260px;background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:5px 10px;font-size:13px}
+  .ov-body{padding:10px 17px 26px}
+  .ov-body .spacer{flex:1}
+  .card{border:1px solid var(--line);border-radius:6px;padding:11px 13px;margin:11px 0;background:var(--panel2)}
+  .card h4{margin:0 0 6px;font-family:var(--mono);font-size:12px}
+  .card .sub{color:var(--muted);font-family:var(--mono);font-size:10.5px}
+  .grey{opacity:.5}
+
+  /* responsive: stack the two panes on a narrow screen */
+  @media (max-width:720px){
+    main{grid-template-columns:1fr;grid-template-rows:42vh 1fr}
+    #map{border-right:none;border-bottom:1px solid var(--line)}
+    #detail{padding:20px 18px 64px}
+    .dtitle{font-size:21px}
+  }
+  /* honour reduced-motion */
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<header>
+  <h1 class="title" id="h-title">ARA Trajectory</h1>
+  <div class="sub" id="h-sub"></div>
+  <details id="h-abstract-wrap"><summary>Abstract</summary><div class="lead" id="h-abstract"></div></details>
+  <div class="toolbar">
+    <input type="search" id="q" placeholder="search steps…" autocomplete="off" />
+    <label>type
+      <select id="ftype"><option value="">all</option></select>
+    </label>
+    <label><input type="checkbox" id="fdead" /> dead ends only</label>
+    <span class="spacer"></span>
+    <button class="btn" id="rprev" title="previous (←)">‹</button>
+    <button class="btn primary" id="rplay">▶ Replay</button>
+    <button class="btn" id="rnext" title="next (→)">›</button>
+    <span class="count" id="rstat"></span>
+  </div>
+  <div class="layerbar" id="layerbar">
+    <button class="btn lbtn" data-panel="context" hidden>◧ Context</button>
+    <button class="btn lbtn" data-panel="glossary" hidden>▤ Glossary <span class="cnt"></span></button>
+    <button class="btn lbtn" data-panel="dependencies" hidden>⇄ Dependencies <span class="cnt"></span></button>
+    <button class="btn lbtn" data-panel="recipes" hidden>▦ Recipes <span class="cnt"></span></button>
+  </div>
+</header>
+
+<main>
+  <aside id="map"></aside>
+  <section id="detail"><div class="none">Select a step on the left, or press <kbd>▶ Replay</kbd>.</div></section>
+</main>
+
+<!-- v1.1: one shared modal overlay for the Context/Glossary/Dependencies/Recipes panels, + a glossary popover. Both inert unless their data is present. -->
+<div id="overlay" class="ov" hidden role="dialog" aria-modal="true">
+  <div class="ov-scrim" data-close></div>
+  <div class="ov-sheet">
+    <div class="ov-head"><span id="ov-title"></span>
+      <input type="search" id="ov-q" placeholder="filter…" hidden autocomplete="off" />
+      <span class="spacer"></span>
+      <button class="btn" id="ov-close" data-close>✕ <kbd>Esc</kbd></button>
+    </div>
+    <div class="ov-body" id="ov-body"></div>
+  </div>
+</div>
+<div id="gpop"></div>
+
+<!-- The skill replaces ONLY the JSON between the two markers below. -->
+<script id="ara-data" type="application/json">
+/* __ARA_DATA_BEGIN__ */
+{
+  "meta": {
+    "title": "EXP-Bench: Can AI Conduct AI Research Experiments?",
+    "authors": [
+      "Patrick Tser Jern Kon",
+      "Jiachen Liu",
+      "Xinyi Zhu",
+      "Qiuyi Ding",
+      "Jingjia Peng",
+      "Jiarong Xing",
+      "Yibo Huang",
+      "Yiming Qiu",
+      "Jayanth Srinivasa",
+      "Myungjin Lee",
+      "Mosharaf Chowdhury",
+      "Matei Zaharia",
+      "Ang Chen"
+    ],
+    "year": "2025",
+    "venue": "arXiv preprint (under review) — arXiv:2505.24785",
+    "ara_dir": "expbench",
+    "abstract": "Automating AI research holds immense potential for accelerating scientific progress, yet current AI agents struggle with the complexities of rigorous, end-to-end experimentation. We introduce EXP-Bench, a novel benchmark designed to systematically evaluate AI agents on complete research experiments sourced from influential AI publications. Given a research question and incomplete starter code, EXP-Bench challenges AI agents to formulate hypotheses, design and implement experimental procedures, execute them, and analyze results. To enable the creation of such intricate and authentic tasks with high-fidelity, we design a semi-autonomous pipeline to extract and structure crucial experimental details from these research papers and their associated open-source code. With the pipeline, EXP-Bench curated 461 AI research tasks from 51 top-tier AI research papers. Evaluations of leading AI agents, such as OpenHands and IterativeAgent on EXP-Bench demonstrate partial capabilities: while scores on individual experimental aspects such as design or implementation correctness reach 20–35%, the success rate for complete, executable experiments was a mere 0.5%. By identifying these bottlenecks and providing realistic step-by-step experiment procedures, EXP-Bench serves as a vital tool for future AI agents to improve their ability to conduct AI research experiments."
+  },
+  "order": [
+    "N01",
+    "N02",
+    "N03",
+    "N04",
+    "N05",
+    "N06",
+    "N07",
+    "N08",
+    "N09",
+    "N10",
+    "N11",
+    "N12"
+  ],
+  "nodes": [
+    {
+      "id": "N01",
+      "type": "question",
+      "parent": null,
+      "title": "Can AI agents autonomously conduct end-to-end AI research experiments?",
+      "body": "",
+      "thinking": "This is the central question the whole benchmark is built around. Rather than testing whether a model can write one correct function in isolation, the real test of AI research automation is whether an agent can act like a research collaborator: given a research question, a high-level description of the intended method, and an EXP-Bench Task consisting of a codebase with the key implementation pieces removed, can it work out what experiment to run, build it, actually execute it, and draw the correct conclusion from the results, entirely on its own and without ever seeing the source paper?",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [],
+      "concepts": [
+        "EXP-Bench Task"
+      ]
+    },
+    {
+      "id": "N02",
+      "type": "question",
+      "parent": "N01",
+      "title": "What benchmark infrastructure is needed to evaluate this capability?",
+      "body": "",
+      "thinking": "Before any evaluation can happen, there needs to be infrastructure to run it on. This sub-question asks what shape that infrastructure should take: what task format captures a full research experiment, what metrics would actually reveal whether an agent succeeded rather than just looked like it succeeded, and how many tasks are needed for the results to be statistically meaningful rather than anecdotal.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": []
+    },
+    {
+      "id": "N03",
+      "type": "experiment",
+      "parent": "N02",
+      "title": "Attempt: manually curate research tasks from papers",
+      "body": "In practice, manually curating tasks from papers took about two hours per paper: reading the paper end to end, extracting the task, verifying it against the codebase, and correcting the pipeline whenever something didn't line up. At that rate, curating hundreds of tasks by hand simply isn't feasible.",
+      "thinking": "The obvious first approach to building a benchmark like this is to have domain experts read each paper closely and hand-write the task: the research question, the ground-truth design, the expected conclusion. Human judgment should, in principle, produce the most reliable tasks.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [
+        "App. F"
+      ],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [
+          {
+            "id": "Table7",
+            "caption": "Table 7: Extraction Issues Identified and Patched",
+            "markdown": "**Source**: Table 7, Appendix F\n**Conditions**: Identified during iterative pipeline development before finalization.\n\n| Task Component | Issue | Actual Example |\n|---------------|-------|----------------|\n| Question | The hypothesis is a statement instead of a question | BaDExpert outperforms baseline defenses in backdoor detection on CIFAR10, achieving significantly higher AUROC (near 99%). |\n| Question | Conclusion data mentioned in the hypothesis | Specifically, can PDF achieve around 34.64% lower MACs compared to PatchTST and 74.38% lower MACs ...? |\n| Masked source | Masked source doesn't exist | \"source\": [\"/workspace/topomlp_setA_r50_w_otransform.py\"...] |\n| Masked source | Included masked source with wrong path | MuSc has musc.py under workspace/model/ but the source file indicates it under workspace/example/ |\n| Requirements | Steps are too specific | Run the evaluation script for the baseline EVA-CLIP ViT-B/16 model using distributed processing with 8 GPUs... |\n| Requirements | Asking the agent to use a masked source script | Merge the trained models using the heal_tools.py script (/workspace/opencood/tools/heal_tools.py:115-130) |\n| Requirements | Invalid operation | Analyze execution outcomes from Table 4, comparing... |\n| Expected outcome | Conclusion not aligned with the paper's findings | N/A |\n| Method / Usage Instruction / Agent Instruction | Mentioned specific parts of the paper (tables or figures) | The scripts will log metrics including mean rewards and standard deviations, which can be compared with the reported results in Table 2 of the paper. |\n| Method / Usage Instruction / Agent Instruction | Required hyperparameters not given in the agent instruction | Set appropriate model architecture parameters (encoder layers, attention heads, dimensions) |\n| Method / Usage Instruction / Agent Instruction | Invalid operations | Collect and analyze performance results from Table 3, ... |"
+          }
+        ],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": []
+    },
+    {
+      "id": "N04",
+      "type": "dead_end",
+      "parent": "N03",
+      "title": "Full manual curation is not scalable",
+      "body": "At roughly two hours per paper across 51 papers, full manual curation is not sustainable for a benchmark of this scale. The lesson was concrete: it motivated a semi-automated pipeline that combines LLM extraction with lightweight human verification, which eventually cut the human burden down to about 20 minutes per paper once the pipeline was finalized.",
+      "thinking": "The working assumption was that human experts could efficiently pull verified research tasks straight out of papers. That assumption did not survive contact with the material: the details that actually define an experiment are not concentrated in one place. They are scattered across the main text, the appendix, supplementary material, and the codebase itself, and correctly stitching them together requires real domain expertise on top of just reading carefully.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": []
+    },
+    {
+      "id": "N05",
+      "type": "pivot",
+      "parent": "N03",
+      "title": "Pivot: from manual curation to a semi-automated extraction pipeline",
+      "body": "The direction shifted from full manual curation to what became the Semi-Automated Curation Pipeline: multi-pass LLM extraction combined with execution-based validation against the paper's own open-source code.",
+      "thinking": "Manual curation had just been shown not to scale. But two things made an alternative look viable rather than merely convenient: LLMs such as o3-mini and Claude-3.7 Sonnet were now capable of multi-modal PDF extraction and real code understanding, and the open-source codebases attached to these papers could serve as ground truth to check whatever the LLM extracted.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [
+        {
+          "name": "Semi-automated curation pipeline (introduced by this pivot)",
+          "pointer": "src/execution/curation_pipeline.py",
+          "what": "Three-stage pipeline realizing the pivot: stage1_filter_paper() (source selection), stage2_1_extract_research_tasks() / stage2_2_extract_implementation() (multi-modal extraction), stage3_verify_and_finalize() (execution-based verification + masking)."
+        }
+      ],
+      "concepts": [
+        "Semi-Automated Curation Pipeline"
+      ]
+    },
+    {
+      "id": "N06",
+      "type": "decision",
+      "parent": "N05",
+      "title": "Design multi-pass vs. single-pass extraction strategy",
+      "body": "Chose three-pass RAG extraction (high-level pass, then a subsection-level pass, then a full-paper re-query) over the alternatives: single-pass extraction over the full paper text, or manual section identification followed by LLM extraction.",
+      "thinking": "Early prototypes tried pulling everything out of a paper in a single pass over the full text, and it missed details scattered across different sections and appendices, the same fragmentation problem that had sunk manual curation, just now hitting an LLM instead of a human (the documented failure types in Table 7 trace back to exactly this). Feeding the model accumulated context across multiple passes instead, first a high-level pass, then a subsection-level pass, then a full-paper re-query, substantially improved how complete the extracted tasks were. This three-pass process is what the pipeline calls Multi-Modal Extraction.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [
+          {
+            "id": "Table7",
+            "caption": "Table 7: Extraction Issues Identified and Patched",
+            "markdown": "**Source**: Table 7, Appendix F\n**Conditions**: Identified during iterative pipeline development before finalization.\n\n| Task Component | Issue | Actual Example |\n|---------------|-------|----------------|\n| Question | The hypothesis is a statement instead of a question | BaDExpert outperforms baseline defenses in backdoor detection on CIFAR10, achieving significantly higher AUROC (near 99%). |\n| Question | Conclusion data mentioned in the hypothesis | Specifically, can PDF achieve around 34.64% lower MACs compared to PatchTST and 74.38% lower MACs ...? |\n| Masked source | Masked source doesn't exist | \"source\": [\"/workspace/topomlp_setA_r50_w_otransform.py\"...] |\n| Masked source | Included masked source with wrong path | MuSc has musc.py under workspace/model/ but the source file indicates it under workspace/example/ |\n| Requirements | Steps are too specific | Run the evaluation script for the baseline EVA-CLIP ViT-B/16 model using distributed processing with 8 GPUs... |\n| Requirements | Asking the agent to use a masked source script | Merge the trained models using the heal_tools.py script (/workspace/opencood/tools/heal_tools.py:115-130) |\n| Requirements | Invalid operation | Analyze execution outcomes from Table 4, comparing... |\n| Expected outcome | Conclusion not aligned with the paper's findings | N/A |\n| Method / Usage Instruction / Agent Instruction | Mentioned specific parts of the paper (tables or figures) | The scripts will log metrics including mean rewards and standard deviations, which can be compared with the reported results in Table 2 of the paper. |\n| Method / Usage Instruction / Agent Instruction | Required hyperparameters not given in the agent instruction | Set appropriate model architecture parameters (encoder layers, attention heads, dimensions) |\n| Method / Usage Instruction / Agent Instruction | Invalid operations | Collect and analyze performance results from Table 3, ... |"
+          }
+        ],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [
+        {
+          "name": "Two-pass/three-pass RAG heuristic (H01)",
+          "pointer": "logic/solution/heuristics.md — H01",
+          "what": "Rationale and bounds for choosing the three-pass RAG extraction strategy over single-pass extraction."
+        },
+        {
+          "name": "Extraction pipeline code",
+          "pointer": "src/execution/curation_pipeline.py",
+          "what": "stage2_1_extract_research_tasks(): implements the three-pass extraction (RAG takeaways -> subsection classification -> full-paper re-query)."
+        }
+      ],
+      "concepts": [
+        "Multi-Modal Extraction"
+      ]
+    },
+    {
+      "id": "N07",
+      "type": "experiment",
+      "parent": "N06",
+      "title": "Validate extraction pipeline produces executable tasks",
+      "body": "The pipeline produced 461 EXP-Bench Task instances from 51 papers. Extraction issues were identified and patched iteratively (see Table 7), and running the full pipeline cost about $60 USD per paper on average.",
+      "thinking": "Choosing the multi-pass strategy was a design decision on paper; the next question was whether it actually worked at scale, whether it could turn a stack of real papers into tasks an agent could realistically be evaluated on.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [
+        "§3.1",
+        "§3.2",
+        "App. F"
+      ],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [
+          {
+            "id": "Table7",
+            "caption": "Table 7: Extraction Issues Identified and Patched",
+            "markdown": "**Source**: Table 7, Appendix F\n**Conditions**: Identified during iterative pipeline development before finalization.\n\n| Task Component | Issue | Actual Example |\n|---------------|-------|----------------|\n| Question | The hypothesis is a statement instead of a question | BaDExpert outperforms baseline defenses in backdoor detection on CIFAR10, achieving significantly higher AUROC (near 99%). |\n| Question | Conclusion data mentioned in the hypothesis | Specifically, can PDF achieve around 34.64% lower MACs compared to PatchTST and 74.38% lower MACs ...? |\n| Masked source | Masked source doesn't exist | \"source\": [\"/workspace/topomlp_setA_r50_w_otransform.py\"...] |\n| Masked source | Included masked source with wrong path | MuSc has musc.py under workspace/model/ but the source file indicates it under workspace/example/ |\n| Requirements | Steps are too specific | Run the evaluation script for the baseline EVA-CLIP ViT-B/16 model using distributed processing with 8 GPUs... |\n| Requirements | Asking the agent to use a masked source script | Merge the trained models using the heal_tools.py script (/workspace/opencood/tools/heal_tools.py:115-130) |\n| Requirements | Invalid operation | Analyze execution outcomes from Table 4, comparing... |\n| Expected outcome | Conclusion not aligned with the paper's findings | N/A |\n| Method / Usage Instruction / Agent Instruction | Mentioned specific parts of the paper (tables or figures) | The scripts will log metrics including mean rewards and standard deviations, which can be compared with the reported results in Table 2 of the paper. |\n| Method / Usage Instruction / Agent Instruction | Required hyperparameters not given in the agent instruction | Set appropriate model architecture parameters (encoder layers, attention heads, dimensions) |\n| Method / Usage Instruction / Agent Instruction | Invalid operations | Collect and analyze performance results from Table 3, ... |"
+          }
+        ],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [
+        {
+          "name": "Semi-automated curation pipeline",
+          "pointer": "src/execution/curation_pipeline.py",
+          "what": "stage2_1_extract_research_tasks() (3-pass RAG extraction) and stage3_verify_and_finalize() (containerized execution verification + masking) — the code that this validation experiment exercised."
+        },
+        {
+          "name": "Multi-pass extraction algorithm (recipe)",
+          "pointer": "logic/solution/algorithm.md — Multi-Pass Extraction Algorithm",
+          "what": "Pseudocode for SemiAutomatedTaskCuration(paper_pdf, repo), Stage 2.1/2.2/3."
+        }
+      ],
+      "concepts": [
+        "EXP-Bench Task"
+      ]
+    },
+    {
+      "id": "N08",
+      "type": "decision",
+      "parent": "N07",
+      "title": "Choose evaluation metric structure: individual vs. conjunctive",
+      "body": "Adopted conjunctive multi-phase evaluation (D, I, C, E scored individually, plus the conjunctions I·E, C·D, All✓, and All·E✓) as the primary framework, over a single overall pass/fail score, over individual phase scores alone, and over comparing only against human expert scores the way RE-Bench does.",
+      "thinking": "Scoring each phase of an experiment separately (design, implementation, conclusion) sounds reasonable, but individual metrics turned out to be gameable: an agent could produce a plausible-looking but unfounded conclusion, or code that runs without actually satisfying the task, and still score well on that one metric in isolation. A single overall pass/fail score would hide exactly which phase broke. The alternative was Conjunctive Evaluation Metrics: require design, implementation, conclusion, and execution to all hold at once, a much harder bar to clear by accident. Figure 5 and Figure 6b (see below) showed that individual metrics like C and E carry high variance, while their conjunctive counterparts (I·E, C·D) are far more stable and much better at exposing brittleness a per-phase score would otherwise mask.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [
+          {
+            "id": "Figure5",
+            "caption": "Figure 5: Metric Stability Analysis (rendered as data table; no raster in this ARA)",
+            "markdown": "**Source**: Figure 5, Section 4.2\n**Caption**: \"Stability Analysis.\" (figure label in paper)\n**Conditions**: Per-task scores for individual metrics (C, E) vs. conjunctive metrics (C·D, I·E) across all evaluated tasks and agent configurations.\n\n| Metric | Variance | Reason for Variance Level |\n|--------|----------|--------------------------|\n| C (conclusion alone) | High | Agents can produce plausible but unfounded conclusions without valid experimental foundation |\n| E (execution alone) | High | Incorrect or mock implementations may still execute, introducing overestimation bias |\n| C·D (conclusion x design) | Substantially lower | Filters out conclusions not grounded in valid design plans |\n| I·E (implementation x execution) | Substantially lower | Discounts executions that do not fulfill setup requirements |\n\n**Key finding**: Conjunctive metrics (C·D, I·E) reduce score variability, producing more reliable signals of agent performance and reducing sensitivity to annotation leniency or spurious correctness.\n**Note**: Exact per-metric variance numbers are not reported in the paper; the finding is qualitative based on visual inspection of Figure 5."
+          },
+          {
+            "id": "Figure6b",
+            "caption": "Figure 6b: Conjunctive Metrics — Progressive Score Collapse (rendered as data table; no raster in this ARA)",
+            "markdown": "**Source**: Figure 6b, Section 4.2 (main paper); Figure 14, Appendix I.1 (extended with all agents)\n**Caption**: \"Stricter metrics reveal lower true correctness.\"\n**Conditions**: Execution-verified subset of tasks only (tasks that passed monitor check and had execution run); average score (%) vs. judge metric conjunction level.\n\n| Judge Metric Level | Approximate Average Score (%) | Notes |\n|-------------------|-------------------------------|-------|\n| M (monitor only) | 20.6 | Stated explicitly in §4.2 |\n| M·C·D | 3.7 | Stated explicitly in §4.2 |\n| M·C·D·I | 0.4 | Stated explicitly in §4.2 |\n| M·C·D·I·E | 0.2 | Stated explicitly in §4.2 |\n\n**Per-agent values at M·C·D·I·E** (from Figure 14, approximate visual readings):\n\n| Agent | Model | M·C·D·I·E Score (%) |\n|-------|-------|---------------------|\n| OpenHands | o3-mini | ~0.5 (matches All·E✓ from Table 1) |\n| OpenHands | Claude-3.7 Sonnet | ~0.4 (matches All·E✓ from Table 1) |\n| OpenHands | Amazon Nova Pro | 0.0 (matches Table 1) |\n| OpenHands | Claude-3.5 Haiku | 0.0 (matches Table 1) |\n| OpenHands | DeepSeek R1 | 0.0 (matches Table 1) |\n| IterativeAgent | Claude-3.5 Haiku | 0.0 (matches Table 1) |\n| IterativeAgent | Amazon Nova Pro | 0.0 (matches Table 1) |\n\n**Key finding**: Monotone score decrease at every conjunction step; 100x collapse from M-only (20.6%) to M·C·D·I·E (0.2%); demonstrates that partial metrics substantially overestimate true end-to-end agent capability."
+          }
+        ],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [
+        {
+          "name": "Conjunctive scoring heuristic (H04)",
+          "pointer": "logic/solution/heuristics.md — H04",
+          "what": "Rationale for using the C·D and I·E conjunctive forms to reduce metric variance and resistance to gaming."
+        },
+        {
+          "name": "Evaluation judge code",
+          "pointer": "src/execution/evaluation_judge.py",
+          "what": "EvalResult properties IE, all_correct, all_correct_executable, CD implement exactly these conjunctive metrics."
+        }
+      ],
+      "concepts": [
+        "Conjunctive Evaluation Metrics"
+      ]
+    },
+    {
+      "id": "N09",
+      "type": "experiment",
+      "parent": "N08",
+      "title": "Evaluate 7 agent configurations on all 461 EXP-Bench tasks",
+      "body": "The best agent (OpenHands + o3-mini) reached All·E✓ = 0.5% (Table 1). Individual phase scores looked far less bleak in isolation, reaching 20 to 35%, but the strictest of these conjunctive metrics collapsed from 20.6% (monitor-only) all the way down to 0.2% once design, implementation, execution, and conclusion all had to hold simultaneously. Across all seven agent configurations, the evaluation surfaced 3,238 raw failure insights, later distilled into 361 unique failure types.",
+      "thinking": "With the benchmark and its Conjunctive Evaluation Metrics in place, the natural next step was to actually run current agents against it: five OpenHands backbone configurations and two IterativeAgent configurations, across all 461 tasks, to find out whether any of today's systems can carry a research experiment from question to conclusion without help.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [
+        "§4.1"
+      ],
+      "why": [
+        {
+          "id": "C01",
+          "title": "Individual phase scores for AI agents on EXP-Bench reach 20–35% but do not reflect end-to-end competence",
+          "statement": "On EXP-Bench, leading AI agents achieve design correctness (D) of 6.4–20.6%, implementation correctness (I) of 10.0–35.0%, and conclusion correctness (C) of 0.0–14.9%, but these scores conceal near-zero end-to-end performance.",
+          "status": "supported",
+          "falsification": "If any agent achieves All✓ > 10% while also achieving D, I, C individually above 20%, then individual scores would not mask end-to-end failure.",
+          "dependencies": []
+        },
+        {
+          "id": "C02",
+          "title": "The complete end-to-end experiment success rate (All·E✓) for the best AI agent is 0.5%",
+          "statement": "OpenHands + o3-mini, the top-ranked agent, achieves All·E✓ = 0.5% across 461 EXP-Bench tasks, where All·E✓ requires correct design, implementation, conclusion, and executable code.",
+          "status": "supported",
+          "falsification": "If a re-evaluation of OpenHands + o3-mini on the same 461 tasks produces All·E✓ > 5%, then this claim would be refuted.",
+          "dependencies": [
+            "C01"
+          ]
+        },
+        {
+          "id": "C03",
+          "title": "Applying conjunctive evaluation metrics progressively reduces average agent score from 20.6% to 0.2%",
+          "statement": "Among the execution-verified subset of tasks, average score decreases monotonically: M alone = 20.6%, M·C·D = 3.7%, M·C·D·I = 0.4%, M·C·D·I·E = 0.2%.",
+          "status": "supported",
+          "falsification": "If the score at any conjunction step is not strictly lower than the previous step for the majority of agents, this claim would be refuted.",
+          "dependencies": [
+            "C01",
+            "C02"
+          ]
+        }
+      ],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [
+          {
+            "id": "Table1",
+            "caption": "Table 1: Average Benchmark Scores — All Agents on EXP-Bench",
+            "markdown": "**Source**: Table 1, Section 4.1\n**Conditions**: 461 research tasks from 51 papers (NeurIPS 2024 + ICLR 2024); Ubuntu 24.04 Docker; 4x NVIDIA A40; 40-minute timeout per task; LLM judge: o3-mini-2025-01-01-preview\n\n| Agent | Model | D | I | E | C | I·E | All✓ | All·E✓ |\n|-------|-------|---|---|---|---|-----|-------|---------|\n| OpenHands | o3-mini | 18.4 | 20.3 | 15.0 | 2.9 | 21.0 | 1.4 | 0.5 |\n| OpenHands | Claude-3.7 Sonnet | 16.0 | 35.0 | 33.2 | 14.9 | 13.4 | 0.7 | 0.4 |\n| OpenHands | Amazon Nova Pro | 18.2 | 19.5 | 26.8 | 0.0 | 15.7 | 0.0 | 0.0 |\n| OpenHands | Claude-3.5 Haiku | 20.6 | 26.2 | 9.3 | 1.3 | 13.8 | 0.0 | 0.0 |\n| OpenHands | DeepSeek R1 | 6.8 | 10.0 | 0.7 | 0.0 | 2.4 | 0.0 | 0.0 |\n| IterativeAgent | Claude-3.5 Haiku | 6.4 | 20.6 | 25.2 | 5.4 | 2.2 | 0.0 | 0.0 |\n| IterativeAgent | Amazon Nova Pro | 0.1 | 10.0 | 18.1 | 0.0 | 0.3 | 0.0 | 0.0 |\n\n**Notes**: D = design correctness (%); I = implementation correctness (%); E = executability (%); C = conclusion correctness (%); I·E = implementation correct AND executable; All✓ = D>0 AND I>0 AND C correct (no execution requirement); All·E✓ = D>0 AND I>0 AND C correct AND executable. Ranking: OH+o3-mini (1st), OH+3.7 Sonnet (2nd), OH+Nova Pro (3rd) via All·E✓ with C as tiebreaker."
+          },
+          {
+            "id": "Table3",
+            "caption": "Table 3: Category-Level Benchmark Scores (Select Categories)",
+            "markdown": "**Source**: Table 3, Section 4.1\n**Conditions**: Same as Table 1; categories shown: Applications, RL.\n\n| Category | Agent | Model | D | I | E | C | I·E | All✓ | All✓·E |\n|----------|-------|-------|---|---|---|---|-----|-------|--------|\n| Applications | (OH) | Nova Pro | 19.2 | 23.9 | 19.0 | 0.0 | 13.9 | 0.0 | 0.0 |\n| Applications | (OH) | o3-mini | 9.0 | 8.0 | 0.0 | 0.0 | 8.3 | 0.0 | 0.0 |\n| Applications | (OH) | 3.5 Haiku | 19.2 | 24.5 | 8.3 | 5.6 | 8.3 | 0.0 | 0.0 |\n| Applications | (OH) | 3.7 Sonnet | 9.0 | 26.8 | 30.8 | 7.7 | 8.3 | 2.8 | 0.0 |\n| Applications | (IA) | Nova Pro | 0.0 | 9.8 | 5.0 | 0.0 | 0.0 | 0.0 | 0.0 |\n| Applications | (IA) | 3.5 Haiku | 0.0 | 18.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |\n| Applications | (OH) | DeepSeek R1 | 3.1 | 4.3 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |\n| RL | (OH) | 3.7 Sonnet | 18.3 | 48.2 | 27.3 | 21.2 | 17.6 | 2.0 | 3.0 |\n| RL | (OH) | o3-mini | 23.5 | 34.8 | 15.7 | 2.0 | 27.5 | 3.9 | 0.0 |\n| RL | (OH) | 3.5 Haiku | 27.7 | 41.4 | 11.5 | 0.0 | 17.6 | 0.0 | 0.0 |\n| RL | (IA) | 3.5 Haiku | 3.3 | 27.5 | 17.4 | 0.0 | 2.4 | 0.0 | 0.0 |\n| RL | (OH) | DeepSeek R1 | 5.0 | 10.3 | 0.0 | 0.0 | 2.0 | 0.0 | 0.0 |\n| RL | (IA) | Nova Pro | 0.0 | 8.6 | 9.7 | 0.0 | 0.0 | 0.0 | 0.0 |\n| RL | (OH) | Nova Pro | 17.9 | 28.9 | 0.0 | 0.0 | 13.7 | 0.0 | 0.0 |\n\n**Notes**: RL category: several OH models reach up to ~41% on the I metric (averaged over 36 tasks); RL is the highest-performing category for implementation correctness."
+          },
+          {
+            "id": "Table6",
+            "caption": "Table 6: Full Per-Category Benchmark Scores",
+            "markdown": "**Source**: Table 6, Appendix D\n**Conditions**: Same as Table 1; OH = OpenHands, IA = IterativeAgent; contains updated values for IA+3.5 Haiku for Applications and RL categories.\n\n| Category | Agent | Model | D | I | E | C | I·E | All✓ | All✓·E |\n|----------|-------|-------|---|---|---|---|-----|-------|--------|\n| Applications | OH | Nova Pro | 19.2 | 23.9 | 19.0 | 0.0 | 13.9 | 0.0 | 0.0 |\n| Applications | OH | o3-mini | 9.0 | 8.0 | 0.0 | 0.0 | 8.3 | 0.0 | 0.0 |\n| Applications | OH | 3.5 Haiku | 19.2 | 24.5 | 8.3 | 5.6 | 8.3 | 0.0 | 0.0 |\n| Applications | OH | 3.7 Sonnet | 9.0 | 26.8 | 30.8 | 7.7 | 8.3 | 2.8 | 0.0 |\n| Applications | IA | Nova Pro | 0.0 | 9.8 | 5.0 | 0.0 | 0.0 | 0.0 | 0.0 |\n| Applications | IA | 3.5 Haiku | 6.8 | 32.3 | 33.3 | 16.7 | 0.0 | 0.0 | 0.0 |\n| Applications | OH | DeepSeek R1 | 3.1 | 4.3 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |\n| Causality | OH | o3-mini | 37.8 | 44.6 | 22.2 | 11.1 | 44.4 | 11.1 | 11.1 |\n| Causality | OH | 3.7 Sonnet | 36.6 | 83.1 | 88.9 | 66.7 | 44.4 | 0.0 | 0.0 |\n| Causality | OH | 3.5 Haiku | 23.1 | 40.6 | 40.0 | 0.0 | 20.0 | 0.0 | 0.0 |\n| Causality | OH | Nova Pro | 0.0 | 11.7 | 20.0 | 0.0 | 0.0 | 0.0 | 0.0 |\n| Causality | IA | 3.5 Haiku | 48.7 | 36.6 | 0.0 | 0.0 | 33.3 | 0.0 | 0.0 |\n| Causality | IA | Nova Pro | 17.7 | 14.9 | 0.0 | 0.0 | 11.1 | 0.0 | 0.0 |\n| Causality | OH | DeepSeek R1 | 10.0 | 18.7 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |\n| Comp. Biology | OH | o3-mini | 37.0 | 30.3 | 11.1 | 0.0 | 44.4 | 11.1 | 0.0 |\n| Comp. Biology | OH | Nova Pro | 0.0 | 16.7 | 20.0 | 0.0 | 0.0 | 0.0 | 0.0 |\n| Comp. Biology | OH | 3.5 Haiku | 3.2 | 7.8 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |\n| Comp. Biology | IA | Nova Pro | 31.2 | 29.3 | 0.0 | 0.0 | 33.3 | 0.0 | 0.0 |\n| Comp. Biology | IA | 3.5 Haiku | 4.8 | 9.7 | 0.0 | 0.0 | 11.1 | 0.0 | 0.0 |\n| Comp. Biology | OH | 3.7 Sonnet | 4.8 | 11.1 | 0.0 | 0.0 | 11.1 | 0.0 | 0.0 |\n| Comp. Biology | OH | DeepSeek R1 | 12.2 | 22.1 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |\n| CV | OH | Nova Pro | 24.8 | 20.9 | 42.9 | 0.0 | 28.2 | 0.0 | 0.0 |\n| CV | OH | 3.7 Sonnet | 18.5 | 28.9 | 18.2 | 9.1 | 21.2 | 0.0 | 0.0 |\n| CV | OH | o3-mini | 11.5 | 9.3 | 5.1 | 2.6 | 12.8 | 0.0 | 0.0 |\n| CV | OH | 3.5 Haiku | 15.9 | 28.3 | 4.5 | 0.0 | 12.8 | 0.0 | 0.0 |\n| CV | OH | DeepSeek R1 | 5.8 | 11.2 | 0.0 | 0.0 | 2.6 | 0.0 | 0.0 |\n| CV | IA | Nova Pro | 0.0 | 5.3 | 28.6 | 0.0 | 0.0 | 0.0 | 0.0 |\n| CV | IA | 3.5 Haiku | 6.4 | 17.4 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |\n| D & B | OH | Nova Pro | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |\n| D & B | OH | o3-mini | 0.0 | 46.5 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |\n| D & B | OH | DeepSeek R1 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |\n| D & B | OH | 3.5 Haiku | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |\n| D & B | OH | 3.7 Sonnet | 19.0 | 89.5 | 50.0 | 50.0 | 0.0 | 0.0 | 0.0 |\n| D & B | IA | Nova Pro | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |\n| Deep Learning | OH | o3-mini | 17.6 | 14.1 | 13.4 | 0.9 | 20.5 | 0.0 | 0.0 |\n| Deep Learning | OH | 3.5 Haiku | 20.2 | 25.3 | 12.8 | 1.3 | 15.2 | 0.0 | 0.0 |\n| Deep Learning | OH | 3.7 Sonnet | 17.2 | 37.4 | 37.1 | 5.7 | 14.3 | 0.9 | 0.0 |\n| Deep Learning | OH | DeepSeek R1 | 7.4 | 6.3 | 0.0 | 0.0 | 2.2 | 0.0 | 0.0 |\n| Deep Learning | IA | Nova Pro | 0.0 | 9.2 | 21.7 | 0.0 | 0.0 | 0.0 | 0.0 |\n| Deep Learning | IA | 3.5 Haiku | 9.4 | 16.9 | 14.9 | 0.0 | 0.0 | 0.0 | 0.0 |\n| Deep Learning | OH | Nova Pro | 16.4 | 16.5 | 0.0 | 0.0 | 16.1 | 0.0 | 0.0 |\n| Gen. Models | OH | o3-mini | 23.6 | 27.9 | 30.4 | 17.4 | 29.0 | 6.5 | 4.3 |\n| Gen. Models | OH | 3.7 Sonnet | 17.6 | 25.8 | 26.1 | 13.0 | 7.4 | 0.0 | 0.0 |\n| Gen. Models | OH | 3.5 Haiku | 5.4 | 24.8 | 45.5 | 27.3 | 3.0 | 0.0 | 0.0 |\n| Gen. Models | OH | Nova Pro | 0.0 | 13.9 | 10.0 | 0.0 | 0.0 | 0.0 | 0.0 |\n| Gen. Models | OH | DeepSeek R1 | 9.2 | 19.2 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |\n| Gen. Models | IA | Nova Pro | 14.7 | 16.7 | 0.0 | 0.0 | 9.7 | 0.0 | 0.0 |\n| Gen. Models | IA | 3.5 Haiku | 23.6 | 31.0 | 0.0 | 0.0 | 9.7 | 0.0 | 0.0 |\n| Language | OH | o3-mini | 16.3 | 8.5 | 13.3 | 0.0 | 20.0 | 0.0 | 0.0 |\n| Language | OH | 3.5 Haiku | 4.4 | 11.7 | 80.0 | 0.0 | 13.3 | 0.0 | 0.0 |\n| Language | OH | 3.7 Sonnet | 4.6 | 22.9 | 20.0 | 6.7 | 6.7 | 0.0 | 0.0 |\n| Language | OH | Nova Pro | 0.0 | 2.1 | 33.3 | 0.0 | 0.0 | 0.0 | 0.0 |\n| Language | OH | DeepSeek R1 | 6.4 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |\n| Language | IA | 3.5 Haiku | 8.5 | 11.5 | 0.0 | 0.0 | 13.3 | 0.0 | 0.0 |\n| Language | IA | Nova Pro | 8.4 | 4.3 | 0.0 | 0.0 | 6.7 | 0.0 | 0.0 |\n| Multimodal | OH | o3-mini | 10.9 | 23.7 | 13.6 | 4.5 | 13.6 | 0.0 | 0.0 |\n| Multimodal | OH | Nova Pro | 18.9 | 32.8 | 16.7 | 0.0 | 13.6 | 0.0 | 0.0 |\n| Multimodal | OH | 3.5 Haiku | 15.5 | 17.7 | 0.0 | 0.0 | 13.6 | 0.0 | 0.0 |\n| Multimodal | OH | 3.7 Sonnet | 19.7 | 27.0 | 18.2 | 9.1 | 9.5 | 0.0 | 0.0 |\n| Multimodal | OH | DeepSeek R1 | 4.6 | 9.1 | 0.0 | 0.0 | 9.1 | 0.0 | 0.0 |\n| Multimodal | IA | Nova Pro | 0.0 | 17.1 | 50.0 | 0.0 | 0.0 | 0.0 | 0.0 |\n| Multimodal | IA | 3.5 Haiku | 3.0 | 25.3 | 25.0 | 0.0 | 0.0 | 0.0 | 0.0 |\n| Optimization | OH | o3-mini | 21.5 | 25.2 | 25.5 | 6.4 | 25.5 | 0.0 | 0.0 |\n| Optimization | OH | 3.7 Sonnet | 18.2 | 35.8 | 52.0 | 20.0 | 18.6 | 0.0 | 0.0 |\n| Optimization | OH | 3.5 Haiku | 25.6 | 28.1 | 11.5 | 0.0 | 12.8 | 0.0 | 0.0 |\n| Optimization | OH | Nova Pro | 17.1 | 21.0 | 50.0 | 0.0 | 10.6 | 0.0 | 0.0 |\n| Optimization | OH | DeepSeek R1 | 9.5 | 18.6 | 3.8 | 0.0 | 6.4 | 0.0 | 0.0 |\n| Optimization | IA | Nova Pro | 1.4 | 9.8 | 19.2 | 0.0 | 3.2 | 0.0 | 0.0 |\n| Optimization | IA | 3.5 Haiku | 8.9 | 31.4 | 60.0 | 12.0 | 2.5 | 0.0 | 0.0 |\n| Physical Models | OH | o3-mini | 60.0 | 23.0 | 66.7 | 0.0 | 66.7 | 0.0 | 0.0 |\n| Physical Models | OH | Nova Pro | 51.7 | 0.0 | 50.0 | 0.0 | 33.3 | 0.0 | 0.0 |\n| Physical Models | OH | DeepSeek R1 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |\n| Physical Models | OH | 3.5 Haiku | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |\n| Physical Models | OH | 3.7 Sonnet | 0.0 | 16.7 | 33.3 | 0.0 | 0.0 | 0.0 | 0.0 |\n| Physical Models | IA | Nova Pro | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |\n| Proba. Methods | OH | 3.5 Haiku | 49.0 | 32.0 | 33.3 | 0.0 | 66.7 | 0.0 | 0.0 |\n| Proba. Methods | OH | Nova Pro | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |\n| Proba. Methods | OH | o3-mini | 28.7 | 49.3 | 100.0 | 0.0 | 0.0 | 0.0 | 0.0 |\n| Proba. Methods | OH | DeepSeek R1 | 0.0 | 23.7 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |\n| Proba. Methods | OH | 3.7 Sonnet | 86.0 | 86.0 | 100.0 | 0.0 | 0.0 | 0.0 | 0.0 |\n| Proba. Methods | IA | Nova Pro | 45.0 | 11.0 | 0.0 | 0.0 | 66.7 | 0.0 | 0.0 |\n| Proba. Methods | IA | 3.5 Haiku | 0.0 | 57.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |\n| RL | OH | 3.7 Sonnet | 18.3 | 48.2 | 27.3 | 21.2 | 17.6 | 2.0 | 3.0 |\n| RL | OH | o3-mini | 23.5 | 34.8 | 15.7 | 2.0 | 27.5 | 3.9 | 0.0 |\n| RL | OH | 3.5 Haiku | 27.7 | 41.4 | 11.5 | 0.0 | 17.6 | 0.0 | 0.0 |\n| RL | IA | 3.5 Haiku | 3.0 | 29.0 | 24.0 | 0.0 | 2.2 | 0.0 | 0.0 |\n| RL | OH | DeepSeek R1 | 5.0 | 10.3 | 0.0 | 0.0 | 2.0 | 0.0 | 0.0 |\n| RL | IA | Nova Pro | 0.0 | 8.6 | 9.7 | 0.0 | 0.0 | 0.0 | 0.0 |\n| RL | OH | Nova Pro | 17.9 | 28.9 | 0.0 | 0.0 | 13.7 | 0.0 | 0.0 |\n| Social Aspects | OH | Nova Pro | 15.5 | 20.2 | 0.0 | 0.0 | 27.8 | 0.0 | 0.0 |\n| Social Aspects | OH | o3-mini | 21.7 | 22.8 | 16.7 | 0.0 | 22.2 | 0.0 | 0.0 |\n| Social Aspects | OH | 3.5 Haiku | 18.9 | 23.4 | 5.6 | 0.0 | 11.1 | 0.0 | 0.0 |\n| Social Aspects | IA | Nova Pro | 0.0 | 18.7 | 16.7 | 0.0 | 0.0 | 0.0 | 0.0 |\n| Social Aspects | OH | 3.7 Sonnet | 11.1 | 23.5 | 100.0 | 100.0 | 0.0 | 0.0 | 0.0 |\n| Social Aspects | IA | 3.5 Haiku | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |\n| Social Aspects | OH | DeepSeek R1 | 9.7 | 9.1 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |\n| Theory | OH | Nova Pro | 0.0 | 11.7 | 33.3 | 0.0 | 0.0 | 0.0 | 0.0 |\n| Theory | OH | 3.5 Haiku | 0.0 | 16.7 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |\n| Theory | OH | o3-mini | 0.0 | 11.2 | 16.7 | 0.0 | 0.0 | 0.0 | 0.0 |\n| Theory | OH | 3.7 Sonnet | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |\n| Theory | OH | DeepSeek R1 | 13.8 | 3.3 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |\n| Theory | IA | Nova Pro | 16.7 | 17.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |\n| Theory | IA | 3.5 Haiku | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |\n| Time Series | OH | o3-mini | 24.0 | 37.9 | 7.7 | 0.0 | 30.8 | 0.0 | 0.0 |\n| Time Series | OH | 3.7 Sonnet | 16.5 | 65.4 | 61.5 | 30.8 | 15.4 | 0.0 | 0.0 |\n| Time Series | OH | Nova Pro | 0.0 | 23.6 | 12.5 | 0.0 | 0.0 | 0.0 | 0.0 |\n| Time Series | OH | 3.5 Haiku | 19.5 | 34.5 | 37.5 | 37.5 | 0.0 | 0.0 | 0.0 |\n| Time Series | IA | Nova Pro | 16.7 | 10.0 | 0.0 | 0.0 | 15.4 | 0.0 | 0.0 |\n| Time Series | OH | DeepSeek R1 | 6.3 | 8.7 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |\n| Time Series | IA | 3.5 Haiku | 19.2 | 15.2 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |\n| Trustworthy ML | OH | 3.5 Haiku | 15.5 | 21.3 | 0.0 | 0.0 | 25.0 | 0.0 | 0.0 |\n| Trustworthy ML | OH | Nova Pro | 0.0 | 4.0 | 16.7 | 0.0 | 0.0 | 0.0 | 0.0 |\n| Trustworthy ML | OH | o3-mini | 6.7 | 3.8 | 8.3 | 0.0 | 0.0 | 0.0 | 0.0 |\n| Trustworthy ML | IA | Nova Pro | 20.3 | 1.5 | 12.5 | 0.0 | 0.0 | 0.0 | 0.0 |\n| Trustworthy ML | OH | 3.7 Sonnet | 12.2 | 20.8 | 16.7 | 0.0 | 0.0 | 0.0 | 0.0 |\n\n**Notes**: full 17-subfield breakdown; \"setup\" phase in Table 8 corresponds to the implementation phase here."
+          },
+          {
+            "id": "Figure6b",
+            "caption": "Figure 6b: Conjunctive Metrics — Progressive Score Collapse (rendered as data table; no raster in this ARA)",
+            "markdown": "**Source**: Figure 6b, Section 4.2 (main paper); Figure 14, Appendix I.1 (extended with all agents)\n**Caption**: \"Stricter metrics reveal lower true correctness.\"\n**Conditions**: Execution-verified subset of tasks only (tasks that passed monitor check and had execution run); average score (%) vs. judge metric conjunction level.\n\n| Judge Metric Level | Approximate Average Score (%) | Notes |\n|-------------------|-------------------------------|-------|\n| M (monitor only) | 20.6 | Stated explicitly in §4.2 |\n| M·C·D | 3.7 | Stated explicitly in §4.2 |\n| M·C·D·I | 0.4 | Stated explicitly in §4.2 |\n| M·C·D·I·E | 0.2 | Stated explicitly in §4.2 |\n\n**Per-agent values at M·C·D·I·E** (from Figure 14, approximate visual readings):\n\n| Agent | Model | M·C·D·I·E Score (%) |\n|-------|-------|---------------------|\n| OpenHands | o3-mini | ~0.5 (matches All·E✓ from Table 1) |\n| OpenHands | Claude-3.7 Sonnet | ~0.4 (matches All·E✓ from Table 1) |\n| OpenHands | Amazon Nova Pro | 0.0 (matches Table 1) |\n| OpenHands | Claude-3.5 Haiku | 0.0 (matches Table 1) |\n| OpenHands | DeepSeek R1 | 0.0 (matches Table 1) |\n| IterativeAgent | Claude-3.5 Haiku | 0.0 (matches Table 1) |\n| IterativeAgent | Amazon Nova Pro | 0.0 (matches Table 1) |\n\n**Key finding**: Monotone score decrease at every conjunction step; 100x collapse from M-only (20.6%) to M·C·D·I·E (0.2%); demonstrates that partial metrics substantially overestimate true end-to-end agent capability."
+          }
+        ],
+        "data": []
+      },
+      "verified_by": [
+        {
+          "id": "E01",
+          "title": "Main Agent Evaluation on All 461 EXP-Bench Tasks",
+          "run": "",
+          "setup": "Model: 7 configurations — (OpenHands x {o3-mini, Claude-3.7 Sonnet, Amazon Nova Pro, Claude-3.5 Haiku, DeepSeek R1}) + (IterativeAgent x {Claude-3.5 Haiku, Amazon Nova Pro}). Hardware: 4x NVIDIA A40 GPU per agent run, Ubuntu 24.04 Docker container. Dataset: EXP-Bench, 461 tasks from 51 papers (NeurIPS 2024 + ICLR 2024). System: fresh repository clone per agent, masked files applied via scripted git operations, 40-minute soft timeout per task.",
+          "metrics": "D (%), I (%), E (%), C (correct/incorrect), I·E (%), All✓ (%), All·E✓ (%)"
+        },
+        {
+          "id": "E02",
+          "title": "Conjunctive Metric Strictness Analysis",
+          "run": "",
+          "setup": "Model: OpenHands x {o3-mini, Claude-3.7 Sonnet, Amazon Nova Pro, Claude-3.5 Haiku} + IterativeAgent x {Claude-3.5 Haiku, Amazon Nova Pro} + OpenHands x {DeepSeek R1}. Hardware: same as E01. Dataset: execution-verified subset of EXP-Bench tasks (tasks that passed monitor check and had execution run). System: same containerized environment as E01.",
+          "metrics": "Average score (%) at M, M·C·D, M·C·D·I, M·C·D·I·E levels"
+        }
+      ],
+      "artifact": [
+        {
+          "name": "Evaluation judge pipeline",
+          "pointer": "src/execution/evaluation_judge.py",
+          "what": "run_monitor(), evaluate_design_and_conclusion(), evaluate_implementation(), run_code_execution_validator(), compute_aggregate_scores() — the full 4-component evaluation framework used to produce Table 1."
+        },
+        {
+          "name": "System architecture",
+          "pointer": "logic/solution/architecture.md — Component Graph",
+          "what": "End-to-end diagram: Agent Interface -> Monitor -> LLM Judge -> Code Execution Validator -> Score Aggregation."
+        }
+      ],
+      "built_on": [
+        {
+          "rw_id": "RW01",
+          "name": "OpenHands (Wang et al., 2024)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW02",
+          "name": "PaperBench / IterativeAgent (Starace et al., 2025)",
+          "relation_raw": "baseline, extends"
+        },
+        {
+          "rw_id": "RW03",
+          "name": "RE-Bench (Wijk et al., 2024)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW04",
+          "name": "MLE-Bench (Chan et al., 2024)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW05",
+          "name": "ScienceAgentBench (Chen et al., 2024)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW06",
+          "name": "BLADE (Gu et al., 2024)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW07",
+          "name": "BoxingGym (Gandhi et al., 2025)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW08",
+          "name": "Curie (Kon et al., 2025)",
+          "relation_raw": "extends"
+        },
+        {
+          "rw_id": "RW09",
+          "name": "AAAR-1.0 (Lou et al., 2024)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW10",
+          "name": "ML-Gym (Nathani et al., 2025)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW11",
+          "name": "Scicode (Tian et al., 2024)",
+          "relation_raw": "baseline"
+        },
+        {
+          "rw_id": "RW12",
+          "name": "The AI Scientist (Lu et al., 2024)",
+          "relation_raw": "baseline"
+        }
+      ],
+      "concepts": [
+        "IterativeAgent",
+        "Conjunctive Evaluation Metrics"
+      ]
+    },
+    {
+      "id": "N10",
+      "type": "experiment",
+      "parent": "N09",
+      "title": "Failure pattern analysis via two-pass open-ended categorization",
+      "body": "The dominant failure mode was missing essential implementation components, at 39.71% of implementation failures: agents understood the high-level method but left out critical pieces. Execution failures were driven mainly by environment or dependency configuration errors (29.38%) and execution script or file errors (23.84%). Conclusion failures were dominated by missing content (26.18%) and incorrect interpretation (19.66%).",
+      "thinking": "A single number like 0.5% end-to-end success does not say anything about where things actually break down. The natural follow-up to the near-zero result in N09 was to dig into the 3,238 raw failure insights collected during that run and work out, systematically, what kinds of mistakes agents were actually making across the design, implementation, execution, and conclusion phases.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [
+        "N09"
+      ],
+      "source_refs": [
+        "§4.3"
+      ],
+      "why": [
+        {
+          "id": "C04",
+          "title": "Missing essential implementation components is the most prevalent failure mode (39.71%)",
+          "statement": "Among all identified implementation failures across all agent-task pairs, 39.71% are classified as \"Missing Essential Implementation Components,\" making it the single largest failure category.",
+          "status": "supported",
+          "falsification": "If a re-analysis of the same 3,238 raw failure insights yields a different failure type with prevalence ≥ 39.71%, this claim would be refuted.",
+          "dependencies": []
+        },
+        {
+          "id": "C05",
+          "title": "Execution failures are dominated by environment/dependency misconfiguration (29.38%) and script errors (23.84%)",
+          "statement": "Among execution phase failures, environment/dependency configuration errors account for 29.38% and execution script/file errors account for 23.84%, together constituting over half of all execution failures.",
+          "status": "supported",
+          "falsification": "If either prevalence figure changes by more than 5 percentage points in a re-analysis of the same failure logs, this claim would be refuted.",
+          "dependencies": [
+            "C02"
+          ]
+        }
+      ],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [
+          {
+            "id": "Table2",
+            "caption": "Table 2: Agent Failure Patterns — Simplified Subset",
+            "markdown": "**Source**: Table 2, Section 4.3\n**Conditions**: Analysis across all 7 agent configurations on all 461 tasks; 3,238 raw insights distilled to 361 unique failure types; subset presented here.\n\n| Phase | Failure Type | Prevalence (%) |\n|-------|-------------|----------------|\n| Design | Incomplete or Misclassified Design Variables | 16.05 |\n| Design | Irrelevant Procedural Additions in Design | 7.62 |\n| Implementation | Missing Essential implementation Components | 39.71 |\n| Implementation | Incomplete Evaluation Metric Implementation | 2.15 |\n| Implementation | Incomplete Data and Preprocessing Setup | 1.83 |\n| Execution | Environment/Dependency Configuration Errors | 29.38 |\n| Execution | Execution Script and File Errors | 23.84 |\n| Execution | Missing Setup Script File | 6.95 |\n| Execution | Tensor Operation Execution Error | 3.22 |\n| Conclusion | Missing Conclusion Content | 26.18 |\n| Conclusion | Incorrect Conclusion Interpretation | 19.66 |\n| Conclusion | Extraneous Details in Conclusion | 7.77 |\n| Conclusion | Incorrect Numeric Conclusion | 3.21 |\n\n**Example failure instances cited in paper**: missing semantic retrieval strategies (UniXcoder-H2L/L2H), validation functions (GPT-3.5 filtering), Mixup/CutMix/Label Smoothing; STORM not registered in jaxmarl; missing PyTorch and Flax; moganet_tiny not found in timm; missing checkpoint files; omitting PPO vs. Q-Learning comparison details."
+          },
+          {
+            "id": "Table8",
+            "caption": "Table 8: Extended Failure Type Analysis",
+            "markdown": "**Source**: Table 8, Appendix G\n**Conditions**: 3,238 raw insights distilled to 361 unique failure types across all 7 agent configurations; only a subset shown here.\n\n| Phase | Failure Type | Prevalence (%) |\n|-------|-------------|----------------|\n| conclusion | Missing Conclusion Content | 26.18 |\n| conclusion | Incorrect Conclusion Interpretation | 19.66 |\n| conclusion | Incomplete Conclusion Outcome Statement | 14.43 |\n| conclusion | Extraneous Details | 7.77 |\n| conclusion | Missing Conclusion Analysis | 4.35 |\n| conclusion | Missing Comparative Conclusion Analysis | 4.03 |\n| conclusion | Minor Omission of Specific Details | 3.47 |\n| conclusion | Incorrect Numeric Conclusion | 3.21 |\n| conclusion | Mismatched Conclusion Format | 2.7 |\n| conclusion | Error Message Output | 2.67 |\n| conclusion | Incomplete Conclusion with Missing Exp. Findings | 2.14 |\n| conclusion | Conclusion Diverges from Expected Emphasis | 1.6 |\n| conclusion | Missing Comparative Analysis | 0.8 |\n| conclusion | Missing Quantitative Performance Metrics | 0.8 |\n| conclusion | Missing Visualization Details | 0.56 |\n| conclusion | Incomplete Performance Evaluation | 0.53 |\n| conclusion | Missing Numerical Equivalence Verification | 0.53 |\n| conclusion | Missing Trend Analysis | 0.53 |\n| conclusion | Naming Inconsistency Output | 0.53 |\n| conclusion | Conclusion Partially Matching with Numerical Deviations | 0.27 |\n| conclusion | Deviation in Saturation Point Conclusion | 0.27 |\n| conclusion | Inconsistent ASR Reporting | 0.27 |\n| conclusion | Missing Conclusion Analysis on Attack Budget Effects | 0.27 |\n| conclusion | Missing Diminishing Returns Analysis | 0.27 |\n| conclusion | Missing Methodological Innovation Discussion | 0.27 |\n| conclusion | Missing Performance Evaluation Metrics | 0.27 |\n| conclusion | Missing Submission Format Specification | 0.27 |\n| design | Incomplete or Misclassified Design Variables | 16.05 |\n| design | Omission of Required Design Variables | 19.84 |\n| design | Complete Omission of Exp. Design Variables | 13.1 |\n| design | Incorrect Design Specification Details | 8.32 |\n| design | Incomplete Exp. Design Details | 7.67 |\n| design | Irrelevant Procedural Additions | 7.62 |\n| design | Missing Design Variable Information | 3.83 |\n| design | Inclusion of Extraneous Factors | 3.64 |\n| design | Incorrect Parameter Details | 3.18 |\n| design | Partial Omission of Constant Variables | 2.75 |\n| design | Incomplete Constant Variable Specification | 3.61 |\n| design | Partial Fulfillment of DV | 1.93 |\n| design | Error Message Returned Instead of Design Information | 1.27 |\n| design | Incomplete Differentiation of Constant and Ind. Variables | 1.27 |\n| design | Missing Dependent Variable Tracking | 1.06 |\n| design | Incomplete Exp. Design Specification | 0.64 |\n| design | Incomplete Specification of Design Variables | 0.64 |\n| design | Missing Hyperparameter Design Details | 0.64 |\n| design | Partially Complete Design Variable Specification | 0.64 |\n| design | Missing Design Formatting Details | 0.42 |\n| design | Missing Design Variables Details | 0.42 |\n| design | Missing Explicit Variable Labeling | 0.42 |\n| design | Missing Configuration File Variable | 0.21 |\n| design | Missing Input Format Details | 0.21 |\n| design | Omission of Exp. Configuration Details | 0.21 |\n| design | Omission of Fixed Block Partition | 0.21 |\n| design | Partial Design Variable Extraction with Misclassification | 0.21 |\n| exec | Environment/Dependency Configuration Errors | 29.38 |\n| exec | Execution Script and File Errors | 23.84 |\n| exec | Missing Dependency Error | 11.9 |\n| exec | Missing Setup Script File | 6.95 |\n| exec | Tensor Operation Execution Error | 3.22 |\n| exec | Syntax Error in Execution Environment | 2.86 |\n| exec | Missing Input Data File | 2.27 |\n| exec | Missing Required Attribute in Execution | 2.27 |\n| exec | Missing Evaluation Output Files | 1.82 |\n| exec | Missing Requirements File | 1.82 |\n| exec | Runtime Indexing Error During Generation | 1.82 |\n| exec | Insufficient Shared Memory in DataLoader Execution | 1.41 |\n| exec | Execution Environment Warning: Root Privilege Usage | 1.36 |\n| exec | Incorrect Dependency Import in Execution | 1.36 |\n| exec | Dependency Version Conflict | 0.91 |\n| exec | Docker Execution Failure | 0.91 |\n| exec | Incomplete Results Saving Impl. | 0.91 |\n| exec | Incorrect Dataset Loading | 0.91 |\n| exec | Incorrect Function Argument Handling | 0.91 |\n| exec | Missing Hugging Face API Token Authentication | 0.91 |\n| exec | Missing Performance Metrics and Argument Parsing | 0.91 |\n| exec | Missing Trust Remote Code Flag in Execution Environment | 0.91 |\n| exec | Missing Setup Script File (duplicate) | 0.45 |\n| setup | Missing Essential Impl. Components | 39.71 |\n| setup | Incomplete Evaluation Metric Impl. | 2.15 |\n| setup | Missing Critical Exp. Setup Details | 1.88 |\n| setup | Incomplete Data and Preprocessing Setup | 1.83 |\n| setup | Missing Command Line Argument Parsing | 1.58 |\n| setup | Incomplete Exp. Setup Impl. | 1.49 |\n| setup | Incomplete Training Regimen Impl. | 1.47 |\n| setup | Incomplete Comparative Setup Features | 1.25 |\n| setup | Missing Modular Helper Functions | 1.13 |\n| setup | Incomplete Dataset Splitting Setup | 1.04 |\n| setup | Missing Comparative Evaluation Methods | 1.02 |\n| setup | Naming Inconsistencies Components | 1.02 |\n| setup | Missing Detailed Architectural Parameters | 0.91 |\n| setup | Incorrect Model Initialization | 0.9 |\n| setup | Missing Optimizer Configuration | 0.9 |\n| setup | Incomplete Evaluation Procedure | 0.79 |\n| setup | Missing Critical Import Statements | 0.79 |\n| setup | Missing Essential Library Imports | 0.56 |\n| setup | Incomplete Results Saving Impl. | 0.45 |\n| setup | Incomplete or Misplaced Setup Impls. | 0.45 |\n| setup | Incorrect Dependency Import | 0.45 |\n| setup | Misconfigured Exp. Infrastructure | 0.45 |\n| setup | Missing C++ Acceleration Integration | 0.45 |\n| setup | Missing Distributed Training Parameters | 0.45 |\n| setup | Missing Hardware/Device Configuration | 0.45 |\n| setup | Missing Training Pipeline Configuration | 0.45 |\n\n**Notes**: full list contains 361 unique failure types; only a representative subset is shown. The \"setup\" phase corresponds to the implementation phase in the main paper (Table 2)."
+          }
+        ],
+        "data": []
+      },
+      "verified_by": [
+        {
+          "id": "E03",
+          "title": "Failure Pattern Analysis Across All Phases",
+          "run": "",
+          "setup": "Model: all 7 agent configurations from E01. Hardware: analysis performed post-hoc on stored evaluation logs. Dataset: all 461 EXP-Bench task evaluation traces including error logs (stderr, judge outputs, implementation diffs). System: two-pass open-ended LLM-assisted categorization process.",
+          "metrics": "Prevalence (%) of each failure type within phase; total raw insights count; total unique failure types"
+        }
+      ],
+      "artifact": [
+        {
+          "name": "Error analysis fields feeding failure categorization",
+          "pointer": "src/execution/evaluation_judge.py",
+          "what": "DesignConclusionResult.design_error_analysis / conclusion_error_analysis and ImplementationResult.setup_error_analysis are the raw per-task error text that this two-pass categorization later grouped into the Table 2 / Table 8 failure types."
+        }
+      ],
+      "built_on": [
+        {
+          "rw_id": "RW11",
+          "name": "Scicode (Tian et al., 2024)",
+          "relation_raw": "baseline"
+        }
+      ]
+    },
+    {
+      "id": "N11",
+      "type": "decision",
+      "parent": "N10",
+      "title": "Identify top bottleneck for future improvement",
+      "body": "Identified implementation completeness as the highest-impact target for future work, ahead of focusing on execution environment reproducibility, experimental design variable classification, or conclusion derivation and interpretation. The proposed direction is reinforcement learning with verifiable rewards, training agents directly on the EXP-Bench dataset.",
+      "thinking": "With the failure taxonomy in hand, the question became where to focus future effort. Missing implementation components (39.71%) clearly outweighs environment and dependency errors (29.38%) as a target, pointing toward improving what agents build rather than just where they build it.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [
+        "§4.3",
+        "§5 Future Directions"
+      ],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [
+          {
+            "id": "Table2",
+            "caption": "Table 2: Agent Failure Patterns — Simplified Subset",
+            "markdown": "**Source**: Table 2, Section 4.3\n**Conditions**: Analysis across all 7 agent configurations on all 461 tasks; 3,238 raw insights distilled to 361 unique failure types; subset presented here.\n\n| Phase | Failure Type | Prevalence (%) |\n|-------|-------------|----------------|\n| Design | Incomplete or Misclassified Design Variables | 16.05 |\n| Design | Irrelevant Procedural Additions in Design | 7.62 |\n| Implementation | Missing Essential implementation Components | 39.71 |\n| Implementation | Incomplete Evaluation Metric Implementation | 2.15 |\n| Implementation | Incomplete Data and Preprocessing Setup | 1.83 |\n| Execution | Environment/Dependency Configuration Errors | 29.38 |\n| Execution | Execution Script and File Errors | 23.84 |\n| Execution | Missing Setup Script File | 6.95 |\n| Execution | Tensor Operation Execution Error | 3.22 |\n| Conclusion | Missing Conclusion Content | 26.18 |\n| Conclusion | Incorrect Conclusion Interpretation | 19.66 |\n| Conclusion | Extraneous Details in Conclusion | 7.77 |\n| Conclusion | Incorrect Numeric Conclusion | 3.21 |\n\n**Example failure instances cited in paper**: missing semantic retrieval strategies (UniXcoder-H2L/L2H), validation functions (GPT-3.5 filtering), Mixup/CutMix/Label Smoothing; STORM not registered in jaxmarl; missing PyTorch and Flax; moganet_tiny not found in timm; missing checkpoint files; omitting PPO vs. Q-Learning comparison details."
+          }
+        ],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": []
+    },
+    {
+      "id": "N12",
+      "type": "dead_end",
+      "parent": "N01",
+      "title": "Existing benchmarks insufficient for end-to-end AI experimentation evaluation",
+      "body": "None of them actually fit: MLE-Bench runs in a constrained Kaggle environment with simplified metrics; RE-Bench has only 7 tasks, far too few for statistical scale; PaperBench focuses on running pre-written scripts rather than requiring agents to produce the implementation themselves; and ScienceAgentBench isolates data analysis without ever executing real experiments. None of them capture the full design, implementation, execution, conclusion pipeline. That gap is what EXP-Bench's design directly targets: sourcing tasks from real peer-reviewed papers, requiring agents to generate (not just run) implementations, and scoring with conjunctive multi-phase evaluation.",
+      "thinking": "Before building a new benchmark from scratch, the natural question was whether an existing one could just be reused. Candidates included MLE-Bench, RE-Bench, PaperBench, and ScienceAgentBench, each already touching some part of AI research evaluation.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": []
+    }
+  ],
+  "context": {
+    "title": "Problem",
+    "summary": "By coupling multi-modal extraction from papers with execution-based validation against existing open-source codebases, it is possible to semi-automatically construct large-scale, high-fidelity research task benchmarks.",
+    "sections": [
+      {
+        "role": "setting",
+        "heading": "Setting",
+        "present": false
+      },
+      {
+        "role": "observations",
+        "heading": "Observations",
+        "present": true,
+        "entries": [
+          {
+            "ent_id": "O1",
+            "inferred_id": false,
+            "ent_title": "AI agents achieve only 0.5% complete end-to-end experiment success",
+            "text": "On 461 EXP-Bench tasks, the best-performing agent (OpenHands + o3-mini) achieves only 0.5% on All·E✓ (fully correct experiments including executability), despite reaching 20.3% on implementation correctness alone.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "On 461 EXP-Bench tasks, the best-performing agent (OpenHands + o3-mini) achieves only 0.5% on All·E✓ (fully correct experiments including executability), despite reaching 20.3% on implementation correctness alone."
+              },
+              {
+                "label": "Evidence",
+                "value": "Table 1, §4.1"
+              },
+              {
+                "label": "Implication",
+                "value": "Partial success on individual phases does not compound to end-to-end success; small per-phase failure rates multiply to near-zero overall."
+              }
+            ],
+            "refs": [
+              {
+                "raw": "Table 1",
+                "kind": "figure",
+                "target": null
+              },
+              {
+                "raw": "§4.1",
+                "kind": "figure",
+                "target": null
+              }
+            ]
+          },
+          {
+            "ent_id": "O2",
+            "inferred_id": false,
+            "ent_title": "Individual phase scores reach 20–35%, masking underlying brittleness",
+            "text": "Design (D) scores range from 6.4–20.6%, implementation (I) from 10.0–35.0%, and conclusion (C) from 0.0–14.9% across 7 evaluated agent configurations. These scores appear moderate in isolation.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "Design (D) scores range from 6.4–20.6%, implementation (I) from 10.0–35.0%, and conclusion (C) from 0.0–14.9% across 7 evaluated agent configurations. These scores appear moderate in isolation."
+              },
+              {
+                "label": "Evidence",
+                "value": "Table 1, §4.1"
+              },
+              {
+                "label": "Implication",
+                "value": "Evaluating agents on any single phase of experimentation severely overestimates their true capability."
+              }
+            ],
+            "refs": [
+              {
+                "raw": "Table 1",
+                "kind": "figure",
+                "target": null
+              },
+              {
+                "raw": "§4.1",
+                "kind": "figure",
+                "target": null
+              }
+            ]
+          },
+          {
+            "ent_id": "O3",
+            "inferred_id": false,
+            "ent_title": "Conjunctive metrics collapse scores from 20.6% to 0.2%",
+            "text": "Applying evaluation criteria progressively — Monitor (M) → Design (D) → Conclusion (C) → Implementation (I) → Execution (E) — reduces the average score from 20.6% (M only) to 3.7% (M·C·D) to 0.4% (M·C·D·I) to 0.2% (M·C·D·I·E).",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "Applying evaluation criteria progressively — Monitor (M) → Design (D) → Conclusion (C) → Implementation (I) → Execution (E) — reduces the average score from 20.6% (M only) to 3.7% (M·C·D) to 0.4% (M·C·D·I) to 0.2% (M·C·D·I·E)."
+              },
+              {
+                "label": "Evidence",
+                "value": "Figure 6b, §4.2"
+              },
+              {
+                "label": "Implication",
+                "value": "Each phase filters out a substantial fraction of agents, confirming that failure compounds across phases."
+              }
+            ],
+            "refs": [
+              {
+                "raw": "Figure 6b",
+                "kind": "figure",
+                "target": null
+              },
+              {
+                "raw": "§4.2",
+                "kind": "figure",
+                "target": null
+              }
+            ]
+          },
+          {
+            "ent_id": "O4",
+            "inferred_id": false,
+            "ent_title": "Missing implementation components is the dominant failure mode",
+            "text": "39.71% of implementation failures are attributed to missing essential implementation components (e.g., missing retrieval strategies, regularization techniques, data preprocessing steps).",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "39.71% of implementation failures are attributed to missing essential implementation components (e.g., missing retrieval strategies, regularization techniques, data preprocessing steps)."
+              },
+              {
+                "label": "Evidence",
+                "value": "Table 2, §4.3"
+              },
+              {
+                "label": "Implication",
+                "value": "Agents generate plausible but structurally incomplete implementations; they understand the high-level method but omit critical details."
+              }
+            ],
+            "refs": [
+              {
+                "raw": "Table 2",
+                "kind": "figure",
+                "target": null
+              },
+              {
+                "raw": "§4.3",
+                "kind": "figure",
+                "target": null
+              }
+            ]
+          },
+          {
+            "ent_id": "O5",
+            "inferred_id": false,
+            "ent_title": "Execution failures are driven by environment misconfiguration (29.38%) and script errors (23.84%)",
+            "text": "Among execution phase failures, 29.38% are environment or dependency configuration errors and 23.84% are script-level errors such as missing checkpoints or unrecognized model names.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "Among execution phase failures, 29.38% are environment or dependency configuration errors and 23.84% are script-level errors such as missing checkpoints or unrecognized model names."
+              },
+              {
+                "label": "Evidence",
+                "value": "Table 2, §4.3"
+              },
+              {
+                "label": "Implication",
+                "value": "Even when implementation intent is correct, failures in environment reproducibility prevent successful execution."
+              }
+            ],
+            "refs": [
+              {
+                "raw": "Table 2",
+                "kind": "figure",
+                "target": null
+              },
+              {
+                "raw": "§4.3",
+                "kind": "figure",
+                "target": null
+              }
+            ]
+          },
+          {
+            "ent_id": "O6",
+            "inferred_id": false,
+            "ent_title": "Existing benchmarks do not evaluate end-to-end AI experimentation at scale",
+            "text": "Prior benchmarks either target sub-components (MLE-Bench: Kaggle tasks; RE-Bench: 7 hand-curated tasks; PaperBench: documented script execution), evaluate static artifacts (AAAR, Lab-Bench), or omit actual execution (ScienceAgentBench, BLADE).",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "Prior benchmarks either target sub-components (MLE-Bench: Kaggle tasks; RE-Bench: 7 hand-curated tasks; PaperBench: documented script execution), evaluate static artifacts (AAAR, Lab-Bench), or omit actual execution (ScienceAgentBench, BLADE)."
+              },
+              {
+                "label": "Evidence",
+                "value": "§2 (Related Work), §3 introduction"
+              },
+              {
+                "label": "Implication",
+                "value": "No existing benchmark captures the full experimentation pipeline — hypothesis → design → implementation → execution → conclusion — at scale, with verifiable ground truth."
+              }
+            ],
+            "refs": [
+              {
+                "raw": "§2",
+                "kind": "figure",
+                "target": null
+              },
+              {
+                "raw": "§3",
+                "kind": "figure",
+                "target": null
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "role": "gaps",
+        "heading": "Gaps",
+        "present": true,
+        "entries": [
+          {
+            "ent_id": "G1",
+            "inferred_id": false,
+            "ent_title": "No benchmark evaluates complete AI research experimentation end-to-end",
+            "text": "No prior work evaluates agents on the full cycle of research experimentation (design, implementation, execution, and conclusion derivation) using real, peer-reviewed AI papers as ground truth.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "No prior work evaluates agents on the full cycle of research experimentation (design, implementation, execution, and conclusion derivation) using real, peer-reviewed AI papers as ground truth."
+              },
+              {
+                "label": "Caused by",
+                "value": "O6"
+              },
+              {
+                "label": "Existing attempts",
+                "value": "MLE-Bench, RE-Bench, PaperBench, ScienceAgentBench"
+              },
+              {
+                "label": "Why they fail",
+                "value": "Either scope is too narrow (single phase), scale is too small (7 tasks), or evaluation relies on pre-written scripts rather than requiring agents to generate implementations."
+              }
+            ],
+            "refs": [
+              {
+                "raw": "O6",
+                "kind": "observation",
+                "target": null
+              }
+            ]
+          },
+          {
+            "ent_id": "G2",
+            "inferred_id": false,
+            "ent_title": "Partial-phase evaluation metrics overestimate agent capability",
+            "text": "Evaluating agents on design, implementation, or conclusion separately inflates apparent performance and fails to surface end-to-end brittleness.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "Evaluating agents on design, implementation, or conclusion separately inflates apparent performance and fails to surface end-to-end brittleness."
+              },
+              {
+                "label": "Caused by",
+                "value": "O1, O2, O3"
+              },
+              {
+                "label": "Existing attempts",
+                "value": "Individual metric scoring in MLE-Bench, DSBench, ML-Agent-Bench"
+              },
+              {
+                "label": "Why they fail",
+                "value": "They credit partial solutions at individual stages without requiring all phases to succeed jointly."
+              }
+            ],
+            "refs": [
+              {
+                "raw": "O1",
+                "kind": "observation",
+                "target": null
+              },
+              {
+                "raw": "O2",
+                "kind": "observation",
+                "target": null
+              },
+              {
+                "raw": "O3",
+                "kind": "observation",
+                "target": null
+              }
+            ]
+          },
+          {
+            "ent_id": "G3",
+            "inferred_id": false,
+            "ent_title": "High-fidelity AI research task curation is not scalable manually",
+            "text": "Academic papers present polished narratives with fragmented experimental details; manual extraction of complete, structured tasks with verified implementations is labor-intensive.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "Academic papers present polished narratives with fragmented experimental details; manual extraction of complete, structured tasks with verified implementations is labor-intensive."
+              },
+              {
+                "label": "Caused by",
+                "value": "Nature of academic writing; details scattered across paper body, appendix, supplementary, and codebases"
+              },
+              {
+                "label": "Existing attempts",
+                "value": "RE-Bench (7 hand-curated tasks), Curie"
+              },
+              {
+                "label": "Why they fail",
+                "value": "Manual curation cannot scale to hundreds of tasks without unsustainable human effort."
+              }
+            ],
+            "refs": []
+          }
+        ]
+      },
+      {
+        "role": "insight",
+        "heading": "Key Insight",
+        "present": true,
+        "entries": [
+          {
+            "ent_id": "I1",
+            "inferred_id": true,
+            "ent_title": "Key Insight",
+            "text": "By coupling multi-modal extraction from papers with execution-based validation against existing open-source codebases, it is possible to semi-automatically construct large-scale, high-fidelity research task benchmarks — and conjunctive evaluation metrics across phases are necessary to accurately measure end-to-end agent capability.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Insight",
+                "value": "By coupling multi-modal extraction from papers with execution-based validation against existing open-source codebases, it is possible to semi-automatically construct large-scale, high-fidelity research task benchmarks — and conjunctive evaluation metrics across phases are necessary to accurately measure end-to-end agent capability."
+              },
+              {
+                "label": "Derived from",
+                "value": "O1, O2, O3, O6"
+              },
+              {
+                "label": "Enables",
+                "value": "A scalable pipeline (EXP-Bench) that produces 461 verified tasks from 51 papers, and a multi-phase conjunctive evaluation framework that exposes true agent performance gaps."
+              }
+            ],
+            "refs": [
+              {
+                "raw": "O1",
+                "kind": "observation",
+                "target": null
+              },
+              {
+                "raw": "O2",
+                "kind": "observation",
+                "target": null
+              },
+              {
+                "raw": "O3",
+                "kind": "observation",
+                "target": null
+              },
+              {
+                "raw": "O6",
+                "kind": "observation",
+                "target": null
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "role": "assumptions",
+        "heading": "Assumptions",
+        "present": true,
+        "entries": [
+          {
+            "ent_id": "A1",
+            "inferred_id": false,
+            "ent_title": "Peer-reviewed, open-source AI papers represent authentic, reproducible research",
+            "text": "Peer-reviewed, open-source AI papers (NeurIPS, ICLR) with high citation counts and GitHub stars represent authentic, reproducible research experiments.",
+            "unstructured": true,
+            "fields": [],
+            "refs": []
+          },
+          {
+            "ent_id": "A2",
+            "inferred_id": false,
+            "ent_title": "Solving all four phases is a meaningful proxy for research capability",
+            "text": "An agent that correctly solves all four phases (design, implementation, execution, conclusion) for a task is a meaningful proxy for autonomous AI research capability.",
+            "unstructured": true,
+            "fields": [],
+            "refs": []
+          },
+          {
+            "ent_id": "A3",
+            "inferred_id": false,
+            "ent_title": "LLM-as-a-judge provides sufficiently reliable evaluation",
+            "text": "LLM-as-a-judge (using o3-mini) provides sufficiently reliable evaluation for design, implementation, and conclusion correctness to serve as ground truth comparison.",
+            "unstructured": true,
+            "fields": [],
+            "refs": []
+          },
+          {
+            "ent_id": "A4",
+            "inferred_id": false,
+            "ent_title": "Masking prevents agents from shortcutting to ground-truth solutions",
+            "text": "Masking specific source files prevents agents from shortcutting to ground-truth solutions without solving the research task.",
+            "unstructured": true,
+            "fields": [],
+            "refs": []
+          }
+        ]
+      }
+    ]
+  },
+  "glossary": {
+    "title": "Concepts",
+    "terms": [
+      {
+        "term_id": "G01",
+        "name": "EXP-Bench Task",
+        "aliases": [],
+        "group": "",
+        "definition": "A structured research task instance consisting of: $Q$ = research question (natural language goal derived from a source paper experiment), $M$ = high-level method description, $R$ = code repository with masked files, and $G$ = ground truth solution comprising design variables, code diff, and conclusion string.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "$\\mathcal{T} = (Q, M, R, G)$"
+          },
+          {
+            "label": "Boundary conditions",
+            "value": "Applies only to tasks grounded in published, peer-reviewed AI papers with open-source codebases. Does not apply to theoretical or survey papers without experimental components."
+          }
+        ],
+        "related": [
+          "G02",
+          "G08",
+          "G09"
+        ],
+        "refs": []
+      },
+      {
+        "term_id": "G02",
+        "name": "Ground Truth Solution",
+        "aliases": [],
+        "group": "",
+        "definition": "The validated reference solution for an EXP-Bench task, comprising: $D_{gt}$ = experimental design specification (independent variables, dependent variables, constants), $\\Delta_{gt}$ = required code modification expressed as a git diff against the starter repository, and $C_{gt}$ = conclusion string that directly answers the research question based on expected results.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "$G = (D_{gt}, \\Delta_{gt}, C_{gt})$"
+          },
+          {
+            "label": "Boundary conditions",
+            "value": "Ground truth is derived from the original paper and its open-source implementation; it is specific to the conditions described in the paper and may not generalize to other hardware or software versions."
+          }
+        ],
+        "related": [
+          "G01",
+          "G03"
+        ],
+        "refs": []
+      },
+      {
+        "term_id": "G03",
+        "name": "Conjunctive Evaluation Metrics",
+        "aliases": [],
+        "group": "",
+        "definition": "Evaluation scores computed as the logical conjunction (AND) of multiple per-phase scores. An agent receives credit for the conjunctive metric only if it satisfies all constituent criteria simultaneously. Individual metrics: $D$ = design correctness, $I$ = implementation correctness, $C$ = conclusion correctness (binary), $E$ = executability (binary). Conjunctive forms include $I \\cdot E$, $C \\cdot D$, and $M \\cdot C \\cdot D \\cdot I \\cdot E$.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "$\\text{All}^\\checkmark = D \\wedge I \\wedge C$; $\\text{All·E}^\\checkmark = D \\wedge I \\wedge C \\wedge E$"
+          },
+          {
+            "label": "Boundary conditions",
+            "value": "Conjunctive metrics require that execution validation is performed; for tasks where execution is not run (e.g., monitor-failed traces), execution-dependent conjunctions are not computed."
+          }
+        ],
+        "related": [
+          "G04",
+          "G05",
+          "G01"
+        ],
+        "refs": []
+      },
+      {
+        "term_id": "G04",
+        "name": "Monitor Check",
+        "aliases": [
+          "M"
+        ],
+        "group": "",
+        "definition": "An integrity check performed by an LLM-based monitor (o3-mini) that inspects agent logs to detect three disallowed behaviors: (1) accessing the research paper PDF directly, (2) performing git operations (checkout, branch switching), and (3) using fake, hardcoded, or placeholder data rather than generating results through real experimentation. A task passes the monitor ($M=1$) if none of these behaviors are detected.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "$M \\in \\{0, 1\\}$"
+          },
+          {
+            "label": "Boundary conditions",
+            "value": "Applied before any other metric; tasks that fail the monitor are automatically excluded from execution-based evaluation. False positives may occur if the agent legitimately accesses paper-related files in the repository that are not the PDF itself."
+          }
+        ],
+        "related": [
+          "G03",
+          "G05"
+        ],
+        "refs": []
+      },
+      {
+        "term_id": "G05",
+        "name": "Code Execution Validator",
+        "aliases": [],
+        "group": "",
+        "definition": "A component of the evaluation judge that runs agent-generated code modifications in a clean, containerized environment (Ubuntu 24.04 Docker + 4x NVIDIA A40 GPU) and verifies whether the code is executable and produces outputs consistent with the expected results from the paper. $E=1$ if the code runs without fatal errors and produces outputs matching the ground truth.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "$E \\in \\{0, 1\\}$"
+          },
+          {
+            "label": "Boundary conditions",
+            "value": "Applied only to a subset of traces that pass the monitor check; computationally expensive, so not applied to all 461 tasks for all agents. Results may vary with hardware and software environment differences."
+          }
+        ],
+        "related": [
+          "G04",
+          "G03"
+        ],
+        "refs": []
+      },
+      {
+        "term_id": "G06",
+        "name": "Semi-Automated Curation Pipeline",
+        "aliases": [],
+        "group": "",
+        "definition": "A three-stage pipeline that converts a research paper PDF and its associated GitHub repository into a verified EXP-Bench task. Stage 1: source selection and filtering (citation counts, GitHub stars/forks). Stage 2: experiment procedure extraction via multi-modal extraction (OCR + multimodal LLM) and implementation extraction (tool-augmented agent with PDF reading, terminal, web browsing). Stage 3: execution-based verification in clean containerized environments with lightweight human validation.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "$\\mathcal{P}: (\\text{PDF}, \\text{repo}) \\rightarrow \\mathcal{T}$"
+          },
+          {
+            "label": "Boundary conditions",
+            "value": "Requires papers with publicly available, runnable codebases. Effectiveness degrades for papers with implicit experimental details or private datasets. Average cost: ~$60 USD per paper; manual validation time ~20 minutes per paper after pipeline finalization."
+          }
+        ],
+        "related": [
+          "G07"
+        ],
+        "refs": []
+      },
+      {
+        "term_id": "G07",
+        "name": "Multi-Modal Extraction",
+        "aliases": [],
+        "group": "",
+        "definition": "The process of indexing a paper PDF using OCR and multimodal techniques to capture tables, figures, and headers, followed by a two-pass extraction: (1) retrieval-augmented querying for high-level research takeaways, and (2) semantic extraction at the subsection level to classify passages as implementation context or candidate research questions. A final targeted re-querying of the full paper (including appendices) recovers missed setup constraints.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "Not formally defined; described as two-pass retrieval-augmented querying"
+          },
+          {
+            "label": "Boundary conditions",
+            "value": "Effective when research questions are explicitly stated in evaluation sections; may miss implicit questions or those requiring cross-section synthesis. Uses o3-mini-2025-01-01-preview for main task extraction and claude-3-7-sonnet-20250219-v1:0 for implementation extraction."
+          }
+        ],
+        "related": [
+          "G06"
+        ],
+        "refs": []
+      },
+      {
+        "term_id": "G08",
+        "name": "Masked Repository",
+        "aliases": [],
+        "group": "",
+        "definition": "The agent's working directory containing the source repository with specific files ($F_{\\text{mask}}$, e.g., key implementation scripts, README sections with solutions) removed or blanked via scripted git operations. Masking ensures agents cannot directly access ground-truth implementations and must reason from the task input. Repositories are cloned afresh per agent run.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "$R_{\\text{masked}} = R \\setminus F_{\\text{mask}}$"
+          },
+          {
+            "label": "Boundary conditions",
+            "value": "Masking applies only to files directly implementing the target experiment; other repository files remain accessible. Recursive traversal of submodules is included in masking."
+          }
+        ],
+        "related": [
+          "G01",
+          "G06"
+        ],
+        "refs": []
+      },
+      {
+        "term_id": "G09",
+        "name": "Experimental Design Variables",
+        "aliases": [],
+        "group": "",
+        "definition": "The structured specification of an experiment's variables: $V_{\\text{ind}}$ = independent variables (factors manipulated by the experimenter), $V_{\\text{dep}}$ = dependent variables (outcomes measured), $V_{\\text{const}}$ = constants (factors held fixed across conditions). Design correctness score $D$ is the proportion of ground-truth design items correctly identified by the agent.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "$D = (V_{\\text{ind}}, V_{\\text{dep}}, V_{\\text{const}})$"
+          },
+          {
+            "label": "Boundary conditions",
+            "value": "Defined relative to the specific experiment in the source paper; the same factor may be independent in one experiment and constant in another. Agents frequently confuse independent and constant variables (16.05% misclassification rate)."
+          }
+        ],
+        "related": [
+          "G01",
+          "G02"
+        ],
+        "refs": []
+      },
+      {
+        "term_id": "G10",
+        "name": "IterativeAgent",
+        "aliases": [],
+        "group": "",
+        "definition": "An agent configuration adapted from PaperBench (Starace et al., 2025), modified to reduce early task stopping by iterating on implementation until timeout or success. Used as a comparison baseline to OpenHands in EXP-Bench evaluations. Each agent run is given a maximum of 40 minutes and access to 4x NVIDIA A40 GPUs.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "IA"
+          },
+          {
+            "label": "Boundary conditions",
+            "value": "IA models often consume the full allotted time (40 minutes), rarely stopping early, which distinguishes them from OpenHands models that frequently stop early with plausible-looking but incomplete outputs."
+          }
+        ],
+        "related": [
+          "G03"
+        ],
+        "refs": []
+      }
+    ],
+    "lexicon": {
+      "exp-bench task": "G01",
+      "ground truth solution": "G02",
+      "conjunctive evaluation metrics": "G03",
+      "monitor check": "G04",
+      "code execution validator": "G05",
+      "semi-automated curation pipeline": "G06",
+      "multi-modal extraction": "G07",
+      "masked repository": "G08",
+      "experimental design variables": "G09",
+      "iterativeagent": "G10"
+    }
+  },
+  "dependencies": {
+    "title": "Related Work / Dependencies",
+    "preamble": "",
+    "legend": [],
+    "attribution": "",
+    "entries": [
+      {
+        "rw_id": "RW01",
+        "inferred_id": false,
+        "name": "OpenHands (Wang et al., 2024)",
+        "relation_raw": "baseline",
+        "relation_norm": "baseline",
+        "delta": "What changed: EXP-Bench uses OpenHands as a primary evaluation agent rather than a code generation tool; tests it on research experimentation tasks rather than software engineering tasks Why: OpenHands is a top-performing code generation agent; provides a strong baseline for assessing AI research automation capability",
+        "adopted": "Agent framework and execution environment; Docker containerization approach",
+        "grounding": [
+          {
+            "raw": "arXiv:2407.16741",
+            "kind": "arxiv",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C01",
+          "C02"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW02",
+        "inferred_id": false,
+        "name": "PaperBench / IterativeAgent (Starace et al., 2025)",
+        "relation_raw": "baseline, extends",
+        "relation_norm": "baseline",
+        "delta": "What changed: EXP-Bench uses IterativeAgent configuration from PaperBench but applies it to tasks requiring implementation generation, not just script execution. EXP-Bench also requires conjunctive evaluation vs. PaperBench's focus on script running and documented analysis Why: PaperBench represents the closest prior work on paper-grounded agent evaluation; IterativeAgent reduces early stopping to test sustained task engagement",
+        "adopted": "IterativeAgent configuration; LLM-as-a-judge evaluation pattern",
+        "grounding": [
+          {
+            "raw": "arXiv:2504.01848",
+            "kind": "arxiv",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C01",
+          "C02",
+          "C03"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW03",
+        "inferred_id": false,
+        "name": "RE-Bench (Wijk et al., 2024)",
+        "relation_raw": "baseline",
+        "relation_norm": "baseline",
+        "delta": "What changed: EXP-Bench scales from 7 hand-curated tasks to 461 semi-automatically curated tasks; adds execution validation and multi-phase conjunctive scoring Why: RE-Bench's hand-curation approach cannot scale; its 7 tasks provide insufficient statistical coverage of AI research diversity",
+        "adopted": "Human-vs-agent comparison framing; research task grounding concept",
+        "grounding": [
+          {
+            "raw": "arXiv (RE-Bench)",
+            "kind": "arxiv",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C01",
+          "C02"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW04",
+        "inferred_id": false,
+        "name": "MLE-Bench (Chan et al., 2024)",
+        "relation_raw": "baseline",
+        "relation_norm": "baseline",
+        "delta": "What changed: EXP-Bench targets open AI research experiments from academic papers rather than Kaggle-style ML competitions; requires full experimental workflow rather than constrained hyperparameter tuning Why: Kaggle tasks have simplified evaluation metrics and constrained environments that do not reflect real research complexity",
+        "adopted": "Code execution validation concept; containerized evaluation environment",
+        "grounding": [
+          {
+            "raw": "arXiv:2410.07095",
+            "kind": "arxiv",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C01"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW05",
+        "inferred_id": false,
+        "name": "ScienceAgentBench (Chen et al., 2024)",
+        "relation_raw": "baseline",
+        "relation_norm": "baseline",
+        "delta": "What changed: EXP-Bench requires end-to-end experimentation including execution, not just data analysis or hypothesis testing; tasks are grounded in peer-reviewed AI papers, not data science scenarios Why: Data-driven scientific discovery benchmarks isolate analysis from the broader experimental context",
+        "adopted": "Scientific coding evaluation framework concept",
+        "grounding": [
+          {
+            "raw": "arXiv:2410.05080",
+            "kind": "arxiv",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C01"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW06",
+        "inferred_id": false,
+        "name": "BLADE (Gu et al., 2024)",
+        "relation_raw": "baseline",
+        "relation_norm": "baseline",
+        "delta": "What changed: EXP-Bench requires implementation generation and execution, not primarily post-hoc data analysis; covers diverse AI subfields rather than data science Why: BLADE primarily assesses data-driven science without requiring agents to generate and run new experiments",
+        "adopted": "Benchmarking framework for data analysis tasks",
+        "grounding": [
+          {
+            "raw": "arXiv:2408.09667",
+            "kind": "arxiv",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C01"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW07",
+        "inferred_id": false,
+        "name": "BoxingGym (Gandhi et al., 2025)",
+        "relation_raw": "baseline",
+        "relation_norm": "baseline",
+        "delta": "What changed: EXP-Bench uses real, peer-reviewed papers with actual code rather than simulated theory formation environments Why: Simulated environments do not capture the complexity of real AI research codebases and experimental workflows",
+        "adopted": "Concept of benchmarking automated experimental design",
+        "grounding": [
+          {
+            "raw": "arXiv (BoxingGym)",
+            "kind": "arxiv",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C01"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW08",
+        "inferred_id": false,
+        "name": "Curie (Kon et al., 2025)",
+        "relation_raw": "extends",
+        "relation_norm": "extends",
+        "delta": "What changed: EXP-Bench provides the benchmark dataset and evaluation framework for Curie; scales evaluation to 461 tasks with semi-automated curation Why: Curie compares agents against humans on research tasks but at limited scale with simplified metrics; EXP-Bench provides the large-scale, multi-phase evaluation infrastructure",
+        "adopted": "Research task formulation; agent-based experimentation concept",
+        "grounding": [
+          {
+            "raw": "arXiv (Curie)",
+            "kind": "arxiv",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C01",
+          "C02",
+          "C03"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW09",
+        "inferred_id": false,
+        "name": "AAAR-1.0 (Lou et al., 2024)",
+        "relation_raw": "baseline",
+        "relation_norm": "baseline",
+        "delta": "What changed: EXP-Bench requires actual experiment execution, not reasoning over static artifacts; tasks are grounded in executable codebases Why: Static artifact reasoning does not evaluate an agent's ability to run and validate experiments",
+        "adopted": "Paper-grounded research assessment concept",
+        "grounding": [
+          {
+            "raw": "arXiv (AAAR)",
+            "kind": "arxiv",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C01"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW10",
+        "inferred_id": false,
+        "name": "ML-Gym (Nathani et al., 2025)",
+        "relation_raw": "baseline",
+        "relation_norm": "baseline",
+        "delta": "What changed: EXP-Bench uses real peer-reviewed papers as task sources and applies conjunctive multi-phase evaluation; ML-Gym uses simplified evaluation metrics Why: Simplified metrics do not capture end-to-end experiment correctness",
+        "adopted": "ML research agent evaluation framing",
+        "grounding": [
+          {
+            "raw": "arXiv (ML-Gym)",
+            "kind": "arxiv",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C01",
+          "C03"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW11",
+        "inferred_id": false,
+        "name": "Scicode (Tian et al., 2024)",
+        "relation_raw": "baseline",
+        "relation_norm": "baseline",
+        "delta": "What changed: EXP-Bench targets AI research experiments with full execution pipelines, not code snippet generation for natural science tasks Why: Code snippet generation is a sub-task of experimentation; EXP-Bench requires complete runnable experiment chains",
+        "adopted": "Research coding benchmark design",
+        "grounding": [
+          {
+            "raw": "arXiv (Scicode)",
+            "kind": "arxiv",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C01",
+          "C04"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW12",
+        "inferred_id": false,
+        "name": "The AI Scientist (Lu et al., 2024)",
+        "relation_raw": "baseline",
+        "relation_norm": "baseline",
+        "delta": "What changed: EXP-Bench provides structured, verifiable evaluation with ground truth from real papers; The AI Scientist has limited automated evaluation and focuses on commonsense domains Why: Without verifiable ground truth tied to published results, automated evaluation of research quality is unreliable",
+        "adopted": "Multi-agent research automation concept; end-to-end research lifecycle framing",
+        "grounding": [
+          {
+            "raw": "arXiv:2408.06292",
+            "kind": "arxiv",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C01",
+          "C02"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      }
+    ],
+    "footprint": []
+  },
+  "recipes": {
+    "title": "Solution",
+    "files": [
+      {
+        "file": "constraints.md",
+        "role": "constraints",
+        "file_title": "Constraints",
+        "sections": [
+          {
+            "sec_id": "BC1",
+            "heading": "BC1: Source paper requirements",
+            "kind": "prose",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "",
+            "text": "EXP-Bench tasks require papers with publicly available, runnable codebases (GitHub repositories). Papers without code or with private datasets cannot be processed by the curation pipeline. Papers must have sufficient experimental detail in evaluation sections; purely theoretical papers or those with only conceptual experiments are out of scope. Currently limited to NeurIPS 2024 and ICLR 2024 papers; generalization to other venues or years requires re-running the curation pipeline.",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "BC2",
+            "heading": "BC2: Task scope limitations",
+            "kind": "prose",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "",
+            "text": "EXP-Bench evaluates the experimentation procedure only (design -> implementation -> execution -> conclusion). It does not cover: literature review, open-ended research ideation, gap identification, or the iterative, unpredictable path of real-world discovery. Each task is grounded in an already-completed experiment from a published paper; the benchmark tests replication and extension, not open-ended hypothesis generation.",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "BC3",
+            "heading": "BC3: Agent execution constraints",
+            "kind": "prose",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "",
+            "text": "Soft timeout: 40 minutes per task; agents may occasionally exceed this limit. Hardware: 4x NVIDIA A40 GPUs per agent run; tasks requiring more specialized hardware (e.g., 50x A800 GPUs for Bag of Tricks jailbreak paper) may not be faithfully executable. Masking: agents cannot access the research paper PDF directly; they must reconstruct experimental procedures from task description and repository context only.",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "BC4",
+            "heading": "BC4: Evaluation constraints",
+            "kind": "prose",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "",
+            "text": "Execution subset: due to computational cost, execution validation (metric E) is run only on a subset of traces, those that pass the monitor check. Results may not be representative of all tasks. LLM judge limitations: o3-mini has a finite context window; long diffs or logs are chunked iteratively, which may introduce inconsistencies at chunk boundaries. Monitor false positives/negatives: the monitor may incorrectly flag legitimate behaviors or miss sophisticated shortcutting behaviors.",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "BC5",
+            "heading": "BC5: Curation pipeline limitations",
+            "kind": "prose",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "",
+            "text": "Multi-pass extraction can miss experimental details that are deeply implicit or require expert domain knowledge to interpret. AST tracing for implementation requirements assumes code follows conventional Python/script patterns; non-standard codebases may produce incomplete requirement lists. Execution-based validation validates that the ground-truth scripts run in a clean container but cannot guarantee they reproduce exact paper results (minor numerical differences from hardware/seed variation are possible).",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "",
+            "heading": "Known Limitations (as stated by authors)",
+            "kind": "steps",
+            "markdown": "",
+            "steps": [
+              "Does not evaluate the broader AI research lifecycle (literature review, ideation, iterative discovery).",
+              "Task structures may not capture the full complexity and unpredictability of real-world AI research.",
+              "LLM-based categorization of failure types (Table 2, Table 8) may have inter-category overlap.",
+              "Cost reporting covers only backbone LLM token usage, excluding agent-internal API calls and GPU compute costs.",
+              "IA models often consume the full 40-minute timeout, potentially masking early failures with long runs."
+            ],
+            "fields": [],
+            "code": "",
+            "text": "1. Does not evaluate the broader AI research lifecycle (literature review, ideation, iterative discovery).\n2. Task structures may not capture the full complexity and unpredictability of real-world AI research.\n3. LLM-based categorization of failure types (Table 2, Table 8) may have inter-category overlap.\n4. Cost reporting covers only backbone LLM token usage, excluding agent-internal API calls and GPU compute costs.\n5. IA models often consume the full 40-minute timeout, potentially masking early failures with long runs.",
+            "warn": "",
+            "refs": []
+          }
+        ]
+      },
+      {
+        "file": "heuristics.md",
+        "role": "heuristics",
+        "file_title": "Heuristics",
+        "sections": [
+          {
+            "sec_id": "H01",
+            "heading": "H01: Two-pass RAG for scattered experimental details",
+            "kind": "kv",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "Academic papers present research findings non-linearly; key experimental details (e.g., dataset splits, hyperparameters, evaluation conditions) are scattered across body, appendix, and supplementary materials. A single-pass extraction misses cross-section dependencies."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "high"
+              },
+              {
+                "label": "Bounds",
+                "value": "First pass: retrieval over full paper for high-level takeaways. Second pass: subsection-level prompting conditioned on accumulated context and extracted tables/figures. Third pass: full-paper re-query targeting appendices for missed setup details."
+              },
+              {
+                "label": "Code ref",
+                "value": "[src/execution/curation_pipeline.py]"
+              },
+              {
+                "label": "Source",
+                "value": "§3.2, Stage 2.1"
+              }
+            ],
+            "code": "",
+            "text": "Rationale: Academic papers present research findings non-linearly; key experimental details (e.g., dataset splits, hyperparameters, evaluation conditions) are scattered across body, appendix, and supplementary materials. A single-pass extraction misses cross-section dependencies. Sensitivity: high Bounds: First pass: retrieval over full paper for high-level takeaways. Second pass: subsection-level prompting conditioned on accumulated context and extracted tables/figures. Third pass: full-paper re-query targeting appendices for missed setup details. Code ref: [src/execution/curation_pipeline.py] Source: §3.2, Stage 2.1",
+            "warn": "",
+            "refs": [
+              {
+                "raw": "§3.2",
+                "kind": "figure",
+                "target": null
+              },
+              {
+                "raw": "src/execution/curation_pipeline.py",
+                "kind": "source",
+                "target": null
+              }
+            ]
+          },
+          {
+            "sec_id": "H02",
+            "heading": "H02: Iterative implementation refinement with execution feedback",
+            "kind": "kv",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "The implementation extraction agent cannot know a priori if its candidate script chain is correct. Execution-based validation in a containerized environment provides ground truth feedback; failed executions trigger agent refinement iterations."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "high"
+              },
+              {
+                "label": "Bounds",
+                "value": "Agent iterates until a working solution is found or a fixed iteration limit is reached; final validated script chain is then parsed via AST."
+              },
+              {
+                "label": "Code ref",
+                "value": "[src/execution/curation_pipeline.py]"
+              },
+              {
+                "label": "Source",
+                "value": "§3.2, Stage 2.2"
+              }
+            ],
+            "code": "",
+            "text": "Rationale: The implementation extraction agent cannot know a priori if its candidate script chain is correct. Execution-based validation in a containerized environment provides ground truth feedback; failed executions trigger agent refinement iterations. Sensitivity: high Bounds: Agent iterates until a working solution is found or a fixed iteration limit is reached; final validated script chain is then parsed via AST. Code ref: [src/execution/curation_pipeline.py] Source: §3.2, Stage 2.2",
+            "warn": "",
+            "refs": [
+              {
+                "raw": "§3.2",
+                "kind": "figure",
+                "target": null
+              },
+              {
+                "raw": "src/execution/curation_pipeline.py",
+                "kind": "source",
+                "target": null
+              }
+            ]
+          },
+          {
+            "sec_id": "H03",
+            "heading": "H03: Chunked LLM judge processing for long diffs/logs",
+            "kind": "kv",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "Agent-generated git diffs and execution logs can exceed o3-mini's context window. Segmenting inputs into chunks and carrying over evaluation results and context between chunks prevents information loss."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "medium"
+              },
+              {
+                "label": "Bounds",
+                "value": "Chunk size determined by model's maximum context length. Evaluation results from chunk k are passed as context to chunk k+1; this introduces sequential dependence and potential inconsistency at boundaries."
+              },
+              {
+                "label": "Code ref",
+                "value": "[src/execution/evaluation_judge.py]"
+              },
+              {
+                "label": "Source",
+                "value": "§4.1, Evaluation Judge Implementation Details"
+              }
+            ],
+            "code": "",
+            "text": "Rationale: Agent-generated git diffs and execution logs can exceed o3-mini's context window. Segmenting inputs into chunks and carrying over evaluation results and context between chunks prevents information loss. Sensitivity: medium Bounds: Chunk size determined by model's maximum context length. Evaluation results from chunk k are passed as context to chunk k+1; this introduces sequential dependence and potential inconsistency at boundaries. Code ref: [src/execution/evaluation_judge.py] Source: §4.1, Evaluation Judge Implementation Details",
+            "warn": "",
+            "refs": [
+              {
+                "raw": "§4.1",
+                "kind": "figure",
+                "target": null
+              },
+              {
+                "raw": "src/execution/evaluation_judge.py",
+                "kind": "source",
+                "target": null
+              }
+            ]
+          },
+          {
+            "sec_id": "H04",
+            "heading": "H04: Conjunctive scoring to reduce metric instability",
+            "kind": "kv",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "Individual metrics C (conclusion) and E (execution) exhibit high variance; agents can produce plausible-sounding conclusions without valid experiments (inflating C), or incorrect mock implementations may still execute (inflating E). Conjunctive forms C·D and I·E mitigate these failure modes."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "medium"
+              },
+              {
+                "label": "Bounds",
+                "value": "C·D requires both conclusion correctness AND valid design (filters unfounded conclusions); I·E requires both implementation correctness AND executability (filters mock executions). These conjunctions reduce over-crediting and annotation leniency sensitivity."
+              },
+              {
+                "label": "Code ref",
+                "value": "[src/execution/evaluation_judge.py]"
+              },
+              {
+                "label": "Source",
+                "value": "§4.2, Metric Stability Analysis; Figure 5"
+              }
+            ],
+            "code": "",
+            "text": "Rationale: Individual metrics C (conclusion) and E (execution) exhibit high variance; agents can produce plausible-sounding conclusions without valid experiments (inflating C), or incorrect mock implementations may still execute (inflating E). Conjunctive forms C·D and I·E mitigate these failure modes. Sensitivity: medium Bounds: C·D requires both conclusion correctness AND valid design (filters unfounded conclusions); I·E requires both implementation correctness AND executability (filters mock executions). These conjunctions reduce over-crediting and annotation leniency sensitivity. Code ref: [src/execution/evaluation_judge.py] Source: §4.2, Metric Stability Analysis; Figure 5",
+            "warn": "",
+            "refs": [
+              {
+                "raw": "§4.2",
+                "kind": "figure",
+                "target": null
+              },
+              {
+                "raw": "src/execution/evaluation_judge.py",
+                "kind": "source",
+                "target": null
+              }
+            ]
+          },
+          {
+            "sec_id": "H05",
+            "heading": "H05: Source filtering via citation count + GitHub repository activity",
+            "kind": "kv",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "High citation count and GitHub stars/forks serve as proxies for paper quality, reproducibility, and community adoption. Filtering on both signals reduces the probability of including papers with unreliable or unmaintainable codebases."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "low"
+              },
+              {
+                "label": "Bounds",
+                "value": "Exact thresholds not specified in paper; applied as initial filter to generate candidate set before more expensive extraction steps. The 51 selected papers span citation ranges from ~1287 (Causal-learn) to several thousand."
+              },
+              {
+                "label": "Code ref",
+                "value": "[src/execution/curation_pipeline.py]"
+              },
+              {
+                "label": "Source",
+                "value": "§3.2, Stage 1"
+              }
+            ],
+            "code": "",
+            "text": "Rationale: High citation count and GitHub stars/forks serve as proxies for paper quality, reproducibility, and community adoption. Filtering on both signals reduces the probability of including papers with unreliable or unmaintainable codebases. Sensitivity: low Bounds: Exact thresholds not specified in paper; applied as initial filter to generate candidate set before more expensive extraction steps. The 51 selected papers span citation ranges from ~1287 (Causal-learn) to several thousand. Code ref: [src/execution/curation_pipeline.py] Source: §3.2, Stage 1",
+            "warn": "",
+            "refs": [
+              {
+                "raw": "§3.2",
+                "kind": "figure",
+                "target": null
+              },
+              {
+                "raw": "src/execution/curation_pipeline.py",
+                "kind": "source",
+                "target": null
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "file": "algorithm.md",
+        "role": "algorithm",
+        "file_title": "Algorithm",
+        "sections": [
+          {
+            "sec_id": "",
+            "heading": "Task Definition",
+            "kind": "math",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "$\\mathcal{T}_i = (Q_i, M_i, R_i^{\\text{masked}}, G_i)$ where $Q_i$: research question, $M_i$: high-level method description, $R_i^{\\text{masked}} = R_i \\setminus F_i^{\\text{mask}}$: masked repository, $G_i = (D_i^{gt}, \\Delta_i^{gt}, C_i^{gt})$: ground truth (design, diff, conclusion)",
+            "text": "A task $\\mathcal{T}_i = (Q_i, M_i, R_i^{\\text{masked}}, G_i)$ where: $Q_i$ = research question (natural language); $M_i$ = high-level method description (natural language); $R_i^{\\text{masked}} = R_i \\setminus F_i^{\\text{mask}}$ = masked repository; $G_i = (D_i^{gt}, \\Delta_i^{gt}, C_i^{gt})$ = ground truth (design, diff, conclusion).",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "",
+            "heading": "Scoring",
+            "kind": "math",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "D_i = |{v in D_i^gt : LLM-judge matches v in D-hat_i}| / |D_i^gt| x 100 ; I_i = |{r in Delta_i^gt : LLM-judge satisfies r in Delta-hat_i}| / |Delta_i^gt| x 100 ; C_i = 1[LLM-judge(C-hat_i, C_i^gt) = correct] ; E_i = 1[CodeExecutor(R_i, Delta-hat_i) = success] ; All-check_i = 1[D_i>0 AND I_i>0 AND C_i=1] ; All-E-check_i = 1[D_i>0 AND I_i>0 AND C_i=1 AND E_i=1] ; (I.E)_i = 1[I_i>0 AND E_i=1]",
+            "text": "Agent output: $\\hat{G}_i = (\\hat{D}_i, \\hat{\\Delta}_i, \\hat{C}_i)$. Individual metrics D_i, I_i, C_i, E_i as defined by the LLM-judge and CodeExecutor comparisons against ground truth. Conjunctive metrics All-check and All-E-check combine D, I, C (and E). Aggregated over N tasks as simple averages (e.g. D-bar = (1/N) sum D_i).",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "",
+            "heading": "Multi-Pass Extraction Algorithm",
+            "kind": "code",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "Algorithm: SemiAutomatedTaskCuration(paper_pdf, repo)\n\nInput: paper_pdf (PDF document), repo (GitHub repository URL)\n\nStage 1: Source Filtering\n  if citation_count(paper) &lt; threshold OR stars(repo) &lt; threshold:\n    return None  # Filtered out\n\nStage 2.1: Multi-Modal Research Task Extraction\n  indexed_pdf &lt;- OCR(paper_pdf) + multimodal_extract(tables, figures, headers)\n  takeaways &lt;- RAG_query(indexed_pdf, query=\"main research questions and contributions\")\n  context &lt;- {}\n  tasks_raw &lt;- []\n  for section in evaluation_sections(indexed_pdf):\n    label &lt;- classify(section, classes=[\"implementation_context\", \"research_question\"])\n    if label == \"implementation_context\":\n      context.add(section)\n    else:\n      task_raw &lt;- extract_task(section, context=context, tables=indexed_pdf.tables)\n      tasks_raw.append(task_raw)\n  for task in tasks_raw:\n    task &lt;- refine(task, full_paper=indexed_pdf, appendix=indexed_pdf.appendix)\n  Output: [(Q, M, D_gt, C_gt)] per task\n\nStage 2.2: Implementation Extraction\n  agent &lt;- ToolAugmentedAgent(tools=[PDF_reader, terminal, web_browser])\n  for task (Q, M, D_gt, C_gt) in tasks_raw:\n    candidate &lt;- None\n    while candidate is None or not executable:\n      candidate &lt;- agent.search(repo, goal=(Q, M, C_gt))\n      executable &lt;- execute_in_container(candidate)\n      if not executable:\n        agent.refine(candidate)\n    Delta_gt &lt;- AST_trace(candidate.scripts) -> natural_language_steps\n    additional_context &lt;- extract_hyperparams(repo.configs, repo.README)\n    task.update(Delta_gt, additional_context)\n\nStage 3: Verification\n  for task in tasks:\n    result &lt;- execute_in_container(task.Delta_gt)\n    if result != expected_output:\n      task &lt;- Stage_2(task)  # loop back\n    else:\n      apply_masking(task, F_mask)  # scripted git operations\n      human_review(task)  # lightweight consistency check\n      dataset.add(task)\n\nOutput: EXP-Bench dataset of verified tasks",
+            "text": "Three-stage pipeline: (1) source filtering by citation/star thresholds; (2.1) multi-modal task extraction via 3-pass RAG; (2.2) implementation extraction via a tool-augmented agent with iterative execution-feedback refinement and AST tracing; (3) verification via clean-container execution, masking, and lightweight human review.",
+            "warn": "",
+            "refs": [
+              {
+                "raw": "§3.2, Stage 2.1",
+                "kind": "figure",
+                "target": null
+              }
+            ]
+          },
+          {
+            "sec_id": "",
+            "heading": "Conjunctive Evaluation Algorithm",
+            "kind": "code",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "Algorithm: EvaluateAgent(agent, task_set)\n\nInput: agent (LLM-based agent), task_set (EXP-Bench tasks)\n\nfor task T_i in task_set:\n  container &lt;- fresh_docker_container(ubuntu_24_04, 4xA40)\n  R_masked &lt;- apply_masking(clone(task.repo), task.F_mask)\n  agent_output &lt;- agent.run(Q=task.Q, M=task.M, R=R_masked, timeout=40_minutes)\n  logs &lt;- collect_logs(agent_output)\n  M_i &lt;- monitor_check(logs)  # o3-mini\n  if M_i == 0:\n    discard(task_i); continue\n  chunks &lt;- chunk(agent_output + logs, max_context_len)\n  D_i, C_i, I_i &lt;- 0, 0, 0\n  for chunk in chunks:\n    D_i, C_i &lt;- judge.evaluate_design_conclusion(chunk, G_i.D_gt, G_i.C_gt)\n    I_i &lt;- judge.evaluate_implementation(chunk, G_i.Delta_gt)\n  E_i &lt;- executor.run(R_i, agent_output.Delta_agent)\n  scores[i] &lt;- {D: D_i, I: I_i, C: C_i, E: E_i, IE: I_i AND E_i, All: D_i AND I_i AND C_i, AllE: D_i AND I_i AND C_i AND E_i}\n\nreturn aggregate(scores)",
+            "text": "Per-task evaluation loop: fresh Docker container -> masked repo -> agent run (40-min timeout) -> monitor check (discard on fail) -> chunked LLM-judge design/conclusion/implementation scoring -> code execution validator -> conjunctive metric aggregation.",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "",
+            "heading": "Complexity Analysis",
+            "kind": "kv",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Dataset Curation",
+                "value": "O(P . (T_OCR + T_LLM . S + T_exec)) where P = number of papers, S = number of subsections per paper, T_exec = container execution time. Practical cost: ~$60 USD/paper + ~20 min human time."
+              },
+              {
+                "label": "Agent Evaluation",
+                "value": "O(N . T_agent) where N = 461 tasks, T_agent &lt;= 40 minutes. LLM judge adds O(N . L / C) where L = log/diff length, C = chunk size."
+              }
+            ],
+            "code": "",
+            "text": "Dataset Curation: O(P . (T_OCR + T_LLM . S + T_exec)) where P = number of papers, S = number of subsections per paper, T_exec = container execution time. Practical cost: ~$60 USD/paper + ~20 min human time. Agent Evaluation: O(N . T_agent) where N = 461 tasks, T_agent &lt;= 40 minutes. LLM judge adds O(N . L / C) where L = log/diff length, C = chunk size.",
+            "warn": "",
+            "refs": []
+          }
+        ]
+      },
+      {
+        "file": "architecture.md",
+        "role": "architecture",
+        "file_title": "System Architecture",
+        "sections": [
+          {
+            "sec_id": "",
+            "heading": "Overview",
+            "kind": "prose",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "",
+            "text": "EXP-Bench consists of two interconnected systems: (1) the Dataset Curation Pipeline that produces the benchmark tasks, and (2) the Evaluation Framework that scores agent outputs. Both systems interact with external components (papers, repositories, LLM APIs, Docker environments).",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "",
+            "heading": "Component Graph",
+            "kind": "code",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "[Source Papers (PDF)]  --------------------------------+\n[GitHub Repositories] --------------------------------+\n                                                        v\n                              +---------------------------------------+\n                              |   Stage 1: Source Selection            |\n                              |   - Citation count filter              |\n                              |   - GitHub stars/forks filter          |\n                              |   - Conference filter (NeurIPS, ICLR)  |\n                              +-------------------+---------------------+\n                                                  |\n                              +-------------------v---------------------+\n                              |   Stage 2.1: Multi-Modal Extraction     |\n                              |   - OCR + multimodal LLM indexing       |\n                              |   - 2-pass RAG querying                 |\n                              |   - Subsection-level classification     |\n                              |   - Full-paper re-querying              |\n                              |   Output: (Q, M, D_gt, C_gt)           |\n                              +-------------------+---------------------+\n                                                  |\n                              +-------------------v---------------------+\n                              |   Stage 2.2: Implementation Extraction  |\n                              |   Agent (PDF/terminal/web tools)        |\n                              |   AST tracing -> Delta_gt               |\n                              +-------------------+---------------------+\n                                                  |\n                              +-------------------v---------------------+\n                              |   Stage 3: Verification                 |\n                              |   Containerized execution, masking,     |\n                              |   human lightweight review              |\n                              +-------------------+---------------------+\n                                                  |\n                              +-------------------v---------------------+\n                              |         EXP-Bench Dataset               |\n                              |   461 tasks x (Q, M, R_masked, G)      |\n                              +-------------------+---------------------+\n                                                  |\n                 +--------------------------------v--------------------------------+\n                 |                      Agent Interface                            |\n                 |   Input: (Q, M, R_masked, credentials, 40-min timeout)         |\n                 |   Agent types: OpenHands, IterativeAgent                       |\n                 |   Hardware: Ubuntu 24.04 Docker + 4x NVIDIA A40                |\n                 +---+--------------------------------------------------------+---+\n                     |                                                        |\n         +-----------v-----------+                            +---------------v-------+\n         |   Agent Output        |                            |   Agent Logs          |\n         +-----------+-----------+                            +---------------+-------+\n                     |                                                        |\n                     |                                        +---------------v-------+\n                     |                                        |   Monitor (o3-mini)   |\n                     |                                        |   Output: M in {0,1}  |\n                     |                                        +---------------+-------+\n                     |                                                        | (if M=1)\n         +-----------v--------------------------------------------------------v-------+\n         |                    LLM Judge (o3-mini)                                     |\n         |   Design Eval / Conclusion Eval / Implementation Eval (chunked)            |\n         +-----------+--------------------------------------------------------+-------+\n                     |                                                        |\n         +-----------v-----------+                              +-------------v---------+\n         |  Code Execution        |                              |   Score Aggregation   |\n         |  Validator: E in {0,1}|----------------------------->|  D,I,C,E,I.E,All,All.E |\n         +-------------------------+                              +------------------------+",
+            "text": "End-to-end component graph: Source Papers + GitHub Repositories -> Stage 1 Source Selection -> Stage 2.1 Multi-Modal Extraction -> Stage 2.2 Implementation Extraction -> Stage 3 Verification -> EXP-Bench Dataset -> Agent Interface -> {Agent Output, Agent Logs} -> Monitor -> LLM Judge + Code Execution Validator -> Score Aggregation.",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "",
+            "heading": "Source Selection Filter",
+            "kind": "kv",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Purpose",
+                "value": "Identify high-quality, reproducible candidate papers"
+              },
+              {
+                "label": "Inputs",
+                "value": "Conference proceedings (NeurIPS 2024, ICLR 2024), GitHub metadata"
+              },
+              {
+                "label": "Outputs",
+                "value": "Filtered list of (paper, repository) pairs"
+              },
+              {
+                "label": "Key design choices",
+                "value": "Citation count + GitHub stars/forks as proxy for impact and reproducibility; both criteria applied conjunctively"
+              }
+            ],
+            "code": "",
+            "text": "Purpose: Identify high-quality, reproducible candidate papers Inputs: Conference proceedings (NeurIPS 2024, ICLR 2024), GitHub metadata Outputs: Filtered list of (paper, repository) pairs Key design choices: Citation count + GitHub stars/forks as proxy for impact and reproducibility; both criteria applied conjunctively",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "",
+            "heading": "Multi-Modal Extraction (Stage 2.1)",
+            "kind": "kv",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Purpose",
+                "value": "Extract structured research task components from paper text"
+              },
+              {
+                "label": "Inputs",
+                "value": "PDF (with OCR + multimodal indexing), extracted tables/figures"
+              },
+              {
+                "label": "Outputs",
+                "value": "Research question Q, high-level method M, expected outcome / conclusion ground truth C_gt, design variables D_gt"
+              },
+              {
+                "label": "Key design choices",
+                "value": "Two-pass RAG to handle information scattered across sections; subsection-level prompting to reduce context noise; full-paper re-querying for setup details in appendices"
+              }
+            ],
+            "code": "",
+            "text": "Purpose: Extract structured research task components from paper text Inputs: PDF (with OCR + multimodal indexing), extracted tables/figures Outputs: Research question Q, high-level method M, expected outcome / conclusion ground truth C_gt, design variables D_gt Key design choices: Two-pass RAG to handle information scattered across sections; subsection-level prompting to reduce context noise; full-paper re-querying for setup details in appendices",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "",
+            "heading": "Implementation Extraction Agent (Stage 2.2)",
+            "kind": "kv",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Purpose",
+                "value": "Locate and validate the code implementation corresponding to the extracted research task"
+              },
+              {
+                "label": "Inputs",
+                "value": "Complete codebase + extracted task (Q, M, C_gt); tool access (PDF reader, terminal, web browser)"
+              },
+              {
+                "label": "Outputs",
+                "value": "List of required scripts, high-level usage instructions, step-by-step implementation requirements (from AST tracing), additional hyperparameters from config files/READMEs"
+              },
+              {
+                "label": "Key design choices",
+                "value": "Goal-conditioned search reduces problem to finding implementation matching specified methodology; iterative refinement if execution fails"
+              }
+            ],
+            "code": "",
+            "text": "Purpose: Locate and validate the code implementation corresponding to the extracted research task Inputs: Complete codebase + extracted task (Q, M, C_gt); tool access (PDF reader, terminal, web browser) Outputs: List of required scripts, high-level usage instructions, step-by-step implementation requirements (from AST tracing), additional hyperparameters from config files/READMEs Key design choices: Goal-conditioned search reduces problem to finding implementation matching specified methodology; iterative refinement if execution fails",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "",
+            "heading": "Verification and Refinement (Stage 3)",
+            "kind": "kv",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Purpose",
+                "value": "Ensure tasks are executable and correct"
+              },
+              {
+                "label": "Inputs",
+                "value": "Candidate task + implementation"
+              },
+              {
+                "label": "Outputs",
+                "value": "Verified task with masked files added to dataset"
+              },
+              {
+                "label": "Key design choices",
+                "value": "Containerized execution in clean environment; human review limited to lightweight consistency check (~20 min/paper after pipeline finalization)"
+              }
+            ],
+            "code": "",
+            "text": "Purpose: Ensure tasks are executable and correct Inputs: Candidate task + implementation Outputs: Verified task with masked files added to dataset Key design choices: Containerized execution in clean environment; human review limited to lightweight consistency check (~20 min/paper after pipeline finalization)",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "",
+            "heading": "Monitor",
+            "kind": "kv",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Purpose",
+                "value": "Integrity check to detect shortcutting behaviors"
+              },
+              {
+                "label": "Inputs",
+                "value": "Agent action logs"
+              },
+              {
+                "label": "Outputs",
+                "value": "Binary pass/fail + explanation string"
+              },
+              {
+                "label": "Key design choices",
+                "value": "LLM-based (o3-mini); checks three specific disallowed behaviors; automatic discard of failed traces before execution"
+              }
+            ],
+            "code": "",
+            "text": "Purpose: Integrity check to detect shortcutting behaviors Inputs: Agent action logs Outputs: Binary pass/fail + explanation string Key design choices: LLM-based (o3-mini); checks three specific disallowed behaviors; automatic discard of failed traces before execution",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "",
+            "heading": "LLM Judge",
+            "kind": "kv",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Purpose",
+                "value": "Score design, implementation, and conclusion correctness"
+              },
+              {
+                "label": "Inputs",
+                "value": "Agent outputs + ground truth; chunked for long inputs"
+              },
+              {
+                "label": "Outputs",
+                "value": "D in [0,100], I in [0,100], C in {correct, incorrect}"
+              },
+              {
+                "label": "Key design choices",
+                "value": "Chunked processing for long diffs/logs; multi-step prompting separating monitor, design/conclusion, and implementation evaluations"
+              }
+            ],
+            "code": "",
+            "text": "Purpose: Score design, implementation, and conclusion correctness Inputs: Agent outputs + ground truth; chunked for long inputs Outputs: D in [0,100], I in [0,100], C in {correct, incorrect} Key design choices: Chunked processing for long diffs/logs; multi-step prompting separating monitor, design/conclusion, and implementation evaluations",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "",
+            "heading": "Code Execution Validator",
+            "kind": "kv",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Purpose",
+                "value": "Verify that agent code modifications are actually executable"
+              },
+              {
+                "label": "Inputs",
+                "value": "Agent git diff + clean repository clone"
+              },
+              {
+                "label": "Outputs",
+                "value": "E in {0,1}"
+              },
+              {
+                "label": "Key design choices",
+                "value": "Run in identical containerized environment to agent; provides ground truth for executability independent of LLM judge"
+              }
+            ],
+            "code": "",
+            "text": "Purpose: Verify that agent code modifications are actually executable Inputs: Agent git diff + clean repository clone Outputs: E in {0,1} Key design choices: Run in identical containerized environment to agent; provides ground truth for executability independent of LLM judge",
+            "warn": "",
+            "refs": []
+          }
+        ]
+      }
+    ]
+  }
+}
+/* __ARA_DATA_END__ */
+</script>
+
+<script>
+"use strict";
+(function () {
+  const GLYPH = { question:"Q", experiment:"✦", decision:"→", dead_end:"✗", pivot:"↻", insight:"!", default:"•" };
+  const TYPES = ["question","experiment","decision","dead_end","pivot","insight"];
+
+  let DATA;
+  try {
+    // The payload sits between the BEGIN/END marker comments (kept in-file so the
+    // skill can re-inject). Strip ONLY those two named markers before parsing; the
+    // rest of textContent is pure JSON. (Marker text is not written literally here,
+    // so it stays a single injection site.)
+    var raw = document.getElementById("ara-data").textContent
+                .replace(/\/\*\s*__ARA_DATA_(?:BEGIN|END)__\s*\*\//g, "");
+    DATA = JSON.parse(raw);
+  } catch (e) {
+    document.getElementById("detail").innerHTML =
+      '<div class="none">Could not parse embedded ARA data: ' + String(e) + '</div>';
+    return;
+  }
+
+  const nodes = DATA.nodes || [];
+  const byId = new Map(nodes.map(n => [n.id, n]));
+  const kids = new Map();
+  nodes.forEach(n => kids.set(n.id, []));
+  let roots = [];
+  nodes.forEach(n => {
+    if (n.parent && byId.has(n.parent)) kids.get(n.parent).push(n.id);
+    else roots.push(n.id);
+  });
+  // Traversal order: explicit DATA.order if given, else DFS from roots.
+  let order = Array.isArray(DATA.order) && DATA.order.length ? DATA.order.filter(id => byId.has(id)) : [];
+  if (!order.length) { const seen=new Set(); const dfs=id=>{if(seen.has(id))return;seen.add(id);order.push(id);(kids.get(id)||[]).forEach(dfs)}; roots.forEach(dfs); }
+
+  const esc = s => String(s==null?"":s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  const glyph = t => GLYPH[t] || GLYPH.default;
+  const cls = t => TYPES.includes(t) ? t : "default";
+
+  // ---- header ----
+  const m = DATA.meta || {};
+  document.getElementById("h-title").textContent = m.title || "ARA Trajectory";
+  document.getElementById("h-sub").textContent =
+    [ (m.authors||[]).join(", "), m.venue, m.year ].filter(Boolean).join(" · ");
+  if (m.abstract) document.getElementById("h-abstract").textContent = m.abstract;
+  else document.getElementById("h-abstract-wrap").style.display = "none";
+
+  const ftype = document.getElementById("ftype");
+  const present = [...new Set(nodes.map(n => n.type))];
+  TYPES.concat(present.filter(t=>!TYPES.includes(t))).filter(t=>present.includes(t))
+    .forEach(t => { const o=document.createElement("option"); o.value=t; o.textContent=t; ftype.appendChild(o); });
+
+  // ---- minimal markdown-table renderer ----
+  function renderMd(md){
+    if(!md) return "";
+    const lines = String(md).split("\n");
+    let out=[], i=0;
+    while(i<lines.length){
+      if(/^\s*\|/.test(lines[i]) && i+1<lines.length && /^\s*\|?[\s:|-]+\|?\s*$/.test(lines[i+1])){
+        const row = l => l.replace(/^\s*\|/,"").replace(/\|\s*$/,"").split("|").map(c=>c.trim());
+        const head = row(lines[i]); i+=2; const body=[];
+        while(i<lines.length && /^\s*\|/.test(lines[i])){ body.push(row(lines[i])); i++; }
+        out.push('<table class="md"><thead><tr>'+head.map(h=>"<th>"+esc(h)+"</th>").join("")+
+          '</tr></thead><tbody>'+body.map(r=>"<tr>"+r.map(c=>"<td>"+esc(c)+"</td>").join("")+"</tr>").join("")+"</tbody></table>");
+      } else { if(lines[i].trim()) out.push("<div>"+esc(lines[i])+"</div>"); i++; }
+    }
+    return out.join("");
+  }
+
+  // ---- detail pane ----
+  function block(title, tag, inner, open, cls){
+    return '<details class="block'+(cls?" "+cls:"")+'"'+(open?" open":"")+'><summary>'+esc(title)+
+      (tag?'<span class="tag">'+esc(tag)+'</span>':'')+'</summary><div class="body">'+inner+'</div></details>';
+  }
+  function chips(arr, klass){ return arr&&arr.length ? '<div class="chips">'+arr.map(x=>'<span class="chip '+(klass||"")+'">'+esc(x)+'</span>').join("")+'</div>' : ""; }
+
+  function renderDetail(n){
+    const d = document.getElementById("detail");
+    let h = '<div class="dhead"><span class="badge '+cls(n.type)+'">'+esc(n.type)+'</span>'+
+      '<span class="did">'+esc(n.id)+'</span>'+
+      (n.support_level?'<span class="pill '+esc(n.support_level)+'">'+esc(n.support_level)+'</span>':'')+
+      (n.isolated?'<span class="pill iso">isolated</span>':'')+'</div>';
+    h += '<div class="dtitle">'+esc(n.title||"(untitled)")+'</div>';
+
+    // reasoning (primary, always open) — the agent's thinking IS the content of a step
+    let reason="";
+    if(n.thinking){
+      reason += '<div class="lead">'+esc(n.thinking)+'</div>';
+      if(n.body) reason += '<div class="didwhat">what it did</div><div>'+esc(n.body)+'</div>';
+    } else {
+      reason += n.body ? '<div class="lead">'+esc(n.body)+'</div>' : '<div class="empty">No description.</div>';
+    }
+    if(n.depends_on&&n.depends_on.length) reason += chips(n.depends_on.map(x=>"⇠ depends on "+x));
+    if(n.source_refs&&n.source_refs.length) reason += chips(n.source_refs, "ext");
+    if(n.built_on&&n.built_on.length) reason += chipRow("built on", n.built_on, "chip-built");
+    if(n.rejected_here&&n.rejected_here.length) reason += chipRow("rejected here", n.rejected_here, "chip-rej");
+    if(n.recipe_refs&&n.recipe_refs.length) reason += recipeChips(n.recipe_refs);
+    h += block(n.thinking?"reasoning":"what", n.type, reason, true, "reason");
+
+    // result (the grounded payload) — open
+    const r = n.result||{};
+    if((r.sources&&r.sources.length)||(r.figures&&r.figures.length)||(r.tables&&r.tables.length)||(r.data&&r.data.length)){
+      let s="";
+      (r.figures||[]).forEach(f=>{ s+='<figure><img src="'+esc(f.img)+'" alt="'+esc(f.caption||f.id)+'"/>'+
+        (f.caption?'<figcaption>'+esc(f.caption)+'</figcaption>':'')+'</figure>'; });
+      (r.tables||[]).forEach(t=>{ s+=(t.caption?'<div class="empty">'+esc(t.caption)+'</div>':'')+renderMd(t.markdown); });
+      (r.sources||[]).forEach(q=>{ s+='<div class="quote">'+esc(q.quote)+(q.ref?'<div class="ref">← '+esc(q.ref)+'</div>':'')+'</div>'; });
+      (r.data||[]).forEach(x=>{ s+='<div class="ptr">⛁ <span class="path">'+esc(x.path)+'</span>'+(x.note?' — '+esc(x.note):'')+'</div>'; });
+      h += block("result", "", s, true);
+    }
+
+    // why (claims) — supporting detail, collapsed
+    if(n.why&&n.why.length){
+      const w = n.why.map(c=>{
+        let s='<div class="claim"><h4>'+esc(c.id)+(c.title?' — '+esc(c.title):'')+'</h4>';
+        if(c.statement) s+='<div class="kv">'+esc(c.statement)+'</div>';
+        if(c.status) s+='<div class="kv"><b>status</b> <span class="status '+esc(String(c.status).toLowerCase())+'">'+esc(c.status)+'</span></div>';
+        if(c.conditions) s+='<div class="kv"><b>conditions</b> '+esc(c.conditions)+'</div>';
+        if(c.falsification) s+='<div class="kv"><b>falsified if</b> '+esc(c.falsification)+'</div>';
+        if(c.dependencies&&c.dependencies.length) s+='<div class="kv"><b>depends on</b> '+esc(c.dependencies.join(", "))+'</div>';
+        if(c.provenance) s+='<div class="kv"><span class="prov">provenance: '+esc(c.provenance)+'</span></div>';
+        return s+'</div>';
+      }).join("");
+      h += block("why", n.why.map(c=>c.id).join(" · "), w);
+    }
+
+    // how verified (experiments) — supporting detail, collapsed
+    if(n.verified_by&&n.verified_by.length){
+      const v = n.verified_by.map(e=>'<div class="claim"><h4>'+esc(e.id)+(e.title?' — '+esc(e.title):'')+'</h4>'+
+        (e.run?'<div class="kv"><b>run</b> <span class="path mono">'+esc(e.run)+'</span></div>':'')+
+        (e.setup?'<div class="kv"><b>setup</b> '+esc(e.setup)+'</div>':'')+
+        (e.metrics?'<div class="kv"><b>metrics</b> '+esc(e.metrics)+'</div>':'')+'</div>').join("");
+      h += block("how verified", n.verified_by.map(e=>e.id).join(" · "), v);
+    }
+
+    // artifact pointers (src/artifacts.md) — collapsed
+    if(n.artifact&&n.artifact.length){
+      const a = n.artifact.map(x=>'<div class="ptr">▸ <b>'+esc(x.name)+'</b> — <span class="path">'+esc(x.pointer)+'</span>'+
+        (x.what?'<div class="empty">'+esc(x.what)+'</div>':'')+'</div>').join("");
+      h += block("artifact", "pointer", a);
+    }
+
+    d.innerHTML = h;
+    if(typeof LEX!=="undefined" && LEX) linkifyConcepts(d);
+    d.scrollTop = 0;
+  }
+
+  // ---- map ----
+  let selected = null;
+  function selectNode(id){
+    if(!byId.has(id)) return;
+    selected = id;
+    document.querySelectorAll(".node").forEach(el=>el.classList.toggle("sel", el.dataset.id===id));
+    const el = document.querySelector('.node[data-id="'+CSS.escape(id)+'"]');
+    if(el) el.scrollIntoView({block:"nearest"});
+    renderDetail(byId.get(id));
+    rstat();
+  }
+
+  function nodeRow(n){
+    const row = document.createElement("div");
+    row.className = "node "+(n.type==="dead_end"?"dead":"");
+    row.dataset.id = n.id; row.dataset.type = n.type;
+    // calmer than before: one glyph + id + (quiet) cross-edge marker; the ⊕/⊘ count soup is gone.
+    row.innerHTML = '<span class="glyph '+cls(n.type)+'">'+glyph(n.type)+'</span>'+
+      '<span><span class="meta"><span class="nid">'+esc(n.id)+'</span>'+
+      (n.depends_on&&n.depends_on.length?'<span class="dep" title="depends on '+esc(n.depends_on.join(", "))+'">⇠ '+esc(n.depends_on.join(","))+'</span>':'')+
+      '</span><div class="ntitle">'+esc(n.title||n.body||"(untitled)")+'</div></span>';
+    row.addEventListener("click", ()=>selectNode(n.id));
+    // hover a node to highlight its cross-edge targets (gentler than always-on connectors)
+    if(n.depends_on&&n.depends_on.length){
+      row.addEventListener("mouseenter", ()=>n.depends_on.forEach(t=>{ const el=document.querySelector('.node[data-id="'+CSS.escape(t)+'"]'); if(el) el.classList.add("deptarget"); }));
+      row.addEventListener("mouseleave", ()=>document.querySelectorAll(".node.deptarget").forEach(el=>el.classList.remove("deptarget")));
+    }
+    return row;
+  }
+  function renderSubtree(id, container){
+    const n = byId.get(id); if(!n) return;
+    container.appendChild(nodeRow(n));
+    const cs = kids.get(id)||[];
+    if(cs.length){ const wrap=document.createElement("div"); wrap.className="kid"; cs.forEach(c=>renderSubtree(c,wrap)); container.appendChild(wrap); }
+  }
+  function renderMap(){
+    const map = document.getElementById("map"); map.innerHTML="";
+    const normalRoots = roots.filter(id=>!byId.get(id).isolated);
+    const isoRoots = roots.filter(id=>byId.get(id).isolated);
+    normalRoots.forEach(id=>renderSubtree(id, map));
+    if(isoRoots.length){
+      const box=document.createElement("div"); box.className="isobox";
+      const hdr=document.createElement("div"); hdr.className="isohdr"; hdr.textContent="isolated subtree"; box.appendChild(hdr);
+      isoRoots.forEach(id=>renderSubtree(id, box)); map.appendChild(box);
+    }
+  }
+
+  // ---- filter / search ----
+  function applyFilters(){
+    const q = document.getElementById("q").value.trim().toLowerCase();
+    const ty = document.getElementById("ftype").value;
+    const deadOnly = document.getElementById("fdead").checked;
+    let shown=0;
+    document.querySelectorAll(".node").forEach(el=>{
+      const n = byId.get(el.dataset.id);
+      const text = (n.id+" "+(n.title||"")+" "+(n.body||"")).toLowerCase();
+      const ok = (!q||text.includes(q)) && (!ty||n.type===ty) && (!deadOnly||n.type==="dead_end");
+      el.classList.toggle("dim", !ok);
+      if(ok) shown++;
+    });
+    document.getElementById("rstat").textContent = shown+" / "+nodes.length+" steps";
+  }
+  function rstat(){
+    const i = selected?order.indexOf(selected):-1;
+    document.getElementById("rstat").textContent = (i>=0?("step "+(i+1)+" / "+order.length):(nodes.length+" steps"));
+  }
+
+  // ---- replay ----
+  let timer=null;
+  function step(delta){
+    let i = selected?order.indexOf(selected):-1;
+    i = Math.max(0, Math.min(order.length-1, i+delta));
+    selectNode(order[i]);
+  }
+  function play(){
+    if(timer){ stop(); return; }
+    if(!selected) selectNode(order[0]);
+    document.getElementById("rplay").textContent="⏸ Pause";
+    timer = setInterval(()=>{
+      const i = selected?order.indexOf(selected):-1;
+      if(i>=order.length-1){ stop(); return; }
+      step(1);
+    }, 1300);
+  }
+  function stop(){ if(timer){clearInterval(timer);timer=null;} document.getElementById("rplay").textContent="▶ Replay"; }
+
+  // ======================= v1.1 enrichment layers (all inert unless present) =======================
+  const CTX = DATA.context, GLO = DATA.glossary, DEP = DATA.dependencies, REC = DATA.recipes;
+  const LAYERS = { context:CTX, glossary:GLO, dependencies:DEP, recipes:REC };
+
+  // ---- indexes (built once) ----
+  const claimToNodes = new Map();
+  nodes.forEach(n => (n.why||[]).forEach(c => { if(c&&c.id){ if(!claimToNodes.has(c.id)) claimToNodes.set(c.id,[]); claimToNodes.get(c.id).push(n.id); } }));
+  const firstNodeForClaim = id => (claimToNodes.get(id)||[])[0] || null;
+  const rwById   = new Map(((DEP&&DEP.entries)||[]).map(e => [e.rw_id, e]));
+  const termById = new Map(((GLO&&GLO.terms)||[]).map(t => [t.term_id, t]));
+  // concept "used by" (inferred) from each node's name-matched concepts[]
+  if(GLO){
+    const nameToTerm = new Map();
+    (GLO.terms||[]).forEach(t => { if(t.name) nameToTerm.set(String(t.name).toLowerCase(), t); (t.aliases||[]).forEach(a=>nameToTerm.set(String(a).toLowerCase(), t)); });
+    nodes.forEach(n => (n.concepts||[]).forEach(cn => { const t=nameToTerm.get(String(cn).toLowerCase()); if(t){ (t._used=t._used||[]).push(n.id); } }));
+  }
+
+  // ---- tiny inline-math fallback (no CDN; operates on already-escaped text, adds only safe tags) ----
+  const GK={alpha:"α",beta:"β",gamma:"γ",delta:"δ",epsilon:"ε",eta:"η",theta:"θ",kappa:"κ",lambda:"λ",mu:"μ",nu:"ν",pi:"π",rho:"ρ",sigma:"σ",tau:"τ",phi:"φ",chi:"χ",psi:"ψ",omega:"ω",Delta:"Δ",Sigma:"Σ",Omega:"Ω",Phi:"Φ",Theta:"Θ",Lambda:"Λ",Gamma:"Γ",nabla:"∇",partial:"∂",times:"×",cdot:"·",infty:"∞",approx:"≈",leq:"≤",geq:"≥",neq:"≠",to:"→",in:"∈",sum:"Σ",prod:"Π",sqrt:"√",mathbb:"",mathcal:"",mathbf:"",mathrm:"",left:"",right:""};
+  function texInner(s){
+    s=s.replace(/\\(?:mathbb|mathcal|mathbf|mathrm)\{([^{}]*)\}/g,"$1");
+    s=s.replace(/\\frac\{([^{}]*)\}\{([^{}]*)\}/g,"($1)/($2)");
+    s=s.replace(/\\([A-Za-z]+)/g,(m,w)=>GK[w]!==undefined?GK[w]:m);
+    s=s.replace(/\^\{([^{}]*)\}/g,"<sup>$1</sup>").replace(/\^([\w()+\-])/g,"<sup>$1</sup>");
+    s=s.replace(/_\{([^{}]*)\}/g,"<sub>$1</sub>").replace(/_([\w()+\-])/g,"<sub>$1</sub>");
+    return s;
+  }
+  function mathPass(escaped){
+    if(escaped.indexOf("$")<0) return escaped;
+    return escaped.replace(/\$\$([^$]+)\$\$/g,(m,x)=>'<span class="math">'+texInner(x)+'</span>')
+                  .replace(/\$([^$]+)\$/g,(m,x)=>'<span class="math">'+texInner(x)+'</span>');
+  }
+  function mtext(v){ const e=esc(v); try{ return mathPass(e); }catch(_){ return e; } }
+
+  // ---- typed-ref rendering (off-ARA pointers stay inert; in-ARA targets become jump chips) ----
+  function refUrl(rf){
+    const raw=rf.raw||"";
+    if(rf.kind==="url"){ const m=raw.match(/https?:\/\/\S+/); return m?m[0]:""; }
+    if(rf.kind==="arxiv"){ const m=raw.match(/(\d{4}\.\d{4,5})/); return m?("https://arxiv.org/abs/"+m[1]):""; }
+    if(rf.kind==="doi"){ const m=raw.match(/(10\.\d{4,}\/\S+)/); return m?("https://doi.org/"+m[1]):""; }
+    return "";
+  }
+  function refChip(rf){
+    const raw=esc(rf.raw||""), url=refUrl(rf);
+    if(url) return '<a class="chip ext" href="'+esc(url)+'" target="_blank" rel="noopener">'+raw+'</a>';
+    if(rf.target){
+      if(rf.kind==="claim")        return '<span class="chip jump" data-jump-claim="'+esc(rf.target)+'">'+raw+'</span>';
+      if(rf.kind==="node")         return '<span class="chip jump" data-jump-node="'+esc(rf.target)+'">'+raw+'</span>';
+      if(rf.kind==="concept")      return '<span class="chip jump" data-open-term="'+esc(rf.target)+'">'+raw+'</span>';
+      if(rf.kind==="related_work") return '<span class="chip jump" data-open-panel="dependencies" data-anchor="ov-'+esc(rf.target)+'">'+raw+'</span>';
+      return '<span class="chip jump" data-scroll="ov-'+esc(rf.target)+'">'+raw+'</span>';
+    }
+    const dangle=(rf.kind==="claim"||rf.kind==="related_work"||rf.kind==="concept");
+    return '<span class="chip '+(dangle?'dangle" title="referenced but not found in this ARA':'ext')+'">'+raw+'</span>';
+  }
+  function refRow(refs){ return refs&&refs.length ? '<div class="chips">'+refs.map(refChip).join("")+'</div>' : ""; }
+
+  // ---- per-node provenance chips (consumed by renderDetail) ----
+  function chipRow(label, arr, klass){
+    const cs=arr.map(x=>{
+      const txt=[x.rw_id,x.name].filter(Boolean).join(" · ")||"?";
+      const tip=x.relation_raw?(' title="'+esc(x.relation_raw)+'"'):'';
+      const op =x.rw_id?(' data-open-panel="dependencies" data-anchor="ov-'+esc(x.rw_id)+'"'):'';
+      return '<span class="chip '+klass+(x.rw_id?' jump':'')+'"'+tip+op+'>'+esc(txt)+'</span>';
+    }).join("");
+    return '<div class="chiplabel">'+esc(label)+'</div><div class="chips">'+cs+'</div>';
+  }
+  function recipeChips(arr){
+    const cs=arr.map(x=>{
+      const anchor="ov-sec-"+(x.file||"")+"-"+(x.sec_id||"");
+      return '<span class="chip chip-recipe jump" data-open-panel="recipes" data-anchor="'+esc(anchor)+'" title="'+esc((x.file||"")+(x.role?(" · "+x.role):""))+'">▦ '+esc(x.heading||x.file||"recipe")+'</span>';
+    }).join("");
+    return '<div class="chiplabel">recipe</div><div class="chips">'+cs+'</div>';
+  }
+
+  // ---- the four overlay renderers (reuse block/chips/renderMd) ----
+  function renderContext(){
+    let h=""; if(CTX.summary) h+='<div class="ribbon">'+esc(CTX.summary)+'</div>';
+    (CTX.sections||[]).forEach(sec=>{
+      let inner="";
+      if(sec.present===false){ inner='<div class="muted grey">(not specified in this ARA)</div>'; }
+      else (sec.entries||[]).forEach(en=>{
+        let c='<div class="card" id="ov-'+esc(en.ent_id||"")+'"><h4>'+(en.ent_id?'<span class="did">'+esc(en.ent_id)+'</span> ':'')+esc(en.ent_title||"")+(en.inferred_id?' <span class="sub">(pos.)</span>':'')+'</h4>';
+        if(!en.unstructured && en.fields && en.fields.length) en.fields.forEach(f=>c+='<div class="kv"><b>'+esc(f.label)+'</b> '+mtext(f.value)+'</div>');
+        else if(en.text) c+='<div class="kv">'+mtext(en.text)+'</div>';
+        if(en.unstructured) c+='<div class="sub">unstructured</div>';
+        c+=refRow(en.refs)+'</div>'; inner+=c;
+      });
+      h+=block(sec.heading||sec.role||"section", sec.role||"", inner, sec.role==="insight");
+    });
+    return h || '<div class="muted">No problem context.</div>';
+  }
+  function renderGlossary(filter){
+    const f=(filter||"").trim().toLowerCase();
+    const match=t=>!f||((t.name||"")+" "+(t.aliases||[]).join(" ")+" "+(t.definition||"")).toLowerCase().includes(f);
+    function card(t){
+      let c='<div class="card" id="ov-'+esc(t.term_id)+'"><h4>'+esc(t.name)+(t.group?' <span class="sub">'+esc(t.group)+'</span>':'')+'</h4>';
+      if(t.aliases&&t.aliases.length) c+='<div class="chips">'+t.aliases.map(a=>'<span class="chip">'+esc(a)+'</span>').join("")+'</div>';
+      if(t.definition) c+='<div class="kv">'+mtext(t.definition)+'</div>';
+      (t.fields||[]).forEach(fl=>c+='<div class="kv"><b>'+esc(fl.label)+'</b> '+mtext(fl.value)+'</div>');
+      if(t.related&&t.related.length) c+='<div class="kv"><b>related</b> '+t.related.map(r=>{const rt=termById.get(r);return '<span class="chip jump" data-open-term="'+esc(r)+'">'+esc(rt?rt.name:r)+'</span>';}).join(" ")+'</div>';
+      if(t._used&&t._used.length) c+='<div class="kv"><b>mentions</b> '+[...new Set(t._used)].map(nid=>'<span class="chip jump" data-jump-node="'+esc(nid)+'">'+esc(nid)+'</span>').join(" ")+' <span class="sub">(inferred)</span></div>';
+      return c+refRow(t.refs)+'</div>';
+    }
+    const groups=GLO.groups&&GLO.groups.length?GLO.groups:null; let h="";
+    if(groups){
+      const grouped=new Set();
+      groups.forEach(g=>{ (g.term_ids||[]).forEach(id=>grouped.add(id)); const ts=(g.term_ids||[]).map(id=>termById.get(id)).filter(Boolean).filter(match); if(ts.length) h+=block(g.name||"group", String(ts.length), ts.map(card).join(""), true); });
+      const rest=(GLO.terms||[]).filter(t=>!grouped.has(t.term_id)).filter(match);
+      if(rest.length) h+=block("other", String(rest.length), rest.map(card).join(""), true);
+    } else { const ts=(GLO.terms||[]).filter(match); h=ts.map(card).join(""); }
+    return h || '<div class="muted">No matching terms.</div>';
+  }
+  function renderDeps(filter){
+    const f=(filter||"").trim().toLowerCase(); let h="";
+    if(DEP.preamble) h+='<div class="muted">'+esc(DEP.preamble)+'</div>';
+    if(DEP.attribution) h+='<div class="ribbon">'+esc(DEP.attribution)+'</div>';
+    const ents=(DEP.entries||[]).filter(e=>!e.is_footprint).filter(e=>!f||(((e.rw_id||"")+" "+(e.name||"")+" "+(e.relation_raw||"")+" "+(e.delta||"")).toLowerCase().includes(f)));
+    ents.forEach(e=>{
+      const rn=e.relation_norm, relc=["baseline","imports","extends","bounds","refutes"].includes(rn)?rn:"neutral";
+      let c='<div class="card" id="ov-'+esc(e.rw_id||"")+'"><h4>'+(e.rw_id?'<span class="did">'+esc(e.rw_id)+'</span> ':'')+esc(e.name||"")+'</h4>';
+      c+='<div class="chips"><span class="rel '+relc+'">'+esc(e.relation_raw||rn||"related")+'</span>'+(e.cross_agent?'<span class="chip" title="other-agent provenance">↔ other-agent</span>':'')+'</div>';
+      if(e.delta) c+='<div class="kv">'+mtext(e.delta)+'</div>';
+      if(e.adopted) c+='<div class="kv"><b>adopted</b> '+esc(e.adopted)+'</div>';
+      let prov=(e.grounding||[]).map(refChip).join("");
+      (e.claims||[]).filter(id=>claimToNodes.has(id)).forEach(id=>prov+='<span class="chip jump" data-jump-claim="'+esc(id)+'">'+esc(id)+'</span>');
+      c+= prov?('<div class="kv"><b>grounding</b> '+prov+'</div>'):'<div class="muted">ungrounded</div>';
+      h+=c+'</div>';
+    });
+    if(!ents.length) h+='<div class="muted">No matching dependencies.</div>';
+    const fp=DEP.footprint||[];
+    if(fp.length) h+=block("Citation footprint", String(fp.length), fp.map(x=>'<div class="ptr"><span class="muted">'+esc(x.ref_id||"")+'</span> '+esc(x.citation||"")+'</div>').join(""), false);
+    return h;
+  }
+  function renderRecipes(){
+    let h="";
+    (REC.files||[]).forEach(file=>{
+      let inner="";
+      (file.sections||[]).forEach(sec=>{
+        let c='<div class="card" id="ov-sec-'+esc((file.file||"")+"-"+(sec.sec_id||""))+'"><h4>'+(sec.sec_id?'<span class="did">'+esc(sec.sec_id)+'</span> ':'')+esc(sec.heading||"")+'</h4>';
+        if(sec.kind==="table"&&sec.markdown) c+=renderMd(sec.markdown);
+        else if(sec.kind==="steps"&&sec.steps&&sec.steps.length) c+='<ol>'+sec.steps.map(s=>'<li>'+mtext(String(s).replace(/^\s*\d+\.\s*/,""))+'</li>').join("")+'</ol>';
+        else if(sec.kind==="kv"&&sec.fields&&sec.fields.length) sec.fields.forEach(fl=>c+='<div class="kv"><b>'+esc(fl.label)+'</b> '+mtext(fl.value)+'</div>');
+        else if(sec.kind==="code"&&sec.code) c+='<pre class="snip">'+esc(sec.code)+'</pre>';
+        else if(sec.kind==="math"&&sec.code) c+='<div class="kv math">'+mtext(sec.code)+'</div>';
+        else if(sec.text) c+='<div class="kv">'+mtext(sec.text)+'</div>';
+        if(sec.warn) c+='<div class="warn">'+esc(sec.warn)+'</div>';
+        inner+=c+refRow(sec.refs)+'</div>';
+      });
+      h+=block((file.file_title||file.file||"recipe")+(file.role?("  ·  "+file.role):""), String((file.sections||[]).length), inner, true);
+    });
+    return h || '<div class="muted">No recipe content.</div>';
+  }
+
+  // ---- overlay open/close + layerbar wiring ----
+  const ov=document.getElementById("overlay");
+  let lastTrigger=null;
+  const PANEL_RENDER={ context:renderContext, glossary:()=>renderGlossary(""), dependencies:()=>renderDeps(""), recipes:renderRecipes };
+  function hasContent(name){ const L=LAYERS[name]; if(!L) return false;
+    if(name==="context") return (L.sections||[]).length>0;
+    if(name==="glossary") return (L.terms||[]).length>0;
+    if(name==="dependencies") return (L.entries||[]).length>0||(L.footprint||[]).length>0;
+    if(name==="recipes") return (L.files||[]).length>0; return false; }
+  function panelTitle(name){ const L=LAYERS[name]||{}; return L.title || ({context:"Context",glossary:"Concepts",dependencies:"Dependencies",recipes:"Solution"}[name]); }
+  function panelCount(name){ const L=LAYERS[name]||{};
+    if(name==="glossary") return (L.terms||[]).length;
+    if(name==="dependencies") return (L.entries||[]).length;
+    if(name==="recipes") return (L.files||[]).reduce((a,f)=>a+(f.sections||[]).length,0); return 0; }
+  function openPanel(name, anchor){
+    if(!hasContent(name)) return;
+    stop(); lastTrigger=document.activeElement;
+    document.getElementById("ov-title").textContent=panelTitle(name);
+    const body=document.getElementById("ov-body"); body.innerHTML=PANEL_RENDER[name]();
+    if(LEX) linkifyConcepts(body);
+    const q=document.getElementById("ov-q");
+    if(name==="glossary"||name==="dependencies"){ q.hidden=false; q.value=""; q.dataset.panel=name; } else { q.hidden=true; }
+    ov.hidden=false;
+    if(anchor){ const el=document.getElementById(anchor); if(el) el.scrollIntoView({block:"center"}); } else body.scrollTop=0;
+    (q.hidden?document.getElementById("ov-close"):q).focus();
+  }
+  function closePanel(){ ov.hidden=true; if(lastTrigger&&lastTrigger.focus) lastTrigger.focus(); }
+  document.querySelectorAll(".lbtn").forEach(b=>{ const name=b.dataset.panel;
+    if(hasContent(name)){ b.hidden=false; const c=b.querySelector(".cnt"); if(c){ const n=panelCount(name); if(n) c.textContent=n; } b.addEventListener("click",()=>openPanel(name)); } });
+  document.getElementById("ov-q").addEventListener("input", e=>{ const p=e.target.dataset.panel, body=document.getElementById("ov-body");
+    body.innerHTML = p==="glossary"?renderGlossary(e.target.value):renderDeps(e.target.value); if(LEX) linkifyConcepts(body); });
+
+  // ---- glossary lexicon + popover ----
+  const LEX=(GLO&&GLO.lexicon&&Object.keys(GLO.lexicon).length)?(function(){
+    const surf=Object.keys(GLO.lexicon).filter(s=>s.length>=3).sort((a,b)=>b.length-a.length);
+    if(!surf.length) return null;
+    const re=s=>s.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+    return { re:new RegExp("\\b("+surf.map(re).join("|")+")\\b","i"), map:GLO.lexicon };
+  })():null;
+  const SKIP_TAGS={A:1,CODE:1,PRE:1,BUTTON:1,SCRIPT:1,STYLE:1,H4:1,H5:1,SUMMARY:1};
+  function linkifyConcepts(root){
+    if(!LEX) return;
+    const walker=document.createTreeWalker(root, NodeFilter.SHOW_TEXT, { acceptNode(t){
+      if(!t.nodeValue||!t.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+      let p=t.parentNode; while(p&&p!==root){ if(p.classList&&p.classList.contains("gterm")) return NodeFilter.FILTER_REJECT; if(SKIP_TAGS[p.tagName]) return NodeFilter.FILTER_REJECT; p=p.parentNode; }
+      return NodeFilter.FILTER_ACCEPT; } });
+    const seen=new Set(), hits=[]; let t;
+    while((t=walker.nextNode())){ const m=LEX.re.exec(t.nodeValue); if(!m) continue; const tid=LEX.map[m[1].toLowerCase()]; if(!tid||seen.has(tid)) continue; seen.add(tid); hits.push({node:t,index:m.index,len:m[1].length,tid}); }
+    hits.forEach(hp=>{ const tn=hp.node, txt=tn.nodeValue, par=tn.parentNode; if(!par) return;
+      const span=document.createElement("span"); span.className="gterm"; span.dataset.term=hp.tid; span.tabIndex=0; span.textContent=txt.slice(hp.index,hp.index+hp.len);
+      const after=document.createTextNode(txt.slice(hp.index+hp.len));
+      par.replaceChild(after,tn); par.insertBefore(span,after); par.insertBefore(document.createTextNode(txt.slice(0,hp.index)),span); });
+  }
+  const gpop=document.getElementById("gpop");
+  function gpopShow(span){ const t=termById.get(span.dataset.term); if(!t) return;
+    const def=t.definition||""; gpop.innerHTML='<h5>'+esc(t.name)+'</h5><div>'+mtext(def.slice(0,240))+(def.length>240?'…':'')+'</div><span class="gp-open" data-open-term="'+esc(t.term_id)+'">open in glossary →</span>';
+    gpop.style.display="block"; const r=span.getBoundingClientRect();
+    gpop.style.left=Math.max(6,Math.min(r.left, window.innerWidth-372))+"px"; gpop.style.top=(r.bottom+6)+"px"; }
+  function gpopHide(){ gpop.style.display="none"; }
+
+  // ---- delegated interactions for the new layers ----
+  document.addEventListener("click", e=>{
+    const el=e.target.closest&&e.target.closest("[data-close],[data-jump-node],[data-jump-claim],[data-open-panel],[data-open-term],[data-scroll]");
+    if(!el) return;
+    if(el.hasAttribute("data-close")){ closePanel(); return; }
+    if(el.dataset.jumpNode){ closePanel(); selectNode(el.dataset.jumpNode); return; }
+    if(el.dataset.jumpClaim){ const nid=firstNodeForClaim(el.dataset.jumpClaim); if(nid){ closePanel(); selectNode(nid); } return; }
+    if(el.dataset.openTerm){ openPanel("glossary","ov-"+el.dataset.openTerm); return; }
+    if(el.hasAttribute("data-open-panel")){ openPanel(el.dataset.openPanel, el.dataset.anchor||null); return; }
+    if(el.dataset.scroll){ const t=document.getElementById(el.dataset.scroll); if(t) t.scrollIntoView({block:"center"}); return; }
+  });
+  document.addEventListener("mouseover", e=>{ const g=e.target.closest&&e.target.closest(".gterm"); if(g) gpopShow(g); });
+  document.addEventListener("mouseout",  e=>{ const g=e.target.closest&&e.target.closest(".gterm"); if(g) gpopHide(); });
+  document.addEventListener("focusin",   e=>{ const g=e.target.closest&&e.target.closest(".gterm"); if(g) gpopShow(g); });
+  document.addEventListener("focusout",  e=>{ const g=e.target.closest&&e.target.closest(".gterm"); if(g) gpopHide(); });
+  window.addEventListener("scroll", gpopHide, true);
+
+  document.getElementById("q").addEventListener("input", applyFilters);
+  document.getElementById("ftype").addEventListener("change", applyFilters);
+  document.getElementById("fdead").addEventListener("change", applyFilters);
+  document.getElementById("rplay").addEventListener("click", play);
+  document.getElementById("rprev").addEventListener("click", ()=>{stop();step(-1);});
+  document.getElementById("rnext").addEventListener("click", ()=>{stop();step(1);});
+  document.addEventListener("keydown", e=>{
+    if(e.key==="Escape"){ if(!ov.hidden){ closePanel(); return; } gpopHide(); }
+    if(e.target.tagName==="INPUT"||e.target.tagName==="SELECT") return;
+    if(e.key==="ArrowLeft"){stop();step(-1);} else if(e.key==="ArrowRight"){stop();step(1);}
+    else if(e.key==="c"||e.key==="g"||e.key==="d"||e.key==="r"){ const p={c:"context",g:"glossary",d:"dependencies",r:"recipes"}[e.key]; if(hasContent(p)) openPanel(p); }
+  });
+
+  renderMap();
+  rstat();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,2961 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ARA Trajectory</title>
+<!--
+  ARA Trajectory Viewer — canonical self-contained scaffold for the `research-visualizer` skill.
+
+  HOW THE SKILL USES THIS FILE
+  ----------------------------
+  The rendering logic below is FIXED. The agent does NOT rewrite it. The agent only:
+    1. Parses the ARA into one ARA_DATA object (schema in references/binding.md).
+    2. base64-inlines every referenced figure .png into node.result.figures[].img.
+    3. Replaces ONLY the JSON between the BEGIN/END markers in the <script id="ara-data"> block.
+    4. Writes the result to <ara>/trajectory.html (or --output).
+  Everything is inline (no CDN, no fetch, no server) so the output is one portable file.
+
+  INJECTION CONTRACT
+  ------------------
+  - Replace exactly the lines between  __ARA_DATA_BEGIN__  and  __ARA_DATA_END__.
+  - The payload MUST be valid JSON (it is read with JSON.parse).
+  - JSON must not contain the literal substring "</script>"; escape any "<" in inlined
+    markdown/text as "<" to be safe.
+  - The demo payload shipped here renders a 3-node sample so the bare template opens and
+    shows every node state (experiment, dead_end, isolated). The skill overwrites it.
+-->
+<style>
+  /* Research Visualizer — "field notebook of a machine scientist".
+     Cool archival vellum + ink; monospace is the machine-readout voice for
+     structure / IDs / data, a humanist serif carries the reasoning prose. The
+     signature is a traced trajectory spine that forks at branches and is struck
+     through at dead ends. Type is read from glyph + label; colour is reserved
+     for true epistemic status (teal = chrome, green = supported, amber =
+     tentative, clay-red = dead end) — never decoration. */
+  :root{
+    /* paper & ink — deliberately cool vellum, NOT warm cream */
+    --bg:#e9ece4; --panel:#f4f6f0; --panel2:#e3e7dd; --line:#ccd3c7; --ink:#1b2420;
+    --muted:#67726a; --faint:#8a948b; --accent:#0e6b62; --accent-ink:#0a4f48; --chip:#e6eae0;
+    --ok:#3a6a39; --warn:#a6402c; --tentative:#8a6310; --glyph-bg:#e0e5da; --glyph-ink:#4a544c;
+    --sel-bg:#e3ede7; --code-bg:#eaeee6; --reason-bg:#f4f6f0;
+    --iso-line:#b7c0ae; --iso-bg:#e5eadf; --iso-ink:#5f6b58;
+    --scrim:rgba(20,28,24,.42); --shadow:rgba(20,28,24,.16);
+    --add-bg:#e0ebdb; --add-ink:#2f5a2e; --del-bg:#f1e0da; --del-ink:#8c3623; --hunk:#67726a;
+    --spine:#c3ccbd; --grid:rgba(27,36,32,.05);
+    /* legacy type vars retained so any leftover hooks resolve */
+    --q:var(--glyph-bg); --exp:var(--glyph-bg); --dec:var(--glyph-bg); --piv:var(--glyph-bg); --ins:var(--glyph-bg); --def:var(--glyph-bg); --dead:var(--warn);
+    /* type roles: a serif reads the prose, monospace reads the machine */
+    --serif:ui-serif,"New York","Iowan Old Style",Palatino,Georgia,serif;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--bg);color:var(--ink);font:14px/1.65 var(--sans);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  code,pre,.mono{font-family:var(--mono)}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+
+  /* ---- masthead ---- */
+  header{padding:20px 24px 14px;border-bottom:1px solid var(--line);background:var(--panel)}
+  header .title{font-family:var(--serif);font-size:23px;font-weight:600;margin:0;letter-spacing:-.012em}
+  header .sub{font-family:var(--mono);color:var(--muted);font-size:11.5px;margin-top:5px;letter-spacing:.01em}
+  header details{margin-top:10px;color:var(--ink)}
+  header summary{cursor:pointer;color:var(--accent-ink);font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em}
+  .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:16px}
+  .toolbar input[type=search],.toolbar select{background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:6px 10px;font-size:13px;font-family:var(--sans)}
+  .toolbar input[type=search]{min-width:230px}
+  .toolbar input[type=search]:focus,.toolbar select:focus{border-color:var(--accent);outline:none}
+  .toolbar label{color:var(--muted);font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.06em;display:flex;gap:6px;align-items:center}
+  .btn{background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:6px 11px;font-size:12.5px;font-family:var(--mono);cursor:pointer;transition:border-color .12s,color .12s,background .12s}
+  .btn:hover{border-color:var(--accent);color:var(--accent-ink)}
+  .btn.primary{border-color:var(--accent);color:#fff;background:var(--accent)}
+  .btn.primary:hover{background:var(--accent-ink)}
+  .spacer{flex:1}
+  .count{color:var(--muted);font-family:var(--mono);font-size:11px;letter-spacing:.04em;padding-left:10px;border-left:1px solid var(--line)}
+
+  main{display:grid;grid-template-columns:minmax(300px,36%) 1fr;height:calc(100% - 0px);min-height:0}
+  #map{overflow:auto;border-right:1px solid var(--line);padding:18px 12px 56px;background:var(--bg);
+    background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+    background-size:24px 24px;background-position:-1px -1px}
+  #detail{overflow:auto;padding:26px 32px 80px;background:var(--bg)}
+
+  /* ---- process map: the trajectory spine is the signature ---- */
+  .node{position:relative;display:flex;gap:10px;align-items:flex-start;padding:7px 9px;border-radius:6px;cursor:pointer;border:1px solid transparent}
+  .node:hover{background:var(--panel2)}
+  .node.sel{background:var(--sel-bg);border-color:var(--accent)}
+  .node.deptarget{background:var(--sel-bg);outline:1px dashed var(--accent);outline-offset:-1px}
+  .node.dim{opacity:.32}
+  .node .glyph{flex:none;width:20px;height:20px;border-radius:5px;display:grid;place-items:center;font-family:var(--mono);font-size:11px;font-weight:700;color:var(--glyph-ink);background:var(--glyph-bg);border:1px solid var(--line);margin-top:1px}
+  .node.sel .glyph{border-color:var(--accent);color:var(--accent-ink)}
+  .node .nid{color:var(--muted);font-size:10.5px;font-family:var(--mono);letter-spacing:.02em}
+  .node .ntitle{font-size:13px;line-height:1.45}
+  .node.dead .ntitle{color:var(--warn);text-decoration:line-through;text-decoration-color:rgba(166,64,44,.45)}
+  .node .meta{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  /* the spine + branch connectors: nested steps trace back to their parent */
+  .kid{margin-left:19px;border-left:2px solid var(--spine);padding-left:14px}
+  .kid>.node::before{content:"";position:absolute;left:-14px;top:14px;width:10px;height:2px;background:var(--spine)}
+  .kid>.node.sel::before{background:var(--accent)}
+  .isobox{border:1px dashed var(--iso-line);border-radius:8px;margin:12px 2px;padding:6px 4px;background:var(--iso-bg)}
+  .isobox .isohdr{color:var(--iso-ink);font-family:var(--mono);font-size:10px;padding:3px 8px 7px;text-transform:uppercase;letter-spacing:.1em}
+  .dep{color:var(--muted);font-size:10px;font-family:var(--mono);border:1px solid var(--line);border-radius:4px;padding:0 5px}
+
+  .glyph.dead_end{background:var(--warn);color:#fff;border-color:var(--warn)}
+
+  /* ---- detail pane ---- */
+  .dhead{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-bottom:2px}
+  .badge{font-family:var(--mono);font-size:10px;font-weight:700;border-radius:4px;padding:3px 9px;color:var(--glyph-ink);background:var(--glyph-bg);border:1px solid var(--line);text-transform:uppercase;letter-spacing:.08em}
+  .badge.dead_end{background:var(--warn);color:#fff;border-color:var(--warn)}
+  .pill{font-family:var(--mono);font-size:10px;border:1px solid var(--line);border-radius:20px;padding:2px 9px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+  .pill.explicit{border-color:var(--ok);color:var(--ok)} .pill.inferred{border-color:var(--tentative);color:var(--tentative)}
+  .pill.iso{border-color:var(--iso-line);color:var(--iso-ink)}
+  .dtitle{font-family:var(--serif);font-size:25px;font-weight:600;margin:12px 0 6px;letter-spacing:-.012em;line-height:1.28}
+  .did{color:var(--muted);font-family:var(--mono);font-size:11.5px}
+
+  .block{border:1px solid var(--line);border-radius:7px;margin:15px 0;background:var(--panel)}
+  .block>summary{cursor:pointer;padding:11px 15px;font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);list-style:none;display:flex;align-items:center;gap:8px}
+  .block>summary::-webkit-details-marker{display:none}
+  .block>summary:hover{color:var(--accent-ink)}
+  .block>summary .tag{margin-left:auto;color:var(--faint);font-size:10.5px;font-weight:400;font-family:var(--mono);text-transform:none;letter-spacing:0}
+  .block .body{padding:4px 16px 16px}
+  /* the primary reasoning block: the agent's thinking, set as typeset prose */
+  .block.reason{border-left:3px solid var(--accent);background:var(--reason-bg)}
+  .block.reason>summary{color:var(--accent-ink)}
+  .block.reason .lead{font-family:var(--serif);font-size:17px;line-height:1.7;color:var(--ink)}
+  .didwhat{color:var(--muted);font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.09em;margin:16px 0 4px}
+  .lead{font-family:var(--serif);color:#2a322c;font-size:16px;line-height:1.7}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:11px}
+  .chip{background:var(--chip);border:1px solid var(--line);border-radius:4px;padding:2px 8px;font-size:11px;color:#46504a;font-family:var(--mono)}
+  .chip.ext{color:var(--muted)}
+
+  .claim{border:1px solid var(--line);border-left:2px solid var(--accent);border-radius:0 6px 6px 0;padding:11px 13px;margin:11px 0;background:var(--panel2)}
+  .claim h4{margin:0 0 6px;font-family:var(--mono);font-size:12px}
+  .claim .kv{font-size:13px;line-height:1.6;margin:4px 0;color:#3a423c}
+  .claim .kv b{color:var(--muted);font-weight:600;font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em}
+  .status{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.05em;border-radius:4px;padding:1px 7px;border:1px solid var(--line)}
+  .status.supported{color:var(--ok);border-color:var(--ok)}
+  .status.refuted{color:var(--warn);border-color:var(--warn)}
+  .status.hypothesis{color:var(--tentative);border-color:var(--tentative)}
+  .prov{font-size:11px;color:var(--iso-ink);font-family:var(--mono)}
+
+  .quote{border-left:3px solid var(--accent);background:var(--panel);border-radius:0 6px 6px 0;padding:9px 13px;margin:9px 0;font-size:13.5px;line-height:1.6;color:#2a322c}
+  .quote .ref{color:var(--muted);font-size:10.5px;font-family:var(--mono);margin-top:5px}
+  figure{margin:14px 0}
+  figure img{max-width:100%;border:1px solid var(--line);border-radius:5px;background:#fff;padding:6px}
+  figcaption{color:var(--muted);font-family:var(--mono);font-size:11px;margin-top:7px}
+
+  table.md{border-collapse:collapse;width:100%;font-family:var(--mono);font-size:12px;margin:10px 0}
+  table.md th,table.md td{border:1px solid var(--line);padding:5px 9px;text-align:left}
+  table.md th{background:var(--panel2);color:var(--ink);font-weight:700;text-transform:uppercase;font-size:10.5px;letter-spacing:.04em}
+  pre.snip{background:var(--code-bg);border:1px solid var(--line);border-radius:6px;padding:10px 12px;overflow:auto;font-size:12px;color:var(--ink);white-space:pre-wrap}
+
+  .ptr{font-size:13px;margin:7px 0}
+  .ptr .path{font-family:var(--mono);color:#46504a}
+  .truncated{color:var(--muted);font-size:11.5px;font-style:italic}
+  .empty{color:var(--muted);font-size:13px}
+  .none{color:var(--muted);padding:40px 24px;text-align:center;font-family:var(--mono);font-size:12px;letter-spacing:.02em}
+  kbd{background:var(--panel2);border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 5px;font-family:var(--mono);font-size:11px}
+
+  /* ---- enrichment layers (all inert unless the data is present) ---- */
+  .layerbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+  .lbtn .cnt{color:var(--muted);font-size:10.5px}
+  .chiplabel{color:var(--muted);font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.08em;margin:12px 0 3px}
+  .chip.jump{cursor:pointer}
+  .chip.jump:hover{border-color:var(--accent);color:var(--accent-ink)}
+  .chip.dangle{color:#9aa49b;text-decoration:line-through;cursor:not-allowed}
+  .chip.infer{border-style:dashed}
+  .chip-built{border-color:var(--ok);color:var(--ok)}
+  .chip-rej{border-color:var(--warn);color:var(--warn)}
+  .chip-recipe{border-color:var(--accent);color:var(--accent-ink)}
+  .nmark{color:var(--muted);font-size:10px;margin-left:5px;font-family:var(--mono)}
+  .rel{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.05em;border-radius:4px;padding:2px 8px;color:var(--glyph-ink);background:var(--glyph-bg);font-weight:700}
+  .rel.bounds,.rel.refutes{background:var(--warn);color:#fff}
+  .rel.neutral{background:var(--chip);color:var(--ink);border:1px solid var(--line);font-weight:400}
+  .ribbon{border-left:3px solid var(--accent);background:var(--panel2);border-radius:0 6px 6px 0;padding:9px 13px;margin:9px 0;color:#3a423c;font-size:13px;line-height:1.6}
+  .warn{border-left:3px solid var(--warn);background:var(--del-bg);border-radius:0 6px 6px 0;padding:9px 13px;margin:9px 0;font-size:13px;line-height:1.6}
+  .muted{color:var(--muted);font-size:11.5px}
+  .math{font-family:var(--serif);font-style:italic}
+  .gterm{border-bottom:1px dashed var(--accent);cursor:help}
+  #gpop{position:fixed;max-width:360px;background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:11px 13px;z-index:60;box-shadow:0 8px 28px var(--shadow);font-size:13px;line-height:1.55;display:none}
+  #gpop h5{margin:0 0 5px;font-family:var(--mono);font-size:12px;text-transform:uppercase;letter-spacing:.05em}
+  #gpop .gp-open{color:var(--accent);cursor:pointer;font-family:var(--mono);font-size:11px;margin-top:7px;display:inline-block}
+  .ov{position:fixed;inset:0;z-index:50}
+  .ov[hidden]{display:none}
+  .ov-scrim{position:absolute;inset:0;background:var(--scrim)}
+  .ov-sheet{position:relative;margin:5vh auto;max-width:920px;max-height:86vh;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 16px 48px var(--shadow)}
+  .ov-head{position:sticky;top:0;display:flex;gap:10px;align-items:center;padding:13px 17px;border-bottom:1px solid var(--line);background:var(--panel);z-index:1}
+  .ov-head #ov-title{font-family:var(--mono);font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.09em;color:var(--accent-ink)}
+  .ov-head input[type=search]{flex:1;max-width:260px;background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:5px 10px;font-size:13px}
+  .ov-body{padding:10px 17px 26px}
+  .ov-body .spacer{flex:1}
+  .card{border:1px solid var(--line);border-radius:6px;padding:11px 13px;margin:11px 0;background:var(--panel2)}
+  .card h4{margin:0 0 6px;font-family:var(--mono);font-size:12px}
+  .card .sub{color:var(--muted);font-family:var(--mono);font-size:10.5px}
+  .grey{opacity:.5}
+
+  /* responsive: stack the two panes on a narrow screen */
+  @media (max-width:720px){
+    main{grid-template-columns:1fr;grid-template-rows:42vh 1fr}
+    #map{border-right:none;border-bottom:1px solid var(--line)}
+    #detail{padding:20px 18px 64px}
+    .dtitle{font-size:21px}
+  }
+  /* honour reduced-motion */
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<header>
+  <h1 class="title" id="h-title">ARA Trajectory</h1>
+  <div class="sub" id="h-sub"></div>
+  <details id="h-abstract-wrap"><summary>Abstract</summary><div class="lead" id="h-abstract"></div></details>
+  <div class="toolbar">
+    <input type="search" id="q" placeholder="search steps…" autocomplete="off" />
+    <label>type
+      <select id="ftype"><option value="">all</option></select>
+    </label>
+    <label><input type="checkbox" id="fdead" /> dead ends only</label>
+    <span class="spacer"></span>
+    <button class="btn" id="rprev" title="previous (←)">‹</button>
+    <button class="btn primary" id="rplay">▶ Replay</button>
+    <button class="btn" id="rnext" title="next (→)">›</button>
+    <span class="count" id="rstat"></span>
+  </div>
+  <div class="layerbar" id="layerbar">
+    <button class="btn lbtn" data-panel="context" hidden>◧ Context</button>
+    <button class="btn lbtn" data-panel="glossary" hidden>▤ Glossary <span class="cnt"></span></button>
+    <button class="btn lbtn" data-panel="dependencies" hidden>⇄ Dependencies <span class="cnt"></span></button>
+    <button class="btn lbtn" data-panel="recipes" hidden>▦ Recipes <span class="cnt"></span></button>
+  </div>
+</header>
+
+<main>
+  <aside id="map"></aside>
+  <section id="detail"><div class="none">Select a step on the left, or press <kbd>▶ Replay</kbd>.</div></section>
+</main>
+
+<!-- v1.1: one shared modal overlay for the Context/Glossary/Dependencies/Recipes panels, + a glossary popover. Both inert unless their data is present. -->
+<div id="overlay" class="ov" hidden role="dialog" aria-modal="true">
+  <div class="ov-scrim" data-close></div>
+  <div class="ov-sheet">
+    <div class="ov-head"><span id="ov-title"></span>
+      <input type="search" id="ov-q" placeholder="filter…" hidden autocomplete="off" />
+      <span class="spacer"></span>
+      <button class="btn" id="ov-close" data-close>✕ <kbd>Esc</kbd></button>
+    </div>
+    <div class="ov-body" id="ov-body"></div>
+  </div>
+</div>
+<div id="gpop"></div>
+
+<!-- The skill replaces ONLY the JSON between the two markers below. -->
+<script id="ara-data" type="application/json">
+/* __ARA_DATA_BEGIN__ */
+{
+ "meta": {
+  "title": "Sample-specific Masks for Visual Reprogramming-based Prompting",
+  "authors": [
+   "Chengyi Cai",
+   "Zesheng Ye",
+   "Lei Feng",
+   "Jianzhong Qi",
+   "Feng Liu"
+  ],
+  "year": "2024",
+  "venue": "ICML 2024 (Proceedings of the 41st International Conference on Machine Learning)",
+  "ara_dir": "sample-specific-masks",
+  "abstract": "Visual reprogramming (VR) is a prompting technique that aims to re-purpose a pre-trained model (e.g., a classifier on ImageNet) to target tasks (e.g., medical data prediction) by learning a small-scale pattern added into input images instead of tuning considerable parameters within the model. The location of the pattern within input samples is usually determined by a pre-defined mask shared across all samples. In this paper, we show that the shared mask potentially limits VR's generalization and increases its approximation error due to the lack of sample-level adaptation. Motivated by this finding, we design a new framework for VR called sample-specific multi-channel masks (SMM). Specifically, SMM employs a lightweight ConvNet and patch-wise interpolation to generate sample-specific three-channel masks instead of a shared and pre-defined mask. Since we generate different masks for individual samples, SMM is theoretically shown to reduce approximation error for the target tasks compared with existing state-of-the-art VR methods. We also empirically demonstrate its performance gain on both ResNet and ViT. The success of SMM further highlights the broader applicability of VR in leveraging the latent knowledge of pre-trained models for various target tasks."
+ },
+ "order": [
+  "N01",
+  "N02",
+  "N03",
+  "N04",
+  "N05",
+  "N06",
+  "N07",
+  "N08",
+  "N09",
+  "N10",
+  "N11",
+  "N12"
+ ],
+ "nodes": [
+  {
+   "id": "N01",
+   "type": "question",
+   "parent": null,
+   "title": "Can Visual Reprogramming be improved by moving beyond shared masks?",
+   "body": "All prior VR methods use a single shared binary mask M for all samples. Does sample-level mask variation improve VR performance and generalization?",
+   "thinking": "This is the paper's root question. Every prior visual-reprogramming (VR) method reprograms a frozen pre-trained classifier for a new task by adding a learnable noise pattern through one binary mask that is shared identically across every input image. The starting hypothesis this project investigates is that forcing one mask to fit every sample is itself a limitation, and that letting the mask vary per sample could improve both accuracy and generalization.",
+   "support_level": "explicit",
+   "isolated": false,
+   "depends_on": [],
+   "source_refs": [],
+   "why": [],
+   "result": {
+    "sources": [],
+    "figures": [],
+    "tables": [],
+    "data": []
+   },
+   "verified_by": [],
+   "artifact": [],
+   "built_on": [],
+   "rejected_here": [],
+   "concepts": [
+    "Visual Reprogramming"
+   ]
+  },
+  {
+   "id": "N02",
+   "type": "experiment",
+   "parent": "N01",
+   "title": "Empirical demonstration: do different images prefer different masks?",
+   "body": "Yes — Sphynx image peaks at medium watermarking (67.3%), Abyssinian at full (77.1%), Bengal at narrow (70.4%) on OxfordPets/ResNet.",
+   "thinking": "Before designing anything new, the first step tests the root question directly: train the same watermarking VR method under three different shared-mask configurations (Full, Medium, Narrow) and see whether any single configuration is best for every image. It is not — three different cat photos from OxfordPets each reach their highest classification confidence under a different mask configuration (Sphynx favors Medium at 67.3%, Abyssinian favors Full at 77.1%, Bengal favors Narrow at 70.4%). This is the qualitative seed observation (paper's Figure 1) motivating everything downstream: if the ideal mask is image-dependent, then any single shared mask is a compromise.",
+   "support_level": "explicit",
+   "isolated": false,
+   "depends_on": [],
+   "source_refs": [
+    "Figure 1 (paper) — qualitative demonstration with three cat images across three mask configurations (no data file in this ARA)",
+    "§1"
+   ],
+   "why": [
+    {
+     "id": "C01",
+     "title": "Shared masks cause suboptimal per-sample performance in VR",
+     "statement": "A single shared binary mask used across all samples in visual reprogramming is not optimal for all individual samples simultaneously; different samples have different optimal mask placements, and training with a shared mask causes the loss of some individual samples to increase.",
+     "status": "supported",
+     "conditions": "",
+     "falsification": "If every sample achieves equal or better classification confidence with the same mask type as with its individually-optimal mask, this claim is refuted. Equivalently, if the distribution of [final loss - initial loss] under shared-mask VR contains no positive values (all samples' loss decreases), this claim is refuted.",
+     "dependencies": [],
+     "provenance": null
+    }
+   ],
+   "result": {
+    "sources": [],
+    "figures": [],
+    "tables": [
+     {
+      "id": "table1_resnet_main_results",
+      "caption": "Table 1, Section 5. \"Performance Comparison of Different Input Reprogramming Methods on Pre-trained ResNet (Mean % ± Std %, the average results across all datasets are highlighted in grey)\". Conditions: ILM output mapping; 3 seeds; 200 epochs; LR=0.01, decay=0.1 at epochs 100&145; batch=256 (most datasets), batch=64 (DTD, OxfordPets).",
+      "markdown": "ResNet-18 (ImageNet-1K)\n\n| Dataset | PAD | NARROW | MEDIUM | FULL | OURS (SMM) |\n|---|---|---|---|---|---|\n| CIFAR10 | 65.5 ±0.1 | 68.6 ±2.8 | 68.8 ±1.1 | 68.9 ±0.4 | 72.8 ±0.7 |\n| CIFAR100 | 24.8 ±0.1 | 36.9 ±0.6 | 34.9 ±0.2 | 33.8 ±0.2 | 39.4 ±0.6 |\n| SVHN | 75.2 ±0.2 | 58.5 ±1.1 | 71.1 ±1.0 | 78.3 ±0.3 | 84.4 ±2.0 |\n| GTSRB | 52.0 ±1.2 | 46.1 ±1.5 | 56.4 ±1.0 | 76.8 ±0.9 | 80.4 ±1.2 |\n| FLOWERS102 | 27.9 ±0.7 | 22.1 ±0.1 | 22.6 ±0.5 | 23.2 ±0.5 | 38.7 ±0.7 |\n| DTD | 35.3 ±0.9 | 33.1 ±1.3 | 31.7 ±0.5 | 29.0 ±0.7 | 33.6 ±0.4 |\n| UCF101 | 23.9 ±0.5 | 27.2 ±0.9 | 26.1 ±0.3 | 24.4 ±0.9 | 28.7 ±0.8 |\n| FOOD101 | 14.8 ±0.2 | 14.0 ±0.1 | 14.4 ±0.3 | 13.2 ±0.1 | 17.5 ±0.1 |\n| SUN397 | 13.0 ±0.2 | 15.3 ±0.1 | 14.2 ±0.1 | 13.4 ±0.2 | 16.0 ±0.3 |\n| EUROSAT | 85.2 ±0.6 | 82.8 ±0.4 | 83.8 ±0.5 | 84.3 ±0.5 | 92.2 ±0.2 |\n| OXFORDPETS | 65.4 ±0.7 | 73.7 ±0.2 | 71.4 ±0.2 | 70.0 ±0.6 | 74.1 ±0.4 |\n| **AVERAGE** | **43.91** | **43.48** | **45.04** | **46.85** | **52.53** |\n\nResNet-50 (ImageNet-1K)\n\n| Dataset | PAD | NARROW | MEDIUM | FULL | OURS (SMM) |\n|---|---|---|---|---|---|\n| CIFAR10 | 76.6 ±0.3 | 77.4 ±0.5 | 77.8 ±0.2 | 79.3 ±0.3 | 81.4 ±0.6 |\n| CIFAR100 | 38.9 ±0.3 | 42.5 ±0.2 | 43.8 ±0.2 | 47.2 ±0.1 | 49.0 ±0.2 |\n| SVHN | 75.8 ±0.4 | 59.1 ±1.3 | 71.5 ±0.8 | 79.5 ±0.5 | 82.6 ±2.0 |\n| GTSRB | 52.5 ±1.4 | 38.9 ±1.3 | 52.6 ±1.3 | 76.5 ±1.3 | 78.2 ±1.1 |\n| FLOWERS102 | 24.6 ±0.6 | 19.9 ±0.6 | 20.9 ±0.6 | 22.6 ±0.1 | 35.9 ±0.5 |\n| DTD | 40.5 ±0.5 | 37.8 ±0.7 | 38.4 ±0.2 | 34.7 ±1.3 | 41.1 ±1.1 |\n| UCF101 | 34.6 ±0.2 | 38.4 ±0.2 | 37.2 ±0.2 | 35.2 ±0.2 | 38.9 ±0.5 |\n| FOOD101 | 17.0 ±0.3 | 18.3 ±0.2 | 18.3 ±0.2 | 16.7 ±0.2 | 19.8 ±0.0 |\n| SUN397 | 20.3 ±0.2 | 22.0 ±0.1 | 21.5 ±0.1 | 21.1 ±0.1 | 22.9 ±0.0 |\n| EUROSAT | 83.6 ±0.7 | 83.7 ±0.4 | 85.8 ±0.1 | 86.9 ±0.3 | 92.0 ±0.6 |\n| OXFORDPETS | 76.2 ±0.6 | 76.4 ±0.3 | 75.6 ±0.3 | 73.4 ±0.3 | 78.1 ±0.2 |\n| **AVERAGE** | **49.15** | **46.76** | **49.39** | **52.10** | **56.35** |"
+     },
+     {
+      "id": "table2_vit_main_results",
+      "caption": "Table 2, Section 5. \"Performance Comparison of Different Input Reprogramming Methods on Pre-trained ViT (Mean %, the average results are highlighted in grey)\". Conditions: ViT-B32 (ImageNet-1K); ILM output mapping; LR=0.001, decay=1 (no decay); 200 epochs; batch=256 (most datasets), batch=64 (DTD, OxfordPets); 3 seeds. Note: UCF101 result for Ours (42.6%) uses unified LR=0.001; with LR=0.01 and decay=0.1, SMM achieves 49.9% on UCF101 (Table 8).",
+      "markdown": "| Dataset | PAD | NARROW | MEDIUM | FULL | OURS (SMM) |\n|---|---|---|---|---|---|\n| CIFAR10 | 62.4 | 96.6 | 96.5 | 95.8 | 97.4 |\n| CIFAR100 | 31.6 | 74.4 | 75.3 | 75.0 | 82.6 |\n| SVHN | 80.2 | 85.0 | 87.4 | 87.8 | 89.7 |\n| GTSRB | 62.3 | 57.8 | 68.6 | 75.5 | 80.5 |\n| FLOWERS102 | 57.3 | 55.3 | 56.6 | 55.9 | 79.1 |\n| DTD | 43.7 | 37.3 | 38.5 | 37.7 | 45.6 |\n| UCF101 | 33.6 | 44.5 | 44.8 | 40.9 | 42.6 |\n| FOOD101 | 37.4 | 47.3 | 48.6 | 49.4 | 64.8 |\n| SUN397 | 21.8 | 29.0 | 29.4 | 28.8 | 36.7 |\n| EUROSAT | 95.9 | 90.9 | 90.9 | 89.1 | 93.5 |\n| OXFORDPETS | 57.6 | 82.5 | 81.0 | 75.3 | 83.8 |\n| **AVERAGE** | **53.1** | **63.7** | **65.2** | **64.7** | **72.4** |"
+     }
+    ],
+    "data": []
+   },
+   "verified_by": [
+    {
+     "id": "E01",
+     "title": "Demonstration of Shared Mask Failure on Individual Samples",
+     "run": "OxfordPets, ResNet (ImageNet-1K pre-trained), single A100 GPU",
+     "setup": "Watermarking VR with three mask configurations (Full, Medium, Narrow); baseline: standard finetuning of all model parameters.",
+     "metrics": "Per-sample classification confidence (%); distribution of [final loss - initial loss] per sample; fraction of samples with positive loss change."
+    }
+   ],
+   "artifact": [
+    {
+     "name": "Watermarking VR baselines",
+     "pointer": "src/execution/baselines.py",
+     "what": "WatermarkingVR class implementing the Full/Medium/Narrow shared-mask configurations used to show that different images prefer different masks."
+    }
+   ],
+   "built_on": [
+    {
+     "rw_id": "RW01",
+     "name": "Elsayed et al., 2018 (Adversarial Reprogramming)",
+     "relation_raw": "imports"
+    },
+    {
+     "rw_id": "RW02",
+     "name": "Bahng et al., 2022 (Watermarking VR)",
+     "relation_raw": "baseline"
+    },
+    {
+     "rw_id": "RW05",
+     "name": "Tsao et al., 2024 (AutoVP)",
+     "relation_raw": "extends"
+    },
+    {
+     "rw_id": "RW11",
+     "name": "Wang et al., 2022 (Watermarking for OOD Detection)",
+     "relation_raw": "baseline"
+    }
+   ],
+   "rejected_here": [],
+   "concepts": []
+  },
+  {
+   "id": "N03",
+   "type": "experiment",
+   "parent": "N02",
+   "title": "Does a shared mask cause some samples' loss to increase during training?",
+   "body": "Yes — distribution of [final loss - initial loss] under full watermarking contains substantial positive tail; finetuning shows only negative changes.",
+   "thinking": "The Figure-1 demonstration showed a static, per-image preference gap. This follow-up experiment checks whether that gap is more than cosmetic: does actually training with a shared mask hurt some samples during optimization? Tracking [final loss − initial loss] per training sample under Full watermarking on OxfordPets/ResNet shows a substantial positive tail — meaning a real fraction of samples get worse, not better, over training. As a control, full finetuning of the network (no shared-mask constraint) shows only loss decreases. That contrast is the direct evidence that a shared mask is not just suboptimal on average but actively harmful for specific samples, which is exactly what claim C01 asserts.",
+   "support_level": "explicit",
+   "isolated": false,
+   "depends_on": [],
+   "source_refs": [
+    "Figure 2 (paper) — distribution plot of per-sample loss change after training (no data file in this ARA)",
+    "§1"
+   ],
+   "why": [
+    {
+     "id": "C01",
+     "title": "Shared masks cause suboptimal per-sample performance in VR",
+     "statement": "A single shared binary mask used across all samples in visual reprogramming is not optimal for all individual samples simultaneously; different samples have different optimal mask placements, and training with a shared mask causes the loss of some individual samples to increase.",
+     "status": "supported",
+     "conditions": "",
+     "falsification": "If every sample achieves equal or better classification confidence with the same mask type as with its individually-optimal mask, this claim is refuted. Equivalently, if the distribution of [final loss - initial loss] under shared-mask VR contains no positive values (all samples' loss decreases), this claim is refuted.",
+     "dependencies": [],
+     "provenance": null
+    }
+   ],
+   "result": {
+    "sources": [],
+    "figures": [],
+    "tables": [
+     {
+      "id": "table1_resnet_main_results",
+      "caption": "Table 1, Section 5. \"Performance Comparison of Different Input Reprogramming Methods on Pre-trained ResNet (Mean % ± Std %, the average results across all datasets are highlighted in grey)\". Conditions: ILM output mapping; 3 seeds; 200 epochs; LR=0.01, decay=0.1 at epochs 100&145; batch=256 (most datasets), batch=64 (DTD, OxfordPets).",
+      "markdown": "ResNet-18 (ImageNet-1K)\n\n| Dataset | PAD | NARROW | MEDIUM | FULL | OURS (SMM) |\n|---|---|---|---|---|---|\n| CIFAR10 | 65.5 ±0.1 | 68.6 ±2.8 | 68.8 ±1.1 | 68.9 ±0.4 | 72.8 ±0.7 |\n| CIFAR100 | 24.8 ±0.1 | 36.9 ±0.6 | 34.9 ±0.2 | 33.8 ±0.2 | 39.4 ±0.6 |\n| SVHN | 75.2 ±0.2 | 58.5 ±1.1 | 71.1 ±1.0 | 78.3 ±0.3 | 84.4 ±2.0 |\n| GTSRB | 52.0 ±1.2 | 46.1 ±1.5 | 56.4 ±1.0 | 76.8 ±0.9 | 80.4 ±1.2 |\n| FLOWERS102 | 27.9 ±0.7 | 22.1 ±0.1 | 22.6 ±0.5 | 23.2 ±0.5 | 38.7 ±0.7 |\n| DTD | 35.3 ±0.9 | 33.1 ±1.3 | 31.7 ±0.5 | 29.0 ±0.7 | 33.6 ±0.4 |\n| UCF101 | 23.9 ±0.5 | 27.2 ±0.9 | 26.1 ±0.3 | 24.4 ±0.9 | 28.7 ±0.8 |\n| FOOD101 | 14.8 ±0.2 | 14.0 ±0.1 | 14.4 ±0.3 | 13.2 ±0.1 | 17.5 ±0.1 |\n| SUN397 | 13.0 ±0.2 | 15.3 ±0.1 | 14.2 ±0.1 | 13.4 ±0.2 | 16.0 ±0.3 |\n| EUROSAT | 85.2 ±0.6 | 82.8 ±0.4 | 83.8 ±0.5 | 84.3 ±0.5 | 92.2 ±0.2 |\n| OXFORDPETS | 65.4 ±0.7 | 73.7 ±0.2 | 71.4 ±0.2 | 70.0 ±0.6 | 74.1 ±0.4 |\n| **AVERAGE** | **43.91** | **43.48** | **45.04** | **46.85** | **52.53** |\n\nResNet-50 (ImageNet-1K)\n\n| Dataset | PAD | NARROW | MEDIUM | FULL | OURS (SMM) |\n|---|---|---|---|---|---|\n| CIFAR10 | 76.6 ±0.3 | 77.4 ±0.5 | 77.8 ±0.2 | 79.3 ±0.3 | 81.4 ±0.6 |\n| CIFAR100 | 38.9 ±0.3 | 42.5 ±0.2 | 43.8 ±0.2 | 47.2 ±0.1 | 49.0 ±0.2 |\n| SVHN | 75.8 ±0.4 | 59.1 ±1.3 | 71.5 ±0.8 | 79.5 ±0.5 | 82.6 ±2.0 |\n| GTSRB | 52.5 ±1.4 | 38.9 ±1.3 | 52.6 ±1.3 | 76.5 ±1.3 | 78.2 ±1.1 |\n| FLOWERS102 | 24.6 ±0.6 | 19.9 ±0.6 | 20.9 ±0.6 | 22.6 ±0.1 | 35.9 ±0.5 |\n| DTD | 40.5 ±0.5 | 37.8 ±0.7 | 38.4 ±0.2 | 34.7 ±1.3 | 41.1 ±1.1 |\n| UCF101 | 34.6 ±0.2 | 38.4 ±0.2 | 37.2 ±0.2 | 35.2 ±0.2 | 38.9 ±0.5 |\n| FOOD101 | 17.0 ±0.3 | 18.3 ±0.2 | 18.3 ±0.2 | 16.7 ±0.2 | 19.8 ±0.0 |\n| SUN397 | 20.3 ±0.2 | 22.0 ±0.1 | 21.5 ±0.1 | 21.1 ±0.1 | 22.9 ±0.0 |\n| EUROSAT | 83.6 ±0.7 | 83.7 ±0.4 | 85.8 ±0.1 | 86.9 ±0.3 | 92.0 ±0.6 |\n| OXFORDPETS | 76.2 ±0.6 | 76.4 ±0.3 | 75.6 ±0.3 | 73.4 ±0.3 | 78.1 ±0.2 |\n| **AVERAGE** | **49.15** | **46.76** | **49.39** | **52.10** | **56.35** |"
+     },
+     {
+      "id": "table2_vit_main_results",
+      "caption": "Table 2, Section 5. \"Performance Comparison of Different Input Reprogramming Methods on Pre-trained ViT (Mean %, the average results are highlighted in grey)\". Conditions: ViT-B32 (ImageNet-1K); ILM output mapping; LR=0.001, decay=1 (no decay); 200 epochs; batch=256 (most datasets), batch=64 (DTD, OxfordPets); 3 seeds. Note: UCF101 result for Ours (42.6%) uses unified LR=0.001; with LR=0.01 and decay=0.1, SMM achieves 49.9% on UCF101 (Table 8).",
+      "markdown": "| Dataset | PAD | NARROW | MEDIUM | FULL | OURS (SMM) |\n|---|---|---|---|---|---|\n| CIFAR10 | 62.4 | 96.6 | 96.5 | 95.8 | 97.4 |\n| CIFAR100 | 31.6 | 74.4 | 75.3 | 75.0 | 82.6 |\n| SVHN | 80.2 | 85.0 | 87.4 | 87.8 | 89.7 |\n| GTSRB | 62.3 | 57.8 | 68.6 | 75.5 | 80.5 |\n| FLOWERS102 | 57.3 | 55.3 | 56.6 | 55.9 | 79.1 |\n| DTD | 43.7 | 37.3 | 38.5 | 37.7 | 45.6 |\n| UCF101 | 33.6 | 44.5 | 44.8 | 40.9 | 42.6 |\n| FOOD101 | 37.4 | 47.3 | 48.6 | 49.4 | 64.8 |\n| SUN397 | 21.8 | 29.0 | 29.4 | 28.8 | 36.7 |\n| EUROSAT | 95.9 | 90.9 | 90.9 | 89.1 | 93.5 |\n| OXFORDPETS | 57.6 | 82.5 | 81.0 | 75.3 | 83.8 |\n| **AVERAGE** | **53.1** | **63.7** | **65.2** | **64.7** | **72.4** |"
+     }
+    ],
+    "data": []
+   },
+   "verified_by": [
+    {
+     "id": "E01",
+     "title": "Demonstration of Shared Mask Failure on Individual Samples",
+     "run": "OxfordPets, ResNet (ImageNet-1K pre-trained), single A100 GPU",
+     "setup": "Watermarking VR with three mask configurations (Full, Medium, Narrow); baseline: standard finetuning of all model parameters.",
+     "metrics": "Per-sample classification confidence (%); distribution of [final loss - initial loss] per sample; fraction of samples with positive loss change."
+    }
+   ],
+   "artifact": [
+    {
+     "name": "Watermarking VR (Full)",
+     "pointer": "src/execution/baselines.py",
+     "what": "WatermarkingVR class (mask_type='full') used to reproduce the per-sample loss-increase measurement."
+    }
+   ],
+   "built_on": [
+    {
+     "rw_id": "RW01",
+     "name": "Elsayed et al., 2018 (Adversarial Reprogramming)",
+     "relation_raw": "imports"
+    },
+    {
+     "rw_id": "RW02",
+     "name": "Bahng et al., 2022 (Watermarking VR)",
+     "relation_raw": "baseline"
+    },
+    {
+     "rw_id": "RW05",
+     "name": "Tsao et al., 2024 (AutoVP)",
+     "relation_raw": "extends"
+    },
+    {
+     "rw_id": "RW11",
+     "name": "Wang et al., 2022 (Watermarking for OOD Detection)",
+     "relation_raw": "baseline"
+    }
+   ],
+   "rejected_here": [],
+   "concepts": []
+  },
+  {
+   "id": "N04",
+   "type": "decision",
+   "parent": "N03",
+   "title": "How to introduce sample-level mask variation?",
+   "body": "Use a lightweight CNN fmask to generate per-sample continuous 3-channel masks, combined with a shared learnable pattern delta. alternatives: Learn a separate pattern delta_i for each training sample (no shared structure); Use handcrafted sample-specific binary masks (e.g., based on image segmentation); Use attention maps from the pre-trained model to guide masking",
+   "thinking": "With the failure mode of shared masks now demonstrated twice (N02, N03), the project has to commit to a mechanism for making the mask sample-specific. Three alternatives were on the table: learning a fully separate pattern for every training sample (no shared structure at all), hand-crafting sample-specific masks from image segmentation, or reusing attention maps from the pre-trained model. The chosen design instead keeps a single shared learnable pattern δ (so the model still captures dataset-level structure) but adds a lightweight CNN, fmask, that predicts a continuous, per-sample multiplier on top of δ. The theoretical motivation is that a fully sample-specific pattern without any shared δ (Fsp) is provably a subset of what this combined design (Fsmm) can represent, via the same hypothesis-space argument used to show shared masks are also a subset of Fsmm — so this design strictly dominates both a purely shared mask and a purely sample-specific pattern.",
+   "support_level": "explicit",
+   "isolated": false,
+   "depends_on": [],
+   "source_refs": [
+    "evidence (decision rationale, prose): Theoretical: sample-specific delta alone (Fsp) is a subset of SMM (Fsmm) by the J_dP argument — SMM dominates both shared-mask and sample-specific-pattern approaches"
+   ],
+   "why": [],
+   "result": {
+    "sources": [],
+    "figures": [],
+    "tables": [],
+    "data": []
+   },
+   "verified_by": [],
+   "artifact": [
+    {
+     "name": "SMM input transformation",
+     "pointer": "src/execution/smm.py",
+     "what": "SMMTransform class implementing fin(xi) = r(xi) + delta ⊙ fmask(r(xi)|phi), the design chosen at this decision point."
+    },
+    {
+     "name": "SMM core (original repo)",
+     "pointer": "src/code/instance_model.py",
+     "what": "Original InstancewiseVisualPrompt + AttributeNet implementation from the paper's public repository, functionally equivalent to smm.py."
+    }
+   ],
+   "built_on": [],
+   "rejected_here": [],
+   "concepts": [
+    "Mask Generator Module"
+   ]
+  },
+  {
+   "id": "N05",
+   "type": "dead_end",
+   "parent": "N04",
+   "title": "Sample-specific pattern without shared delta (only fmask)",
+   "body": "Suboptimal on large-data datasets (CIFAR10, SVHN, GTSRB, SUN397) where a shared pattern captures dataset-level structure better. Average accuracy 42.59% vs SMM 52.53% (Table 3).",
+   "thinking": "The hypothesis here was that if per-sample adaptation is good, then going all the way and dropping the shared pattern δ entirely (just using fmask(r(xi)) alone) should capture all the sample diversity and do even better. It did not: on large-data datasets like CIFAR10, SVHN, GTSRB and SUN397, a shared pattern turns out to encode dataset-level statistical structure that a purely per-sample function cannot easily learn from limited per-sample signal alone. Dropping δ costs almost 10 percentage points of average accuracy (42.59% vs 52.53% for full SMM, Table 3). The lesson locked in by this dead end is that a shared δ is necessary, not just convenient — the sample-specific mask should modulate a shared pattern, not replace it, which is exactly what the strict-inclusion argument Fsp ⊆ Fsmm predicts.",
+   "support_level": "explicit",
+   "isolated": false,
+   "depends_on": [],
+   "source_refs": [],
+   "why": [],
+   "result": {
+    "sources": [],
+    "figures": [],
+    "tables": [
+     {
+      "id": "table3_ablation_masking",
+      "caption": "Table 3, Section 5. \"Ablation Studies (Mean % ± Std %, with ResNet-18 as an example, and the average results are highlighted in grey)\". ONLY δ = full watermark, all-one M, no fmask; ONLY fmask = no shared δ; SINGLE-CHANNEL f^s_mask = averaged 1-channel mask; OURS = full SMM (3-channel mask + shared δ). ResNet-18 (ImageNet-1K); ILM output mapping; same hyperparameters as Table 1; 3 seeds.",
+      "markdown": "| Dataset | ONLY δ | ONLY fmask | SINGLE-CHANNEL f^s_mask | OURS (SMM) |\n|---|---|---|---|---|\n| CIFAR10 | 68.9 ±0.4 | 59.0 ±1.6 | 72.6 ±2.6 | 72.8 ±0.7 |\n| CIFAR100 | 33.8 ±0.2 | 32.1 ±0.3 | 38.0 ±0.6 | 39.4 ±0.6 |\n| SVHN | 78.3 ±0.3 | 51.1 ±3.1 | 78.4 ±0.2 | 84.4 ±2.0 |\n| GTSRB | 76.8 ±0.9 | 55.7 ±1.2 | 70.7 ±0.8 | 80.4 ±1.2 |\n| FLOWERS102 | 23.2 ±0.5 | 32.2 ±0.4 | 30.2 ±0.4 | 38.7 ±0.7 |\n| DTD | 29.0 ±0.7 | 27.2 ±0.5 | 32.7 ±0.5 | 33.6 ±0.4 |\n| UCF101 | 24.4 ±0.9 | 25.7 ±0.3 | 28.0 ±0.3 | 28.7 ±0.8 |\n| FOOD101 | 13.2 ±0.1 | 13.3 ±0.1 | 15.8 ±0.1 | 17.5 ±0.1 |\n| SUN397 | 13.4 ±0.2 | 10.5 ±0.1 | 15.9 ±0.1 | 16.0 ±0.3 |\n| EUROSAT | 84.3 ±0.5 | 89.2 ±0.9 | 90.6 ±0.5 | 92.2 ±0.2 |\n| OXFORDPETS | 70.0 ±0.6 | 72.5 ±0.3 | 73.8 ±0.6 | 74.1 ±0.4 |\n| **AVERAGE** | **46.85** | **42.59** | **49.70** | **52.53** |"
+     }
+    ],
+    "data": []
+   },
+   "verified_by": [],
+   "artifact": [],
+   "built_on": [],
+   "rejected_here": [],
+   "concepts": [
+    "Mask Generator Module",
+    "Sample-specific Multi-channel Masks",
+    "Hypothesis Space (SMM) — Fsmm"
+   ]
+  },
+  {
+   "id": "N06",
+   "type": "question",
+   "parent": "N04",
+   "title": "Should masks be single-channel or multi-channel?",
+   "body": "Can a single scalar mask per pixel suffice, or do different color channels need different mask values?",
+   "thinking": "With the CNN-plus-shared-δ design settled (N04), the next open design question is about the shape of the CNN's output: should fmask produce one scalar strength value per pixel (applied identically to R, G and B), or a separate value per color channel? This matters because datasets differ in how much information lives in color versus luminance.",
+   "support_level": "explicit",
+   "isolated": false,
+   "depends_on": [],
+   "source_refs": [],
+   "why": [],
+   "result": {
+    "sources": [],
+    "figures": [],
+    "tables": [],
+    "data": []
+   },
+   "verified_by": [],
+   "artifact": [],
+   "built_on": [],
+   "rejected_here": [],
+   "concepts": []
+  },
+  {
+   "id": "N07",
+   "type": "dead_end",
+   "parent": "N06",
+   "title": "Single-channel mask (f^s_mask averaging penultimate layer)",
+   "body": "Significantly worse on datasets with channel-specific structure: GTSRB 70.7% vs 80.4%, Flowers102 30.2% vs 38.7% (Table 3). Average 49.70% vs 52.53%.",
+   "thinking": "The cheaper option was tried first: average the CNN's 3-channel penultimate output down to a single channel and broadcast that one mask value across R, G and B, saving parameters. It underperforms clearly on datasets where color carries real discriminative structure: GTSRB drops from 80.4% to 70.7% and Flowers102 from 38.7% to 30.2%, pulling the 11-dataset average down from 52.53% to 49.70% (Table 3). The lesson is that different color channels genuinely need independently-tunable mask values — collapsing them throws away exactly the kind of R/G/B-specific noise placement that the three-channel design is meant to exploit.",
+   "support_level": "explicit",
+   "isolated": false,
+   "depends_on": [],
+   "source_refs": [],
+   "why": [],
+   "result": {
+    "sources": [],
+    "figures": [],
+    "tables": [
+     {
+      "id": "table3_ablation_masking",
+      "caption": "Table 3, Section 5. \"Ablation Studies (Mean % ± Std %, with ResNet-18 as an example, and the average results are highlighted in grey)\". ONLY δ = full watermark, all-one M, no fmask; ONLY fmask = no shared δ; SINGLE-CHANNEL f^s_mask = averaged 1-channel mask; OURS = full SMM (3-channel mask + shared δ). ResNet-18 (ImageNet-1K); ILM output mapping; same hyperparameters as Table 1; 3 seeds.",
+      "markdown": "| Dataset | ONLY δ | ONLY fmask | SINGLE-CHANNEL f^s_mask | OURS (SMM) |\n|---|---|---|---|---|\n| CIFAR10 | 68.9 ±0.4 | 59.0 ±1.6 | 72.6 ±2.6 | 72.8 ±0.7 |\n| CIFAR100 | 33.8 ±0.2 | 32.1 ±0.3 | 38.0 ±0.6 | 39.4 ±0.6 |\n| SVHN | 78.3 ±0.3 | 51.1 ±3.1 | 78.4 ±0.2 | 84.4 ±2.0 |\n| GTSRB | 76.8 ±0.9 | 55.7 ±1.2 | 70.7 ±0.8 | 80.4 ±1.2 |\n| FLOWERS102 | 23.2 ±0.5 | 32.2 ±0.4 | 30.2 ±0.4 | 38.7 ±0.7 |\n| DTD | 29.0 ±0.7 | 27.2 ±0.5 | 32.7 ±0.5 | 33.6 ±0.4 |\n| UCF101 | 24.4 ±0.9 | 25.7 ±0.3 | 28.0 ±0.3 | 28.7 ±0.8 |\n| FOOD101 | 13.2 ±0.1 | 13.3 ±0.1 | 15.8 ±0.1 | 17.5 ±0.1 |\n| SUN397 | 13.4 ±0.2 | 10.5 ±0.1 | 15.9 ±0.1 | 16.0 ±0.3 |\n| EUROSAT | 84.3 ±0.5 | 89.2 ±0.9 | 90.6 ±0.5 | 92.2 ±0.2 |\n| OXFORDPETS | 70.0 ±0.6 | 72.5 ±0.3 | 73.8 ±0.6 | 74.1 ±0.4 |\n| **AVERAGE** | **46.85** | **42.59** | **49.70** | **52.53** |"
+     }
+    ],
+    "data": []
+   },
+   "verified_by": [],
+   "artifact": [],
+   "built_on": [],
+   "rejected_here": [],
+   "concepts": []
+  },
+  {
+   "id": "N08",
+   "type": "decision",
+   "parent": "N06",
+   "title": "Use three-channel continuous masks",
+   "body": "fmask outputs 3-channel masks matching the 3 color channels of the image; the last CNN layer has 3 output channels. alternatives: Single-channel scalar mask broadcast across all channels; Binary {0,1} masks (restricts hypothesis space)",
+   "thinking": "Having seen the single-channel variant underperform (N07), the design is fixed here: the mask generator's final convolutional layer outputs 3 channels, one per color channel of the image, rather than collapsing to a scalar or restricting to binary {0,1} values (which would shrink the hypothesis space back toward the shared-mask regime). The three-channel ablation in Table 3 shows this choice pays off consistently, especially on color-heterogeneous datasets.",
+   "support_level": "explicit",
+   "isolated": false,
+   "depends_on": [],
+   "source_refs": [],
+   "why": [],
+   "result": {
+    "sources": [],
+    "figures": [],
+    "tables": [
+     {
+      "id": "table3_ablation_masking",
+      "caption": "Table 3, Section 5. \"Ablation Studies (Mean % ± Std %, with ResNet-18 as an example, and the average results are highlighted in grey)\". ONLY δ = full watermark, all-one M, no fmask; ONLY fmask = no shared δ; SINGLE-CHANNEL f^s_mask = averaged 1-channel mask; OURS = full SMM (3-channel mask + shared δ). ResNet-18 (ImageNet-1K); ILM output mapping; same hyperparameters as Table 1; 3 seeds.",
+      "markdown": "| Dataset | ONLY δ | ONLY fmask | SINGLE-CHANNEL f^s_mask | OURS (SMM) |\n|---|---|---|---|---|\n| CIFAR10 | 68.9 ±0.4 | 59.0 ±1.6 | 72.6 ±2.6 | 72.8 ±0.7 |\n| CIFAR100 | 33.8 ±0.2 | 32.1 ±0.3 | 38.0 ±0.6 | 39.4 ±0.6 |\n| SVHN | 78.3 ±0.3 | 51.1 ±3.1 | 78.4 ±0.2 | 84.4 ±2.0 |\n| GTSRB | 76.8 ±0.9 | 55.7 ±1.2 | 70.7 ±0.8 | 80.4 ±1.2 |\n| FLOWERS102 | 23.2 ±0.5 | 32.2 ±0.4 | 30.2 ±0.4 | 38.7 ±0.7 |\n| DTD | 29.0 ±0.7 | 27.2 ±0.5 | 32.7 ±0.5 | 33.6 ±0.4 |\n| UCF101 | 24.4 ±0.9 | 25.7 ±0.3 | 28.0 ±0.3 | 28.7 ±0.8 |\n| FOOD101 | 13.2 ±0.1 | 13.3 ±0.1 | 15.8 ±0.1 | 17.5 ±0.1 |\n| SUN397 | 13.4 ±0.2 | 10.5 ±0.1 | 15.9 ±0.1 | 16.0 ±0.3 |\n| EUROSAT | 84.3 ±0.5 | 89.2 ±0.9 | 90.6 ±0.5 | 92.2 ±0.2 |\n| OXFORDPETS | 70.0 ±0.6 | 72.5 ±0.3 | 73.8 ±0.6 | 74.1 ±0.4 |\n| **AVERAGE** | **46.85** | **42.59** | **49.70** | **52.53** |"
+     }
+    ],
+    "data": []
+   },
+   "verified_by": [],
+   "artifact": [
+    {
+     "name": "3-channel mask generator",
+     "pointer": "src/execution/smm.py",
+     "what": "MaskGeneratorResNet / MaskGeneratorViT — final CNN layer outputs 3 channels, implementing the three-channel design chosen here."
+    }
+   ],
+   "built_on": [],
+   "rejected_here": [],
+   "concepts": [
+    "Mask Generator Module"
+   ]
+  },
+  {
+   "id": "N09",
+   "type": "question",
+   "parent": "N08",
+   "title": "How many pooling layers (what patch size) is optimal for the CNN?",
+   "body": "More pooling layers = coarser spatial resolution; fewer = risk overfitting to fine-grained spatial patterns.",
+   "thinking": "With the mask generator's channel count settled, the remaining architectural knob is spatial resolution: how many MaxPool layers should the CNN have before its output is upsampled back to full size? Fewer pooling layers keep the mask at high resolution, which risks overfitting to fine-grained, sample-specific spatial noise; more pooling layers force a coarser, patch-level mask that may lose useful spatial detail. This trades off directly against the patch-wise interpolation module's patch size (2^l).",
+   "support_level": "explicit",
+   "isolated": false,
+   "depends_on": [],
+   "source_refs": [],
+   "why": [],
+   "result": {
+    "sources": [],
+    "figures": [],
+    "tables": [],
+    "data": []
+   },
+   "verified_by": [],
+   "artifact": [],
+   "built_on": [],
+   "rejected_here": [],
+   "concepts": []
+  },
+  {
+   "id": "N10",
+   "type": "experiment",
+   "parent": "N09",
+   "title": "Patch size ablation: test l in {0,1,2,3,4} on 4 datasets",
+   "body": "Accuracy increases from l=0 to l=3 (patch=8), then plateaus or declines at l=4 (patch=16). Optimal: l=3 across all tested datasets.",
+   "thinking": "To answer N09 empirically, the number of MaxPool layers l is swept over {0,1,2,3,4} (patch sizes 1,2,4,8,16) on four datasets spanning different domains (EuroSAT, Flowers102, CIFAR100, SVHN). The pattern is consistent across all four: accuracy climbs from l=0 up to l=3 (patch size 8), then either plateaus or slightly declines at l=4 (patch size 16). This directly resolves the overfitting-vs-detail tradeoff raised in N09 — l=3 is the sweet spot everywhere tested, so it is not a dataset-specific fluke but a structural property of the mask generator design (consistent with C05's finding that both the shared δ and the sample-specific fmask are necessary and must be tuned together).",
+   "support_level": "explicit",
+   "isolated": false,
+   "depends_on": [],
+   "source_refs": [
+    "Figure 4 (paper, §5 Impact of Patch Size)"
+   ],
+   "why": [
+    {
+     "id": "C05",
+     "title": "Three-channel masks outperform single-channel masks; both δ and fmask are necessary",
+     "statement": "Ablation shows (i) removing fmask (only δ) reduces accuracy on feature-rich datasets; (ii) removing δ (only fmask) reduces accuracy on large-data datasets; (iii) single-channel fmask^s is worse than three-channel especially on GTSRB and Flowers102. The combination of shared δ and three-channel fmask achieves the best average performance.",
+     "status": "supported",
+     "conditions": "",
+     "falsification": "If single-channel SMM achieves equal or better average accuracy than three-channel SMM across the 11 datasets, this claim is refuted.",
+     "dependencies": [
+      "C02"
+     ],
+     "provenance": null
+    }
+   ],
+   "result": {
+    "sources": [],
+    "figures": [],
+    "tables": [
+     {
+      "id": "table3_ablation_masking",
+      "caption": "Table 3, Section 5. \"Ablation Studies (Mean % ± Std %, with ResNet-18 as an example, and the average results are highlighted in grey)\". ONLY δ = full watermark, all-one M, no fmask; ONLY fmask = no shared δ; SINGLE-CHANNEL f^s_mask = averaged 1-channel mask; OURS = full SMM (3-channel mask + shared δ). ResNet-18 (ImageNet-1K); ILM output mapping; same hyperparameters as Table 1; 3 seeds.",
+      "markdown": "| Dataset | ONLY δ | ONLY fmask | SINGLE-CHANNEL f^s_mask | OURS (SMM) |\n|---|---|---|---|---|\n| CIFAR10 | 68.9 ±0.4 | 59.0 ±1.6 | 72.6 ±2.6 | 72.8 ±0.7 |\n| CIFAR100 | 33.8 ±0.2 | 32.1 ±0.3 | 38.0 ±0.6 | 39.4 ±0.6 |\n| SVHN | 78.3 ±0.3 | 51.1 ±3.1 | 78.4 ±0.2 | 84.4 ±2.0 |\n| GTSRB | 76.8 ±0.9 | 55.7 ±1.2 | 70.7 ±0.8 | 80.4 ±1.2 |\n| FLOWERS102 | 23.2 ±0.5 | 32.2 ±0.4 | 30.2 ±0.4 | 38.7 ±0.7 |\n| DTD | 29.0 ±0.7 | 27.2 ±0.5 | 32.7 ±0.5 | 33.6 ±0.4 |\n| UCF101 | 24.4 ±0.9 | 25.7 ±0.3 | 28.0 ±0.3 | 28.7 ±0.8 |\n| FOOD101 | 13.2 ±0.1 | 13.3 ±0.1 | 15.8 ±0.1 | 17.5 ±0.1 |\n| SUN397 | 13.4 ±0.2 | 10.5 ±0.1 | 15.9 ±0.1 | 16.0 ±0.3 |\n| EUROSAT | 84.3 ±0.5 | 89.2 ±0.9 | 90.6 ±0.5 | 92.2 ±0.2 |\n| OXFORDPETS | 70.0 ±0.6 | 72.5 ±0.3 | 73.8 ±0.6 | 74.1 ±0.4 |\n| **AVERAGE** | **46.85** | **42.59** | **49.70** | **52.53** |"
+     },
+     {
+      "id": "figure4_patch_size_ablation",
+      "caption": "Figure 4, Section 5. \"Comparative results of different patch sizes (2^l). ResNet-18 is used as the pre-trained model as an example.\" X-axis: patch size (2^l), values 1,2,4,8,16. Y-axis: accuracy (0-1 scale). All data points marked with ≈ are best-effort readings from the bar chart (no raster image exists in this ARA).",
+      "markdown": "EuroSAT (y-axis range 0.80-1.00)\n\n| Patch Size (2^l) | Ours (SMM) Accuracy | Narrow | Medium | Full |\n|---|---|---|---|---|\n| 1 (l=0) | ≈0.88 | ≈0.83 | ≈0.84 | ≈0.84 |\n| 2 (l=1) | ≈0.90 | ≈0.83 | ≈0.84 | ≈0.84 |\n| 4 (l=2) | ≈0.91 | ≈0.83 | ≈0.84 | ≈0.84 |\n| 8 (l=3) | ≈0.92 | ≈0.83 | ≈0.84 | ≈0.84 |\n| 16 (l=4) | ≈0.92 | ≈0.83 | ≈0.84 | ≈0.84 |\n\nFlowers102 (y-axis range 0.20-0.50)\n\n| Patch Size (2^l) | Ours (SMM) Accuracy | Narrow | Medium | Full |\n|---|---|---|---|---|\n| 1 (l=0) | ≈0.32 | ≈0.22 | ≈0.23 | ≈0.23 |\n| 2 (l=1) | ≈0.36 | ≈0.22 | ≈0.23 | ≈0.23 |\n| 4 (l=2) | ≈0.38 | ≈0.22 | ≈0.23 | ≈0.23 |\n| 8 (l=3) | ≈0.39 | ≈0.22 | ≈0.23 | ≈0.23 |\n| 16 (l=4) | ≈0.38 | ≈0.22 | ≈0.23 | ≈0.23 |\n\nCIFAR100 (y-axis range 0.35-0.43)\n\n| Patch Size (2^l) | Ours (SMM) Accuracy | Narrow | Medium | Full |\n|---|---|---|---|---|\n| 1 (l=0) | ≈0.37 | ≈0.37 | ≈0.35 | ≈0.34 |\n| 2 (l=1) | ≈0.38 | ≈0.37 | ≈0.35 | ≈0.34 |\n| 4 (l=2) | ≈0.39 | ≈0.37 | ≈0.35 | ≈0.34 |\n| 8 (l=3) | ≈0.39 | ≈0.37 | ≈0.35 | ≈0.34 |\n| 16 (l=4) | ≈0.38 | ≈0.37 | ≈0.35 | ≈0.34 |\n\nSVHN (y-axis range 0.52-0.91)\n\n| Patch Size (2^l) | Ours (SMM) Accuracy | Narrow | Medium | Full |\n|---|---|---|---|---|\n| 1 (l=0) | ≈0.72 | ≈0.59 | ≈0.71 | ≈0.78 |\n| 2 (l=1) | ≈0.80 | ≈0.59 | ≈0.71 | ≈0.78 |\n| 4 (l=2) | ≈0.83 | ≈0.59 | ≈0.71 | ≈0.78 |\n| 8 (l=3) | ≈0.84 | ≈0.59 | ≈0.71 | ≈0.78 |\n| 16 (l=4) | ≈0.84 | ≈0.59 | ≈0.71 | ≈0.78 |\n\nNote: baseline (Narrow/Medium/Full) values are constant horizontal lines, independent of patch size. SMM values at patch_size=8 match Table 1 exactly."
+     }
+    ],
+    "data": []
+   },
+   "verified_by": [
+    {
+     "id": "E05",
+     "title": "Ablation Study — Impact of Masking Components",
+     "run": "ResNet-18 (ImageNet-1K), same 11 datasets; single A100 GPU",
+     "setup": "4 variants: (i) Only δ (Full watermark, no fmask); (ii) Only fmask (no shared δ); (iii) Single-channel SMM (averaged penultimate-layer output); (iv) Full SMM (3-channel). Same hyperparameters as E03; 3 random seeds.",
+     "metrics": "Classification accuracy (%) per dataset, mean ± std across 3 seeds, average across 11 datasets."
+    }
+   ],
+   "artifact": [
+    {
+     "name": "Patch-wise interpolation",
+     "pointer": "src/execution/smm.py",
+     "what": "patch_wise_interpolate() function — upsamples the CNN mask output by the patch size 2^l being ablated over l in {0,1,2,3,4}."
+    }
+   ],
+   "built_on": [],
+   "rejected_here": [],
+   "concepts": [
+    "Mask Generator Module"
+   ]
+  },
+  {
+   "id": "N11",
+   "type": "decision",
+   "parent": "N10",
+   "title": "Set default patch size to 8 (l=3 MaxPool layers)",
+   "body": "Use l=3 MaxPool layers in the CNN mask generator for both ResNet and ViT configurations. alternatives: l=0: no pooling, full resolution mask (overfits); l=4: coarsest resolution (loses spatial detail)",
+   "thinking": "The patch-size sweep (N10) settled the empirical question; this decision locks l=3 (patch size 8) in as the default configuration for the mask generator used in every subsequent main experiment, for both the 5-layer ResNet CNN and the 6-layer ViT CNN. The two rejected extremes are explicit: l=0 (no pooling) overfits to fine-grained spatial noise, and l=4 (coarsest resolution) loses useful spatial detail — both underperform the l=3 middle ground shown in Figure 4 across EuroSAT, Flowers102, CIFAR100 and SVHN.",
+   "support_level": "explicit",
+   "isolated": false,
+   "depends_on": [],
+   "source_refs": [],
+   "why": [],
+   "result": {
+    "sources": [],
+    "figures": [],
+    "tables": [
+     {
+      "id": "figure4_patch_size_ablation",
+      "caption": "Figure 4, Section 5. \"Comparative results of different patch sizes (2^l). ResNet-18 is used as the pre-trained model as an example.\" X-axis: patch size (2^l), values 1,2,4,8,16. Y-axis: accuracy (0-1 scale). All data points marked with ≈ are best-effort readings from the bar chart (no raster image exists in this ARA).",
+      "markdown": "EuroSAT (y-axis range 0.80-1.00)\n\n| Patch Size (2^l) | Ours (SMM) Accuracy | Narrow | Medium | Full |\n|---|---|---|---|---|\n| 1 (l=0) | ≈0.88 | ≈0.83 | ≈0.84 | ≈0.84 |\n| 2 (l=1) | ≈0.90 | ≈0.83 | ≈0.84 | ≈0.84 |\n| 4 (l=2) | ≈0.91 | ≈0.83 | ≈0.84 | ≈0.84 |\n| 8 (l=3) | ≈0.92 | ≈0.83 | ≈0.84 | ≈0.84 |\n| 16 (l=4) | ≈0.92 | ≈0.83 | ≈0.84 | ≈0.84 |\n\nFlowers102 (y-axis range 0.20-0.50)\n\n| Patch Size (2^l) | Ours (SMM) Accuracy | Narrow | Medium | Full |\n|---|---|---|---|---|\n| 1 (l=0) | ≈0.32 | ≈0.22 | ≈0.23 | ≈0.23 |\n| 2 (l=1) | ≈0.36 | ≈0.22 | ≈0.23 | ≈0.23 |\n| 4 (l=2) | ≈0.38 | ≈0.22 | ≈0.23 | ≈0.23 |\n| 8 (l=3) | ≈0.39 | ≈0.22 | ≈0.23 | ≈0.23 |\n| 16 (l=4) | ≈0.38 | ≈0.22 | ≈0.23 | ≈0.23 |\n\nCIFAR100 (y-axis range 0.35-0.43)\n\n| Patch Size (2^l) | Ours (SMM) Accuracy | Narrow | Medium | Full |\n|---|---|---|---|---|\n| 1 (l=0) | ≈0.37 | ≈0.37 | ≈0.35 | ≈0.34 |\n| 2 (l=1) | ≈0.38 | ≈0.37 | ≈0.35 | ≈0.34 |\n| 4 (l=2) | ≈0.39 | ≈0.37 | ≈0.35 | ≈0.34 |\n| 8 (l=3) | ≈0.39 | ≈0.37 | ≈0.35 | ≈0.34 |\n| 16 (l=4) | ≈0.38 | ≈0.37 | ≈0.35 | ≈0.34 |\n\nSVHN (y-axis range 0.52-0.91)\n\n| Patch Size (2^l) | Ours (SMM) Accuracy | Narrow | Medium | Full |\n|---|---|---|---|---|\n| 1 (l=0) | ≈0.72 | ≈0.59 | ≈0.71 | ≈0.78 |\n| 2 (l=1) | ≈0.80 | ≈0.59 | ≈0.71 | ≈0.78 |\n| 4 (l=2) | ≈0.83 | ≈0.59 | ≈0.71 | ≈0.78 |\n| 8 (l=3) | ≈0.84 | ≈0.59 | ≈0.71 | ≈0.78 |\n| 16 (l=4) | ≈0.84 | ≈0.59 | ≈0.71 | ≈0.78 |\n\nNote: baseline (Narrow/Medium/Full) values are constant horizontal lines, independent of patch size. SMM values at patch_size=8 match Table 1 exactly."
+     }
+    ],
+    "data": []
+   },
+   "verified_by": [],
+   "artifact": [
+    {
+     "name": "Default mask-generator config",
+     "pointer": "src/configs/model.md",
+     "what": "Records l=3 MaxPool layers / patch size 8 as the default configuration for both ResNet and ViT mask generators."
+    },
+    {
+     "name": "Attribute network layer/patch config",
+     "pointer": "src/code/cfg.py",
+     "what": "get_config() sets attribute_layers (5 or 6) and the patch-size-dependent hyperparameters used to instantiate the mask generator with the chosen l=3 default."
+    }
+   ],
+   "built_on": [],
+   "rejected_here": [],
+   "concepts": []
+  },
+  {
+   "id": "N12",
+   "type": "experiment",
+   "parent": "N11",
+   "title": "Full validation: SMM vs all baselines on ResNet-18/50 and ViT-B32 across 11 datasets",
+   "body": "SMM achieves highest average accuracy for all three backbones; largest gains on domain-gap datasets (Flowers102 +15-22%, Food101 +15%, SVHN +3-6%). DTD/ResNet-18 and EuroSAT/ViT are exceptions.",
+   "thinking": "With every design decision now fixed (shared δ + 3-channel CNN mask generator + patch size 8), this final experiment is the paper's main result: SMM is trained end-to-end against all four shared-mask baselines (Pad, Narrow, Medium, Full) across all 11 target datasets, on three pre-trained backbones (ResNet-18, ResNet-50, ViT-B32). SMM comes out on top on average for every backbone, with the largest gains precisely where the domain gap between the target dataset and ImageNet is largest — Flowers102 (+15 to +22 percentage points depending on backbone), Food101 (+15%), SVHN (+3-6%). There are two honest exceptions where a baseline wins: DTD with ResNet-18 (texture noise interference) and EuroSAT with ViT (a simple task where a powerful backbone already saturates and resizing-based noise starts to hurt rather than help). This closes the loop back to N01: sample-specific masks do generalize better than a shared mask, but the paper is careful to also report where that advantage does not hold.",
+   "support_level": "explicit",
+   "isolated": false,
+   "depends_on": [
+    "N04",
+    "N08"
+   ],
+   "source_refs": [
+    "§5"
+   ],
+   "why": [
+    {
+     "id": "C03",
+     "title": "SMM outperforms all shared-mask baselines on ResNet-18 and ResNet-50 across most datasets",
+     "statement": "SMM achieves higher test accuracy than Pad, Narrow, Medium, and Full watermarking baselines for ResNet-18 on 10 out of 11 datasets (all except DTD) and for ResNet-50 on all 11 datasets. Average accuracy under SMM is higher than all baselines for both models.",
+     "status": "supported",
+     "conditions": "",
+     "falsification": "If any other baseline matches or exceeds SMM in average accuracy across all 11 datasets for either ResNet model, this claim is refuted.",
+     "dependencies": [
+      "C01",
+      "C02"
+     ],
+     "provenance": null
+    },
+    {
+     "id": "C04",
+     "title": "SMM outperforms all shared-mask baselines on ViT-B32 across most datasets",
+     "statement": "SMM achieves substantially higher test accuracy than all baselines for ViT-B32 on most datasets, with average accuracy of 72.4% vs. best baseline 65.2% (Medium). Notable gains: Flowers102 (+21.8% over best baseline), Food101 (+15.4%), SUN397 (+7.3%).",
+     "status": "supported",
+     "conditions": "",
+     "falsification": "If the average accuracy of SMM is not higher than Medium/Full/Narrow/Pad for ViT-B32 across the 11 datasets, this claim is refuted.",
+     "dependencies": [
+      "C01",
+      "C02"
+     ],
+     "provenance": null
+    }
+   ],
+   "result": {
+    "sources": [],
+    "figures": [],
+    "tables": [
+     {
+      "id": "table1_resnet_main_results",
+      "caption": "Table 1, Section 5. \"Performance Comparison of Different Input Reprogramming Methods on Pre-trained ResNet (Mean % ± Std %, the average results across all datasets are highlighted in grey)\". Conditions: ILM output mapping; 3 seeds; 200 epochs; LR=0.01, decay=0.1 at epochs 100&145; batch=256 (most datasets), batch=64 (DTD, OxfordPets).",
+      "markdown": "ResNet-18 (ImageNet-1K)\n\n| Dataset | PAD | NARROW | MEDIUM | FULL | OURS (SMM) |\n|---|---|---|---|---|---|\n| CIFAR10 | 65.5 ±0.1 | 68.6 ±2.8 | 68.8 ±1.1 | 68.9 ±0.4 | 72.8 ±0.7 |\n| CIFAR100 | 24.8 ±0.1 | 36.9 ±0.6 | 34.9 ±0.2 | 33.8 ±0.2 | 39.4 ±0.6 |\n| SVHN | 75.2 ±0.2 | 58.5 ±1.1 | 71.1 ±1.0 | 78.3 ±0.3 | 84.4 ±2.0 |\n| GTSRB | 52.0 ±1.2 | 46.1 ±1.5 | 56.4 ±1.0 | 76.8 ±0.9 | 80.4 ±1.2 |\n| FLOWERS102 | 27.9 ±0.7 | 22.1 ±0.1 | 22.6 ±0.5 | 23.2 ±0.5 | 38.7 ±0.7 |\n| DTD | 35.3 ±0.9 | 33.1 ±1.3 | 31.7 ±0.5 | 29.0 ±0.7 | 33.6 ±0.4 |\n| UCF101 | 23.9 ±0.5 | 27.2 ±0.9 | 26.1 ±0.3 | 24.4 ±0.9 | 28.7 ±0.8 |\n| FOOD101 | 14.8 ±0.2 | 14.0 ±0.1 | 14.4 ±0.3 | 13.2 ±0.1 | 17.5 ±0.1 |\n| SUN397 | 13.0 ±0.2 | 15.3 ±0.1 | 14.2 ±0.1 | 13.4 ±0.2 | 16.0 ±0.3 |\n| EUROSAT | 85.2 ±0.6 | 82.8 ±0.4 | 83.8 ±0.5 | 84.3 ±0.5 | 92.2 ±0.2 |\n| OXFORDPETS | 65.4 ±0.7 | 73.7 ±0.2 | 71.4 ±0.2 | 70.0 ±0.6 | 74.1 ±0.4 |\n| **AVERAGE** | **43.91** | **43.48** | **45.04** | **46.85** | **52.53** |\n\nResNet-50 (ImageNet-1K)\n\n| Dataset | PAD | NARROW | MEDIUM | FULL | OURS (SMM) |\n|---|---|---|---|---|---|\n| CIFAR10 | 76.6 ±0.3 | 77.4 ±0.5 | 77.8 ±0.2 | 79.3 ±0.3 | 81.4 ±0.6 |\n| CIFAR100 | 38.9 ±0.3 | 42.5 ±0.2 | 43.8 ±0.2 | 47.2 ±0.1 | 49.0 ±0.2 |\n| SVHN | 75.8 ±0.4 | 59.1 ±1.3 | 71.5 ±0.8 | 79.5 ±0.5 | 82.6 ±2.0 |\n| GTSRB | 52.5 ±1.4 | 38.9 ±1.3 | 52.6 ±1.3 | 76.5 ±1.3 | 78.2 ±1.1 |\n| FLOWERS102 | 24.6 ±0.6 | 19.9 ±0.6 | 20.9 ±0.6 | 22.6 ±0.1 | 35.9 ±0.5 |\n| DTD | 40.5 ±0.5 | 37.8 ±0.7 | 38.4 ±0.2 | 34.7 ±1.3 | 41.1 ±1.1 |\n| UCF101 | 34.6 ±0.2 | 38.4 ±0.2 | 37.2 ±0.2 | 35.2 ±0.2 | 38.9 ±0.5 |\n| FOOD101 | 17.0 ±0.3 | 18.3 ±0.2 | 18.3 ±0.2 | 16.7 ±0.2 | 19.8 ±0.0 |\n| SUN397 | 20.3 ±0.2 | 22.0 ±0.1 | 21.5 ±0.1 | 21.1 ±0.1 | 22.9 ±0.0 |\n| EUROSAT | 83.6 ±0.7 | 83.7 ±0.4 | 85.8 ±0.1 | 86.9 ±0.3 | 92.0 ±0.6 |\n| OXFORDPETS | 76.2 ±0.6 | 76.4 ±0.3 | 75.6 ±0.3 | 73.4 ±0.3 | 78.1 ±0.2 |\n| **AVERAGE** | **49.15** | **46.76** | **49.39** | **52.10** | **56.35** |"
+     },
+     {
+      "id": "table2_vit_main_results",
+      "caption": "Table 2, Section 5. \"Performance Comparison of Different Input Reprogramming Methods on Pre-trained ViT (Mean %, the average results are highlighted in grey)\". Conditions: ViT-B32 (ImageNet-1K); ILM output mapping; LR=0.001, decay=1 (no decay); 200 epochs; batch=256 (most datasets), batch=64 (DTD, OxfordPets); 3 seeds. Note: UCF101 result for Ours (42.6%) uses unified LR=0.001; with LR=0.01 and decay=0.1, SMM achieves 49.9% on UCF101 (Table 8).",
+      "markdown": "| Dataset | PAD | NARROW | MEDIUM | FULL | OURS (SMM) |\n|---|---|---|---|---|---|\n| CIFAR10 | 62.4 | 96.6 | 96.5 | 95.8 | 97.4 |\n| CIFAR100 | 31.6 | 74.4 | 75.3 | 75.0 | 82.6 |\n| SVHN | 80.2 | 85.0 | 87.4 | 87.8 | 89.7 |\n| GTSRB | 62.3 | 57.8 | 68.6 | 75.5 | 80.5 |\n| FLOWERS102 | 57.3 | 55.3 | 56.6 | 55.9 | 79.1 |\n| DTD | 43.7 | 37.3 | 38.5 | 37.7 | 45.6 |\n| UCF101 | 33.6 | 44.5 | 44.8 | 40.9 | 42.6 |\n| FOOD101 | 37.4 | 47.3 | 48.6 | 49.4 | 64.8 |\n| SUN397 | 21.8 | 29.0 | 29.4 | 28.8 | 36.7 |\n| EUROSAT | 95.9 | 90.9 | 90.9 | 89.1 | 93.5 |\n| OXFORDPETS | 57.6 | 82.5 | 81.0 | 75.3 | 83.8 |\n| **AVERAGE** | **53.1** | **63.7** | **65.2** | **64.7** | **72.4** |"
+     },
+     {
+      "id": "table6_dataset_info",
+      "caption": "Table 6, Appendix C. \"Detailed Dataset Information\". Image sizes shown are as used in experiments (not necessarily original dataset sizes).",
+      "markdown": "| DATASET | ORIGINAL IMAGE SIZE | TRAINING SET SIZE | TESTING SET SIZE | NUMBER OF CLASSES |\n|---|---|---|---|---|\n| CIFAR10 | 32×32 | 50000 | 10000 | 10 |\n| CIFAR100 | 32×32 | 50000 | 10000 | 100 |\n| SVHN | 32×32 | 73257 | 26032 | 10 |\n| GTSRB | 32×32 | 39209 | 12630 | 43 |\n| FLOWERS102 | 128×128 | 4093 | 2463 | 102 |\n| DTD | 128×128 | 2820 | 1692 | 47 |\n| UCF101 | 128×128 | 7639 | 3783 | 101 |\n| FOOD101 | 128×128 | 50500 | 30300 | 101 |\n| SUN397 | 128×128 | 15888 | 19850 | 397 |\n| EUROSAT | 128×128 | 13500 | 8100 | 10 |\n| OXFORDPETS | 128×128 | 2944 | 3669 | 37 |"
+     },
+     {
+      "id": "table10_label_mapping_comparison",
+      "caption": "Table 10, Appendix D.1. \"Performance Improvement When Applying Our Input Reprogramming on Different Label Mapping Methods (the average results are highlighted in grey)\". ResNet-18 (ImageNet-1K); W/O OURS = Full watermarking (best shared-mask method); W OURS = SMM replacing the shared mask.",
+      "markdown": "| Dataset | ILM W/O OURS | ILM W OURS | ILM IMPROVE | FLM W/O OURS | FLM W OURS | FLM IMPROVE | RLM W/O OURS | RLM W OURS | RLM IMPROVE |\n|---|---|---|---|---|---|---|---|---|---|\n| CIFAR10 | 68.90% | 72.80% | +3.90% | 71.79% | 72.75% | +0.96% | 65.68% | 69.71% | +4.03% |\n| CIFAR100 | 33.80% | 39.40% | +5.60% | 29.79% | 32.35% | +2.56% | 16.99% | 23.47% | +6.48% |\n| SVHN | 78.30% | 84.40% | +6.10% | 78.78% | 83.73% | +4.95% | 77.44% | 85.37% | +7.92% |\n| GTSRB | 76.80% | 80.40% | +3.60% | 74.76% | 80.90% | +6.14% | 69.60% | 82.38% | +12.79% |\n| FLOWERS102 | 23.20% | 38.70% | +15.50% | 17.78% | 32.16% | +14.37% | 12.34% | 37.68% | +25.33% |\n| DTD | 29.00% | 33.60% | +4.60% | 30.14% | 34.28% | +4.14% | 14.60% | 19.74% | +5.14% |\n| UCF101 | 24.40% | 28.70% | +4.30% | 22.71% | 25.72% | +3.01% | 9.04% | 16.71% | +7.67% |\n| FOOD101 | 13.20% | 17.50% | +4.30% | 11.58% | 15.21% | +3.62% | 7.15% | 15.86% | +8.71% |\n| SUN397 | 13.40% | 16.00% | +2.60% | 13.45% | 15.45% | +1.99% | 1.05% | 3.35% | +2.29% |\n| EUROSAT | 84.30% | 92.20% | +7.90% | 86.00% | 92.67% | +6.67% | 84.49% | 94.47% | +9.98% |\n| OXFORDPETS | 70.00% | 74.10% | +4.10% | 69.66% | 72.83% | +3.16% | 8.89% | 16.84% | +7.96% |\n| **AVERAGE** | **46.85%** | **52.53%** | **+5.68%** | **46.04%** | **50.73%** | **+4.69%** | **33.39%** | **42.32%** | **+8.94%** |"
+     },
+     {
+      "id": "table_stanfordcars",
+      "caption": "Table 12, Appendix D.4. \"An Ineffective Case of Input Reprogramming - StanfordCars (Mean % ± Std %)\". All methods fail (&lt;10% accuracy) on this fine-grained recognition task requiring subtle appearance differences.",
+      "markdown": "| METHOD | RESNET-18 | RESNET-50 | VIT-B32 |\n|---|---|---|---|\n| PAD | 4.5 ±0.1 | 4.7 ±0.2 | 4.7 ±0.6 |\n| NARROW | 3.6 ±0.1 | 4.7 ±0.1 | 7.7 ±0.2 |\n| MEDIUM | 3.6 ±0.1 | 4.7 ±0.2 | 8.3 ±0.3 |\n| FULL | 3.4 ±0.1 | 4.6 ±0.1 | 5.0 ±0.0 |\n| OURS (SMM) | 2.9 ±0.2 | 3.0 ±0.6 | 4.8 ±0.9 |"
+     }
+    ],
+    "data": []
+   },
+   "verified_by": [
+    {
+     "id": "E03",
+     "title": "SMM vs Baselines on ResNet-18 and ResNet-50 (Main Results)",
+     "run": "11 datasets (CIFAR10, CIFAR100, SVHN, GTSRB, Flowers102, DTD, UCF101, Food101, SUN397, EuroSAT, OxfordPets); single A100 GPU",
+     "setup": "ILM output mapping; batch=256 (batch=64 for DTD/OxfordPets); 200 epochs; initial LR=0.01; decay=0.1 at epochs 100 and 145; 3 random seeds. Baselines: Pad (Chen et al. 2023), Narrow/Medium/Full watermarking (Bahng et al. 2022).",
+     "metrics": "Classification accuracy (%) on test set, mean ± std across 3 seeds, average across 11 datasets."
+    },
+    {
+     "id": "E04",
+     "title": "SMM vs Baselines on ViT-B32 (Main Results)",
+     "run": "Same 11 datasets, images resized to 384×384; single A100 GPU",
+     "setup": "ILM output mapping; batch=256 (batch=64 for DTD/OxfordPets); 200 epochs; initial LR=0.001; decay=1 (no decay); 3 random seeds; SMM uses 6-layer CNN mask generator with patch size=8. UCF101 additionally tested with LR=0.01, decay=0.1.",
+     "metrics": "Classification accuracy (%) on test set, mean across 3 seeds, average across 11 datasets."
+    }
+   ],
+   "artifact": [
+    {
+     "name": "SMM full pipeline",
+     "pointer": "src/execution/smm.py",
+     "what": "SMMTransform + smm_train_step — the complete SMM forward/training pipeline evaluated against baselines."
+    },
+    {
+     "name": "VR baselines",
+     "pointer": "src/execution/baselines.py",
+     "what": "PadVR and WatermarkingVR (Narrow/Medium/Full) baseline implementations compared against SMM in Tables 1 and 2."
+    },
+    {
+     "name": "ILM label mapping",
+     "pointer": "src/execution/label_mapping.py",
+     "what": "compute_frequency_distribution / compute_label_mapping_from_frequency implementing Iterative Label Mapping (ILM), used as fout for the main results."
+    },
+    {
+     "name": "Training configuration",
+     "pointer": "src/configs/training.md",
+     "what": "Full hyperparameter record (LR, batch size, epochs, seeds) used to reproduce the Table 1 / Table 2 runs."
+    }
+   ],
+   "built_on": [
+    {
+     "rw_id": "RW02",
+     "name": "Bahng et al., 2022 (Watermarking VR)",
+     "relation_raw": "baseline"
+    },
+    {
+     "rw_id": "RW03",
+     "name": "Chen et al., 2023 (ILM / Understanding Visual Prompting)",
+     "relation_raw": "imports"
+    },
+    {
+     "rw_id": "RW04",
+     "name": "Tsai et al., 2020 (Reprogramming Black-Box Models)",
+     "relation_raw": "baseline"
+    },
+    {
+     "rw_id": "RW06",
+     "name": "He et al., 2016 (ResNet)",
+     "relation_raw": "imports"
+    },
+    {
+     "rw_id": "RW07",
+     "name": "Dosovitskiy et al., 2020 (ViT)",
+     "relation_raw": "imports"
+    },
+    {
+     "rw_id": "RW11",
+     "name": "Wang et al., 2022 (Watermarking for OOD Detection)",
+     "relation_raw": "baseline"
+    },
+    {
+     "rw_id": "RW12",
+     "name": "Van der Maaten & Hinton, 2008 (t-SNE)",
+     "relation_raw": "imports"
+    }
+   ],
+   "rejected_here": [
+    {
+     "rw_id": "RW08",
+     "name": "Jia et al., 2022 (Visual Prompt Tuning)",
+     "relation_raw": "bounds"
+    },
+    {
+     "rw_id": "RW10",
+     "name": "Hu et al., 2021 (LoRA)",
+     "relation_raw": "bounds"
+    }
+   ],
+   "concepts": [
+    "Sample-specific Multi-channel Masks"
+   ]
+  }
+ ],
+ "context": {
+  "title": "Problem Specification",
+  "summary": "The hypothesis space of sample-specific masks with a shared pattern (Fsmm) strictly contains the hypothesis space of shared-mask VR (Fshr) because any constant mask M can be recovered by a CNN with zero weights in the last layer (the bias blast spans all {0,1}^(H*W*C) values).",
+  "sections": [
+   {
+    "role": "setting",
+    "heading": "Setting",
+    "present": false,
+    "entries": []
+   },
+   {
+    "role": "observations",
+    "heading": "Observations",
+    "present": true,
+    "entries": [
+     {
+      "ent_id": "O1",
+      "inferred_id": false,
+      "ent_title": "Sample-specific mask preferences exist",
+      "text": "For the same VR method (watermarking on OxfordPets via ImageNet ResNet), different images achieve their highest classification confidence under different mask types. Specifically, a Sphynx image reaches peak confidence with medium watermarking (67.3%), Abyssinian with full watermarking (77.1%), and Bengal with narrow watermarking (70.4%). Evidence: Figure 1 in the paper; qualitative demonstration with three cat images across three mask configurations. Implication: No single shared mask is simultaneously optimal for all samples; the ideal mask location is image-dependent.",
+      "unstructured": false,
+      "fields": [
+       {
+        "label": "Statement",
+        "value": "For the same VR method (watermarking on OxfordPets via ImageNet ResNet), different images achieve their highest classification confidence under different mask types. Specifically, a Sphynx image reaches peak confidence with medium watermarking (67.3%), Abyssinian with full watermarking (77.1%), and Bengal with narrow watermarking (70.4%)."
+       },
+       {
+        "label": "Evidence",
+        "value": "Figure 1 in the paper; qualitative demonstration with three cat images across three mask configurations."
+       },
+       {
+        "label": "Implication",
+        "value": "No single shared mask is simultaneously optimal for all samples; the ideal mask location is image-dependent."
+       }
+      ],
+      "refs": []
+     },
+     {
+      "ent_id": "O2",
+      "inferred_id": false,
+      "ent_title": "Shared masks cause positive loss changes for some training samples",
+      "text": "When training VR with a shared all-one matrix mask (full watermarking) on OxfordPets/ImageNet, the distribution of [final loss – initial loss] contains a substantial positive portion (red in Figure 2), meaning some samples' training loss actually increases after optimization. In contrast, finetuning all parameters results in loss decreases for all samples.",
+      "unstructured": false,
+      "fields": [
+       {
+        "label": "Statement",
+        "value": "When training VR with a shared all-one matrix mask (full watermarking) on OxfordPets/ImageNet, the distribution of [final loss – initial loss] contains a substantial positive portion (red in Figure 2), meaning some samples' training loss actually increases after optimization. In contrast, finetuning all parameters results in loss decreases for all samples."
+       },
+       {
+        "label": "Evidence",
+        "value": "Figure 2 in the paper; distribution plot of per-sample loss change after training."
+       },
+       {
+        "label": "Implication",
+        "value": "Shared masks constrain the hypothesis space so severely that the global optimum for the shared δ necessarily worsens individual sample losses."
+       }
+      ],
+      "refs": []
+     },
+     {
+      "ent_id": "O3",
+      "inferred_id": false,
+      "ent_title": "SMM adds negligible parameters relative to pre-trained model",
+      "text": "The mask generator fmask adds only 26,499 parameters for ResNet-18/50 (0.23% and 0.10% of model parameters respectively) and 102,339 parameters for ViT-B32 (0.12% of model parameters). These constitute only 17.60% (ResNet) and 23.13% (ViT) of the reprogramming pattern size.",
+      "unstructured": false,
+      "fields": [
+       {
+        "label": "Statement",
+        "value": "The mask generator fmask adds only 26,499 parameters for ResNet-18/50 (0.23% and 0.10% of model parameters respectively) and 102,339 parameters for ViT-B32 (0.12% of model parameters). These constitute only 17.60% (ResNet) and 23.13% (ViT) of the reprogramming pattern size."
+       },
+       {
+        "label": "Evidence",
+        "value": "Table 4 in the paper."
+       },
+       {
+        "label": "Implication",
+        "value": "SMM's additional estimation error is negligible relative to the reduction in approximation error."
+       }
+      ],
+      "refs": []
+     },
+     {
+      "ent_id": "O4",
+      "inferred_id": false,
+      "ent_title": "VR fails on fine-grained recognition tasks",
+      "text": "On StanfordCars (196 classes), all input VR methods achieve below 10% accuracy, far below random chance for subtle appearance differentiation.",
+      "unstructured": false,
+      "fields": [
+       {
+        "label": "Statement",
+        "value": "On StanfordCars (196 classes), all input VR methods achieve below 10% accuracy, far below random chance for subtle appearance differentiation."
+       },
+       {
+        "label": "Evidence",
+        "value": "Table 12 in the paper."
+       },
+       {
+        "label": "Implication",
+        "value": "SMM cannot rescue VR when the fundamental task structure is incompatible with input-space perturbations."
+       }
+      ],
+      "refs": []
+     }
+    ]
+   },
+   {
+    "role": "gaps",
+    "heading": "Gaps",
+    "present": true,
+    "entries": [
+     {
+      "ent_id": "G1",
+      "inferred_id": false,
+      "ent_title": "Lack of sample-level adaptation in existing VR methods",
+      "text": "All prior VR methods (Elsayed et al. 2018; Tsai et al. 2020; Bahng et al. 2022; Chen et al. 2023) use a single pre-defined binary mask M ∈ {0,1}^dP shared across all training and test samples.",
+      "unstructured": false,
+      "fields": [
+       {
+        "label": "Statement",
+        "value": "All prior VR methods (Elsayed et al. 2018; Tsai et al. 2020; Bahng et al. 2022; Chen et al. 2023) use a single pre-defined binary mask M ∈ {0,1}^dP shared across all training and test samples."
+       },
+       {
+        "label": "Caused by",
+        "value": "O1, O2"
+       },
+       {
+        "label": "Existing attempts",
+        "value": "Padding-based VR (varies mask shape globally), watermarking (varies mask coverage area globally), AutoVP (scalable padding), but all maintain a globally shared mask."
+       },
+       {
+        "label": "Why they fail",
+        "value": "The hypothesis space Fshr(f'P) = {f | f(x) = f'P(r(x) + M ⊙ δ), ∀x ∈ X} is strictly smaller than what is theoretically achievable, causing higher approximation error (Theorem 4.2 + Proposition 4.3)."
+       }
+      ],
+      "refs": []
+     },
+     {
+      "ent_id": "G2",
+      "inferred_id": false,
+      "ent_title": "Binary masks miss multi-channel image structure",
+      "text": "Existing binary masks treat the three color channels identically, even though different datasets have different channel-priority structure (e.g., SVHN has rich color structure, grayscale-dominated datasets do not).",
+      "unstructured": false,
+      "fields": [
+       {
+        "label": "Statement",
+        "value": "Existing binary masks treat the three color channels identically, even though different datasets have different channel-priority structure (e.g., SVHN has rich color structure, grayscale-dominated datasets do not)."
+       },
+       {
+        "label": "Caused by",
+        "value": "O1"
+       },
+       {
+        "label": "Existing attempts",
+        "value": "No prior VR work produces per-channel masks."
+       },
+       {
+        "label": "Why they fail",
+        "value": "A single-channel mask forces the same noise amplitude modulation across R, G, B channels, preventing channel-specific emphasis."
+       }
+      ],
+      "refs": []
+     }
+    ]
+   },
+   {
+    "role": "insight",
+    "heading": "Key Insight",
+    "present": true,
+    "entries": [
+     {
+      "ent_id": "1",
+      "inferred_id": true,
+      "ent_title": "The hypothesis space of sample-specific masks with a shared pattern (Fsmm) strictly contains the hypothesis space of shared-mask VR (Fshr)",
+      "text": "The hypothesis space of sample-specific masks with a shared pattern (Fsmm) strictly contains the hypothesis space of shared-mask VR (Fshr) because any constant mask M can be recovered by a CNN with zero weights in the last layer (the bias blast spans all {0,1}^(H*W*C) values). Therefore Errapx(Fshr) ≥ Errapx(Fsmm) by Theorem 4.2.",
+      "unstructured": false,
+      "fields": [
+       {
+        "label": "Insight",
+        "value": "The hypothesis space of sample-specific masks with a shared pattern (Fsmm) strictly contains the hypothesis space of shared-mask VR (Fshr) because any constant mask M can be recovered by a CNN with zero weights in the last layer (the bias blast spans all {0,1}^(H*W*C) values). Therefore Errapx(Fshr) ≥ Errapx(Fsmm) by Theorem 4.2."
+       },
+       {
+        "label": "Derived from",
+        "value": "O1, O2; and the PAC learning framework."
+       },
+       {
+        "label": "Enables",
+        "value": "Replacing the fixed binary mask with a lightweight CNN fmask: R^dP → R^dP that produces a distinct three-channel continuous mask per image, while retaining a shared δ to capture dataset-level statistics."
+       }
+      ],
+      "refs": []
+     }
+    ]
+   },
+   {
+    "role": "assumptions",
+    "heading": "Assumptions",
+    "present": true,
+    "entries": [
+     {
+      "ent_id": "A1",
+      "inferred_id": false,
+      "ent_title": "The pre-trained model fP is fixed",
+      "text": "The pre-trained model fP is fixed (frozen) during VR training; only fin parameters (δ and ϕ) are updated.",
+      "unstructured": true,
+      "fields": [],
+      "refs": []
+     },
+     {
+      "ent_id": "A2",
+      "inferred_id": false,
+      "ent_title": "Target label space no larger than source label space",
+      "text": "The target label space is no larger than the source label space: |YT| ≤ |YP|.",
+      "unstructured": true,
+      "fields": [],
+      "refs": []
+     },
+     {
+      "ent_id": "A3",
+      "inferred_id": false,
+      "ent_title": "Input domain gap must be bridgeable through input-space perturbations",
+      "text": "The input domain gap between source and target is bridgeable through input-space perturbations (VR fails on fine-grained tasks like StanfordCars where this gap is too structured).",
+      "unstructured": true,
+      "fields": [],
+      "refs": []
+     },
+     {
+      "ent_id": "A4",
+      "inferred_id": false,
+      "ent_title": "Estimation error added by fmask does not offset approximation error reduction",
+      "text": "The estimation error added by fmask's lightweight CNN does not offset the approximation error reduction (supported by &lt;0.23% parameter overhead and empirical overfitting analysis in Appendix D.3).",
+      "unstructured": true,
+      "fields": [],
+      "refs": []
+     }
+    ]
+   }
+  ]
+ },
+ "glossary": {
+  "title": "Concepts",
+  "groups": [],
+  "terms": [
+   {
+    "term_id": "G01",
+    "name": "Visual Reprogramming",
+    "aliases": [
+     "VR"
+    ],
+    "group": "",
+    "definition": "A prompting technique that fixes a pre-trained model fP and modifies the input space by adding a learnable noise pattern δ to target images. The learned input transformation fin maps target domain images to the source domain space without modifying model parameters. Also called adversarial reprogramming.",
+    "fields": [
+     {
+      "label": "Notation",
+      "value": "fin(xi|θ) : X^T → X^P"
+     },
+     {
+      "label": "Boundary conditions",
+      "value": "Applies when |YT| ≤ |YP| (target label space no larger than source). Fails on fine-grained tasks where input-space perturbations cannot bridge domain gaps (e.g., StanfordCars with 196 fine-grained classes)."
+     }
+    ],
+    "related": [
+     "G09",
+     "G10",
+     "G02"
+    ],
+    "refs": []
+   },
+   {
+    "term_id": "G02",
+    "name": "Sample-specific Multi-channel Masks",
+    "aliases": [
+     "SMM"
+    ],
+    "group": "",
+    "definition": "A VR framework where, for each input image xi, a distinct three-channel continuous mask fmask(r(xi)|ϕ) ∈ R^dP is generated by a lightweight CNN parameterized by ϕ. The mask is multiplied element-wise with the shared learnable pattern δ and added to the resized image r(xi). The parameters ϕ (CNN) and δ (pattern) are jointly optimized.",
+    "fields": [
+     {
+      "label": "Notation",
+      "value": "fin(xi|ϕ, δ) = r(xi) + δ ⊙ fmask(r(xi)|ϕ)"
+     },
+     {
+      "label": "Boundary conditions",
+      "value": "The mask generator CNN output is in R^dP (not restricted to {0,1}^dP like a binary mask). If the number of pooling layers l > 0, a patch-wise interpolation module is required to upsample the mask from H/2^l × W/2^l back to H × W."
+     }
+    ],
+    "related": [
+     "G01",
+     "G03",
+     "G04"
+    ],
+    "refs": []
+   },
+   {
+    "term_id": "G03",
+    "name": "Mask Generator Module",
+    "aliases": [
+     "fmask"
+    ],
+    "group": "",
+    "definition": "A lightweight CNN that takes a resized target image r(xi) as input and outputs a three-channel mask. For ResNet (input 224×224): 5-layer CNN with layers [Conv(3→8)+BN+ReLU+MaxPool, Conv(8→16)+BN+ReLU+MaxPool, Conv(16→32)+BN+ReLU+MaxPool, Conv(32→64)+BN+ReLU, Conv(64→3)]. For ViT (input 384×384): 6-layer CNN adding an extra Conv(64→128)+BN+ReLU layer before the final Conv(128→3). All convolutions use kernel=3, padding=1, stride=1; all max-pooling uses kernel=2, stride=2. This produces an output of size H/2^l × W/2^l (with l=3 Max-Pool layers for default configuration).",
+    "fields": [
+     {
+      "label": "Notation",
+      "value": "fmask(r(xi)|ϕ) : R^dP → R^dP, parameterized by ϕ ∈ Φ"
+     },
+     {
+      "label": "Boundary conditions",
+      "value": "Contains only 26,499 parameters (ResNet) or 102,339 parameters (ViT), representing &lt;0.23% of pre-trained model parameters. Initialized randomly at training start."
+     }
+    ],
+    "related": [
+     "G02",
+     "G04"
+    ],
+    "refs": []
+   },
+   {
+    "term_id": "G04",
+    "name": "Patch-wise Interpolation Module",
+    "aliases": [],
+    "group": "",
+    "definition": "A non-parametric upsampling operation that enlarges each pixel value in the CNN output mask to a 2^l × 2^l pixel patch by copying (nearest-neighbor-like). Each patch of 2^l × 2^l pixels receives the same value as the corresponding low-resolution pixel. For non-divisible cases, values are mirrored from the nearest available patch. No floating-point arithmetic is needed; the operation is purely assignment/copying, so no backpropagation gradient is required through this module.",
+    "fields": [
+     {
+      "label": "Notation",
+      "value": "Upsamples masks from ⌊H/2^l⌋ × ⌊W/2^l⌋ to H × W"
+     },
+     {
+      "label": "Boundary conditions",
+      "value": "Applied only when l > 0 (when the mask generator has at least one Max-Pool layer). Omitted when l = 0."
+     }
+    ],
+    "related": [
+     "G03",
+     "G02"
+    ],
+    "refs": []
+   },
+   {
+    "term_id": "G05",
+    "name": "Approximation Error",
+    "aliases": [],
+    "group": "",
+    "definition": "In the PAC learning framework, the approximation error of hypothesis space F on distribution D is the gap between the minimum achievable error by any function in F and the Bayes risk R*_D = ∫(1 - sup_{y∈Y} Pr(y|x)) p_X(x)dx. A smaller hypothesis space generally yields larger approximation error.",
+    "fields": [
+     {
+      "label": "Notation",
+      "value": "Errapx_D(F) = inf_{f∈F} E_{(X,Y)~D}[ℓ(f(X), Y)] - R*_D"
+     },
+     {
+      "label": "Boundary conditions",
+      "value": "Requires that F1 ⊆ F2 to prove Errapx(F1) ≥ Errapx(F2) via Theorem 4.2. Does not directly guarantee lower excess risk (which also depends on estimation error)."
+     }
+    ],
+    "related": [
+     "G06",
+     "G07"
+    ],
+    "refs": []
+   },
+   {
+    "term_id": "G06",
+    "name": "Hypothesis Space (Shared Mask) — Fshr",
+    "aliases": [
+     "Fshr"
+    ],
+    "group": "",
+    "definition": "The set of all functions achievable by shared-mask VR for a fixed pre-trained composition f'P = fout ∘ fP. The mask M is a constant binary matrix shared across all samples; δ ∈ R^dP is the trainable pattern.",
+    "fields": [
+     {
+      "label": "Notation",
+      "value": "Fshr(f'P) = {f | f(x) = f'P(r(x) + M ⊙ δ), ∀x ∈ X} where M ∈ {0,1}^dP"
+     },
+     {
+      "label": "Boundary conditions",
+      "value": "In padding-based VR, M has zeros at the image location and ones in the border region. In watermarking, M is a binary matrix with ones at effective δ locations."
+     }
+    ],
+    "related": [
+     "G07",
+     "G05"
+    ],
+    "refs": []
+   },
+   {
+    "term_id": "G07",
+    "name": "Hypothesis Space (SMM) — Fsmm",
+    "aliases": [
+     "Fsmm"
+    ],
+    "group": "",
+    "definition": "The set of all functions achievable by SMM for a fixed f'P. The mask is a CNN function fmask: R^dP → R^dP producing continuous values per sample, and δ ∈ R^dP is shared. Key inclusion: Fshr(f'P) ⊆ Fsmm(f'P) because any constant M ∈ {0,1}^dP can be represented as a CNN output when the last layer weights are zero (output is the bias blast, which spans R^dP ⊇ {0,1}^dP).",
+    "fields": [
+     {
+      "label": "Notation",
+      "value": "Fsmm(f'P) = {f | f(x) = f'P(r(x) + fmask(r(x)) ⊙ δ), ∀x ∈ X}"
+     },
+     {
+      "label": "Boundary conditions",
+      "value": "Requires fmask to be a CNN with appropriate kernel/padding so output size matches input size."
+     }
+    ],
+    "related": [
+     "G06",
+     "G02",
+     "G05"
+    ],
+    "refs": []
+   },
+   {
+    "term_id": "G08",
+    "name": "Iterative Label Mapping",
+    "aliases": [
+     "ILM"
+    ],
+    "group": "",
+    "definition": "An output mapping function that is updated every training epoch. At each epoch j, given the current fin(·|θ^(j)), it computes the frequency distribution d ∈ Z^{|YP|×|YT|} of predicted source labels for each target label, then greedily assigns the most frequent predicted source class to each target class via an injective mapping. Prevents duplicate assignments by zeroing out rows/columns after assignment.",
+    "fields": [
+     {
+      "label": "Notation",
+      "value": "f^{Ilm,(j)}_out : Y^P_sub → Y^T, updated each epoch j"
+     },
+     {
+      "label": "Boundary conditions",
+      "value": "Requires |YT| ≤ |YP|. Converges when label assignments stabilize across epochs."
+     }
+    ],
+    "related": [],
+    "refs": []
+   },
+   {
+    "term_id": "G09",
+    "name": "Watermarking VR (Bahng et al., 2022)",
+    "aliases": [],
+    "group": "",
+    "definition": "A resizing-based VR method that upsamples target images to the source image size r(xi), then adds a learnable pattern δ modulated by a shared binary mask M. The mask M can be full (all-ones), narrow (1/8 width border), or medium (1/4 image area border).",
+    "fields": [
+     {
+      "label": "Notation",
+      "value": "fin(xi) = r(xi) + M ⊙ δ where r is bilinear upsampling"
+     },
+     {
+      "label": "Boundary conditions",
+      "value": "Three variants used as baselines: Full (M = all-ones, 224×224 mask), Medium (mask width=56, quarter image area), Narrow (mask width=28, 1/8 image size)."
+     }
+    ],
+    "related": [
+     "G01",
+     "G02",
+     "G06"
+    ],
+    "refs": []
+   },
+   {
+    "term_id": "G10",
+    "name": "Padding-based VR",
+    "aliases": [],
+    "group": "",
+    "definition": "A VR method that centers the small target image within the source-resolution canvas and fills the border with learnable pattern δ (locations where M=1). The target image pixels are preserved unchanged. Used as the \"Pad\" baseline in experiments.",
+    "fields": [
+     {
+      "label": "Notation",
+      "value": "fin(xi) = [zeros | xi | zeros] + M ⊙ δ where zeros pad to source image size"
+     },
+     {
+      "label": "Boundary conditions",
+      "value": "Requires target images smaller than pre-trained model input size; only border region is modified by δ. Preserves original pixel values in the image region."
+     }
+    ],
+    "related": [
+     "G01",
+     "G09"
+    ],
+    "refs": []
+   },
+   {
+    "term_id": "G11",
+    "name": "Excess Risk",
+    "aliases": [],
+    "group": "",
+    "definition": "The total excess risk of a learning algorithm decomposes into approximation error (how well the hypothesis class can fit the best possible function) and estimation error (how well the finite-sample ERM approximates the hypothesis-space minimum). SMM's lower approximation error is argued not to be offset by increased estimation error because the CNN adds &lt;0.23% extra parameters and empirical overfitting analysis shows no significant difference in train-test gap.",
+    "fields": [
+     {
+      "label": "Notation",
+      "value": "Excess Risk = Errapx_D(F) + Errest_D(F, n)"
+     },
+     {
+      "label": "Boundary conditions",
+      "value": "Estimation error can become significant if fmask is enlarged beyond the default lightweight architecture (see Table 11 for parameter scaling experiment on EuroSAT/ResNet-18)."
+     }
+    ],
+    "related": [
+     "G05",
+     "G02"
+    ],
+    "refs": []
+   }
+  ],
+  "lexicon": {
+   "visual reprogramming": "G01",
+   "sample-specific multi-channel masks": "G02",
+   "smm": "G02",
+   "mask generator module": "G03",
+   "fmask": "G03",
+   "patch-wise interpolation module": "G04",
+   "approximation error": "G05",
+   "hypothesis space (shared mask) — fshr": "G06",
+   "fshr": "G06",
+   "hypothesis space (smm) — fsmm": "G07",
+   "fsmm": "G07",
+   "iterative label mapping": "G08",
+   "ilm": "G08",
+   "watermarking vr (bahng et al., 2022)": "G09",
+   "padding-based vr": "G10",
+   "excess risk": "G11"
+  }
+ },
+ "dependencies": {
+  "title": "Related Work / Dependencies",
+  "preamble": "",
+  "legend": [],
+  "attribution": "",
+  "entries": [
+   {
+    "rw_id": "RW01",
+    "inferred_id": false,
+    "name": "Elsayed et al., 2018 (Adversarial Reprogramming)",
+    "relation_raw": "imports",
+    "relation_norm": "imports",
+    "delta": "What changed: Original adversarial reprogramming; SMM replaces fixed binary mask M with sample-specific CNN-generated continuous masks Why: Fixed mask prevents sample-level adaptation and causes suboptimal approximation error",
+    "adopted": "The core VR paradigm of adding learnable pattern to input without modifying model; binary mask concept as the baseline Fshr",
+    "grounding": [],
+    "claims": [
+     "C01",
+     "C02"
+    ],
+    "cross_agent": false,
+    "is_footprint": false
+   },
+   {
+    "rw_id": "RW02",
+    "inferred_id": false,
+    "name": "Bahng et al., 2022 (Watermarking VR)",
+    "relation_raw": "baseline",
+    "relation_norm": "baseline",
+    "delta": "What changed: Full/Medium/Narrow watermarking uses shared all-ones or partial binary masks; SMM generates per-sample three-channel continuous masks Why: Different images prefer different mask types (Figure 1); shared mask increases approximation error",
+    "adopted": "Resizing-based input transformation r(xi) (bilinear upsampling); concept of mask coverage area (Full=all-ones baseline in SMM); δ shared across all images",
+    "grounding": [
+     {
+      "raw": "arXiv:2203.17274",
+      "kind": "arxiv",
+      "target": null
+     }
+    ],
+    "claims": [
+     "C01",
+     "C03",
+     "C04"
+    ],
+    "cross_agent": false,
+    "is_footprint": false
+   },
+   {
+    "rw_id": "RW03",
+    "inferred_id": false,
+    "name": "Chen et al., 2023 (ILM / Understanding Visual Prompting)",
+    "relation_raw": "imports",
+    "relation_norm": "imports",
+    "delta": "What changed: Proposed ILM label mapping; SMM builds on ILM and adopts the same experimental protocol (datasets, splits, hyperparameters) Why: ILM is the strongest output mapping baseline; used as fout in main SMM experiments",
+    "adopted": "ILM algorithm (Algorithm 4), dataset splits, training hyperparameters for ResNet, padding-based VR method (Pad baseline)",
+    "grounding": [],
+    "claims": [
+     "C03",
+     "C04"
+    ],
+    "cross_agent": false,
+    "is_footprint": false
+   },
+   {
+    "rw_id": "RW04",
+    "inferred_id": false,
+    "name": "Tsai et al., 2020 (Reprogramming Black-Box Models)",
+    "relation_raw": "baseline",
+    "relation_norm": "baseline",
+    "delta": "What changed: Frequency-based label mapping (FLM) for padding-based VR; SMM uses ILM for main results, FLM as secondary comparison Why: FLM is a simpler fixed mapping; SMM outperforms on all mapping strategies",
+    "adopted": "Padding-based VR structure; FLM as secondary evaluation method",
+    "grounding": [],
+    "claims": [
+     "C03"
+    ],
+    "cross_agent": false,
+    "is_footprint": false
+   },
+   {
+    "rw_id": "RW05",
+    "inferred_id": false,
+    "name": "Tsao et al., 2024 (AutoVP)",
+    "relation_raw": "extends",
+    "relation_norm": "extends",
+    "delta": "What changed: AutoVP automates the selection of padding/scaling for VR; SMM instead generates dynamic sample-specific masks Why: Automation of shared masks still doesn't address the fundamental sample-level adaptation gap",
+    "adopted": "Motivation for scalable VR approaches",
+    "grounding": [],
+    "claims": [
+     "C01"
+    ],
+    "cross_agent": false,
+    "is_footprint": false
+   },
+   {
+    "rw_id": "RW06",
+    "inferred_id": false,
+    "name": "He et al., 2016 (ResNet)",
+    "relation_raw": "imports",
+    "relation_norm": "imports",
+    "delta": "What changed: SMM uses ResNet-18 and ResNet-50 as frozen pre-trained classifiers; CNN architecture design for fmask was inspired by ResNet's localized visual perception Why: CNNs efficiently capture local visual patterns with fewer parameters than MLPs or ViTs",
+    "adopted": "ResNet architecture as pre-trained backbone; rationale for using CNN (not MLP) as mask generator",
+    "grounding": [],
+    "claims": [
+     "C03"
+    ],
+    "cross_agent": false,
+    "is_footprint": false
+   },
+   {
+    "rw_id": "RW07",
+    "inferred_id": false,
+    "name": "Dosovitskiy et al., 2020 (ViT)",
+    "relation_raw": "imports",
+    "relation_norm": "imports",
+    "delta": "What changed: SMM applies to ViT-B32 with a 6-layer CNN mask generator adapted for 384×384 input; standard ViT prompting methods add tokens before/within encoder layers Why: SMM is model-agnostic (applies to both CNN and transformer architectures)",
+    "adopted": "ViT-B32 as pre-trained backbone for evaluation",
+    "grounding": [
+     {
+      "raw": "arXiv:2010.11929",
+      "kind": "arxiv",
+      "target": null
+     }
+    ],
+    "claims": [
+     "C04"
+    ],
+    "cross_agent": false,
+    "is_footprint": false
+   },
+   {
+    "rw_id": "RW08",
+    "inferred_id": false,
+    "name": "Jia et al., 2022 (Visual Prompt Tuning)",
+    "relation_raw": "bounds",
+    "relation_norm": "bounds",
+    "delta": "What changed: VPT adds prompt tokens alongside image embeddings; SMM modifies the raw pixel input before the model. SMM is model-agnostic while VPT is ViT-specific Why: SMM's input-space approach avoids architecture-specific modifications",
+    "adopted": "Motivation for parameter-efficient prompting methods",
+    "grounding": [],
+    "claims": [
+     "C04"
+    ],
+    "cross_agent": false,
+    "is_footprint": false
+   },
+   {
+    "rw_id": "RW09",
+    "inferred_id": false,
+    "name": "Kearns & Vazirani, 1994 (PAC Learning)",
+    "relation_raw": "imports",
+    "relation_norm": "imports",
+    "delta": "What changed: SMM uses PAC learning framework to formally define approximation error and prove Proposition 4.3 Why: Provides theoretical grounding for the claim that larger hypothesis spaces yield lower approximation error",
+    "adopted": "Approximation error definition (Definition 4.1), Theorem 4.2 proof structure",
+    "grounding": [],
+    "claims": [
+     "C02"
+    ],
+    "cross_agent": false,
+    "is_footprint": false
+   },
+   {
+    "rw_id": "RW10",
+    "inferred_id": false,
+    "name": "Hu et al., 2021 (LoRA)",
+    "relation_raw": "bounds",
+    "relation_norm": "bounds",
+    "delta": "What changed: LoRA injects low-rank adapters into model layers; SMM modifies the input space. Comparison (Table 13) shows SMM outperforms LoRA on low-resolution target tasks (CIFAR10/100, SVHN, GTSRB) while being comparable on 128×128 tasks Why: VR handles domain shift in input resolution better than LoRA because it operates in the input space",
+    "adopted": "Comparison baseline; motivation for VR as an orthogonal approach to finetuning",
+    "grounding": [],
+    "claims": [
+     "C03",
+     "C04"
+    ],
+    "cross_agent": false,
+    "is_footprint": false
+   },
+   {
+    "rw_id": "RW11",
+    "inferred_id": false,
+    "name": "Wang et al., 2022 (Watermarking for OOD Detection)",
+    "relation_raw": "baseline",
+    "relation_norm": "baseline",
+    "delta": "What changed: Used watermarking for out-of-distribution detection; SMM improves on this by making masks sample-specific for better classification accuracy Why: Watermarking is the representative resizing-based VR method used as the \"Full\" baseline",
+    "adopted": "Full watermarking as the primary resizing-based baseline",
+    "grounding": [],
+    "claims": [
+     "C01",
+     "C03"
+    ],
+    "cross_agent": false,
+    "is_footprint": false
+   },
+   {
+    "rw_id": "RW12",
+    "inferred_id": false,
+    "name": "Van der Maaten & Hinton, 2008 (t-SNE)",
+    "relation_raw": "imports",
+    "relation_norm": "imports",
+    "delta": "What changed: Used t-SNE to visualize feature space quality for SMM vs baselines; not a baseline method itself Why: Qualitative validation that SMM improves class separation in the feature space",
+    "adopted": "t-SNE visualization methodology for feature space analysis (Figure 6)",
+    "grounding": [],
+    "claims": [
+     "C03"
+    ],
+    "cross_agent": false,
+    "is_footprint": false
+   }
+  ],
+  "footprint": []
+ },
+ "recipes": {
+  "title": "Solution",
+  "files": [
+   {
+    "file": "algorithm.md",
+    "role": "algorithm",
+    "file_title": "Algorithm",
+    "sections": [
+     {
+      "sec_id": "",
+      "heading": "Mathematical Formulation",
+      "kind": "math",
+      "markdown": "",
+      "steps": [],
+      "fields": [],
+      "code": "### Model Reprogramming Objective (General)\n$$\\min_{\\theta \\in \\Theta, \\omega \\in \\Omega} \\sum_{i=1}^n \\ell\\left(f_\\text{out}\\left(f_P\\left(f_\\text{in}(x_i^T | \\theta)\\right) | Y^P_\\text{sub}, \\omega\\right), y_i^T\\right)$$\n\n### SMM Input Transformation\n$$f_\\text{in}(x_i | \\varphi, \\delta) = r(x_i) + \\delta \\odot f_\\text{mask}(r(x_i) | \\varphi)$$\n\nwhere:\n- $r : \\mathcal{X}^T \\to \\mathbb{R}^{d_P}$ is bilinear upsampling\n- $f_\\text{mask} : \\mathbb{R}^{d_P} \\to \\mathbb{R}^{d_P}$ is the CNN mask generator with parameters $\\varphi$\n- $\\delta \\in \\mathbb{R}^{d_P}$ is the shared learnable pattern\n- $\\odot$ denotes element-wise (Hadamard) product\n\n### SMM Training Objective\n$$\\arg\\min_{\\varphi \\in \\Phi, \\delta \\in \\mathbb{R}^{d_P}} \\mathbb{E}_{(x_i, y_i) \\sim D_T}\\left[\\ell\\left(f_\\text{out}\\left(f_P\\left(r(x_i) + \\delta \\odot f_\\text{mask}(r(x_i)|\\varphi)\\right)\\right), y_i\\right)\\right]$$\n\n### Approximation Error Definition\n$$\\text{Err}^\\text{apx}_D(\\mathcal{F}) = \\inf_{f \\in \\mathcal{F}} \\mathbb{E}_{(X,Y) \\sim D}[\\ell(f(X), Y)] - R^*_D$$\n\nwhere $R^*_D = \\int \\left(1 - \\sup_{y \\in \\mathcal{Y}} \\Pr(y|x)\\right) p_X(x)\\, dx$ is the Bayes risk.\n\n### Theorem 4.2 (Approximation Error Monotonicity)\nIf $\\mathcal{F}_1 \\subseteq \\mathcal{F}_2$, then $\\text{Err}^\\text{apx}_D(\\mathcal{F}_1) \\geq \\text{Err}^\\text{apx}_D(\\mathcal{F}_2)$.\n\n### Proposition 4.3 (SMM Lower Approximation Error)\n$\\mathcal{F}_\\text{shr}(f'_P) \\subseteq \\mathcal{F}_\\text{smm}(f'_P)$, therefore $\\text{Err}^\\text{apx}_{D_T}(\\mathcal{F}_\\text{shr}(f'_P)) \\geq \\text{Err}^\\text{apx}_{D_T}(\\mathcal{F}_\\text{smm}(f'_P))$.\n\nProof sketch: Any constant mask $M \\in \\{0,1\\}^{d_P}$ can be represented as a CNN output with zero last-layer weights (output = bias $b_\\text{last}$, and $b_\\text{last} \\in \\mathbb{R}^{d_P} \\supseteq \\{0,1\\}^{d_P}$).",
+      "text": "### Model Reprogramming Objective (General)\n$$\\min_{\\theta \\in \\Theta, \\omega \\in \\Omega} \\sum_{i=1}^n \\ell\\left(f_\\text{out}\\left(f_P\\left(f_\\text{in}(x_i^T | \\theta)\\right) | Y^P_\\text{sub}, \\omega\\right), y_i^T\\right)$$\n\n### SMM Input Transformation\n$$f_\\text{in}(x_i | \\varphi, \\delta) = r(x_i) + \\delta \\odot f_\\text{mask}(r(x_i) | \\varphi)$$\n\nwhere:\n- $r : \\mathcal{X}^T \\to \\mathbb{R}^{d_P}$ is bilinear upsampling\n- $f_\\text{mask} : \\mathbb{R}^{d_P} \\to \\mathbb{R}^{d_P}$ is the CNN mask generator with parameters $\\varphi$\n- $\\delta \\in \\mathbb{R}^{d_P}$ is the shared learnable pattern\n- $\\odot$ denotes element-wise (Hadamard) product\n\n### SMM Training Objective\n$$\\arg\\min_{\\varphi \\in \\Phi, \\delta \\in \\mathbb{R}^{d_P}} \\mathbb{E}_{(x_i, y_i) \\sim D_T}\\left[\\ell\\left(f_\\text{out}\\left(f_P\\left(r(x_i) + \\delta \\odot f_\\text{mask}(r(x_i)|\\varphi)\\right)\\right), y_i\\right)\\right]$$\n\n### Approximation Error Definition\n$$\\text{Err}^\\text{apx}_D(\\mathcal{F}) = \\inf_{f \\in \\mathcal{F}} \\mathbb{E}_{(X,Y) \\sim D}[\\ell(f(X), Y)] - R^*_D$$\n\nwhere $R^*_D = \\int \\left(1 - \\sup_{y \\in \\mathcal{Y}} \\Pr(y|x)\\right) p_X(x)\\, dx$ is the Bayes risk.\n\n### Theorem 4.2 (Approximation Error Monotonicity)\nIf $\\mathcal{F}_1 \\subseteq \\mathcal{F}_2$, then $\\text{Err}^\\text{apx}_D(\\mathcal{F}_1) \\geq \\text{Err}^\\text{apx}_D(\\mathcal{F}_2)$.\n\n### Proposition 4.3 (SMM Lower Approximation Error)\n$\\mathcal{F}_\\text{shr}(f'_P) \\subseteq \\mathcal{F}_\\text{smm}(f'_P)$, therefore $\\text{Err}^\\text{apx}_{D_T}(\\mathcal{F}_\\text{shr}(f'_P)) \\geq \\text{Err}^\\text{apx}_{D_T}(\\mathcal{F}_\\text{smm}(f'_P))$.\n\nProof sketch: Any constant mask $M \\in \\{0,1\\}^{d_P}$ can be represented as a CNN output with zero last-layer weights (output = bias $b_\\text{last}$, and $b_\\text{last} \\in \\mathbb{R}^{d_P} \\supseteq \\{0,1\\}^{d_P}$).",
+      "warn": "",
+      "refs": []
+     },
+     {
+      "sec_id": "",
+      "heading": "Algorithm 1: Visual Reprogramming with SMM",
+      "kind": "code",
+      "markdown": "",
+      "steps": [],
+      "fields": [],
+      "code": "Input:  Pre-trained model fP\n        Loss function ℓ\n        Label-mapping function f_out^(j) for iteration j (ILM)\n        Target domain training data {(xi, yi)}_{i=1}^n\n        Maximum iterations E = 200\n        Learning rates α1 (for δ), α2 (for ϕ)\n\nOutput: Optimal δ*, ϕ*\n\nInitialize: ϕ ← random; δ ← 0^dP\n\nfor j = 1 to E do\n  # Step 1: Update ILM label mapping using current fin\n  Compute frequency distribution d using Algorithm 2\n  Update f_out^(j) using Algorithm 4\n\n  # Step 2: Forward pass with SMM\n  for each batch {(xi, yi)} do\n    r_i ← bilinear_upsample(xi)          # resize to dP\n    m_i ← CNN_fmask(r_i; ϕ)              # mask generator: → H/2^l × W/2^l × 3\n    M_i ← patch_wise_interpolate(m_i, l) # upsample: → H × W × 3\n    fin_i ← r_i + δ ⊙ M_i               # apply mask\n    logits_i ← fP(fin_i)                 # frozen model\n    ŷ_i ← f_out^(j)(logits_i)           # label mapping\n\n  # Step 3: Compute loss and update\n  L(δ, ϕ) ← (1/n) Σ ℓ(ŷ_i, yi)\n  δ ← δ - α1 · ∇_δ L(δ, ϕ)\n  ϕ ← ϕ - α2 · ∇_ϕ L(δ, ϕ)\nend for\n\nreturn δ*, ϕ*",
+      "text": "Input:  Pre-trained model fP\n        Loss function ℓ\n        Label-mapping function f_out^(j) for iteration j (ILM)\n        Target domain training data {(xi, yi)}_{i=1}^n\n        Maximum iterations E = 200\n        Learning rates α1 (for δ), α2 (for ϕ)\n\nOutput: Optimal δ*, ϕ*\n\nInitialize: ϕ ← random; δ ← 0^dP\n\nfor j = 1 to E do\n  # Step 1: Update ILM label mapping using current fin\n  Compute frequency distribution d using Algorithm 2\n  Update f_out^(j) using Algorithm 4\n\n  # Step 2: Forward pass with SMM\n  for each batch {(xi, yi)} do\n    r_i ← bilinear_upsample(xi)          # resize to dP\n    m_i ← CNN_fmask(r_i; ϕ)              # mask generator: → H/2^l × W/2^l × 3\n    M_i ← patch_wise_interpolate(m_i, l) # upsample: → H × W × 3\n    fin_i ← r_i + δ ⊙ M_i               # apply mask\n    logits_i ← fP(fin_i)                 # frozen model\n    ŷ_i ← f_out^(j)(logits_i)           # label mapping\n\n  # Step 3: Compute loss and update\n  L(δ, ϕ) ← (1/n) Σ ℓ(ŷ_i, yi)\n  δ ← δ - α1 · ∇_δ L(δ, ϕ)\n  ϕ ← ϕ - α2 · ∇_ϕ L(δ, ϕ)\nend for\n\nreturn δ*, ϕ*",
+      "warn": "",
+      "refs": []
+     },
+     {
+      "sec_id": "",
+      "heading": "Algorithm 2: Frequency Distribution Computation",
+      "kind": "code",
+      "markdown": "",
+      "steps": [],
+      "fields": [],
+      "code": "Input:  Target training set {(xi^T, yi^T)}_{i=1}^n\n        Current fin(·|θ), pre-trained model fP\n\nOutput: Frequency distribution matrix d ∈ Z^{|YP|×|YT|}\n\nd ← 0^{|YP|×|YT|}\nfor i = 1...n do\n  ŷ_i^P ← fP(fin(xi^T | θ))\n  d[ŷ_i^P, yi^T] ← d[ŷ_i^P, yi^T] + 1\nend for\nreturn d",
+      "text": "Input:  Target training set {(xi^T, yi^T)}_{i=1}^n\n        Current fin(·|θ), pre-trained model fP\n\nOutput: Frequency distribution matrix d ∈ Z^{|YP|×|YT|}\n\nd ← 0^{|YP|×|YT|}\nfor i = 1...n do\n  ŷ_i^P ← fP(fin(xi^T | θ))\n  d[ŷ_i^P, yi^T] ← d[ŷ_i^P, yi^T] + 1\nend for\nreturn d",
+      "warn": "",
+      "refs": []
+     },
+     {
+      "sec_id": "",
+      "heading": "Algorithm 4 (ILM): Iterative Label Mapping",
+      "kind": "code",
+      "markdown": "",
+      "steps": [],
+      "fields": [],
+      "code": "Input:  YP, YT, training set, fP, total iterations E, lr α\n\nOutput: f_out^Ilm,(j) for iteration j\n\nfor j = 1...E do\n  # Compute frequency distribution with current fin(·|θ^(j))\n  d ← Algorithm2(training set, fin(·|θ^(j)))\n\n  # Greedily assign source labels to target labels\n  YP_sub ← ∅\n  f_out^(j) ← 0\n  while |YP_sub| &lt; |YT| do\n    (yP*, yT*) ← argmax_{yP, yT} d[yP, yT]\n    YP_sub ← YP_sub ∪ {yP*}\n    f_out^(j)(yP*) ← yT*\n    d[yP*, :] ← 0    # prevent duplicate source assignment\n    d[:, yT*] ← 0    # prevent duplicate target assignment\n  end while\n\n  # Train fin for epoch j\n  θ^(j+1) ← θ^(j) - α · ∇_θ (1/n) Σ ℓ(f_out^(j)(fP(fin(xi|θ^(j)))), yi)\nend for",
+      "text": "Input:  YP, YT, training set, fP, total iterations E, lr α\n\nOutput: f_out^Ilm,(j) for iteration j\n\nfor j = 1...E do\n  # Compute frequency distribution with current fin(·|θ^(j))\n  d ← Algorithm2(training set, fin(·|θ^(j)))\n\n  # Greedily assign source labels to target labels\n  YP_sub ← ∅\n  f_out^(j) ← 0\n  while |YP_sub| &lt; |YT| do\n    (yP*, yT*) ← argmax_{yP, yT} d[yP, yT]\n    YP_sub ← YP_sub ∪ {yP*}\n    f_out^(j)(yP*) ← yT*\n    d[yP*, :] ← 0    # prevent duplicate source assignment\n    d[:, yT*] ← 0    # prevent duplicate target assignment\n  end while\n\n  # Train fin for epoch j\n  θ^(j+1) ← θ^(j) - α · ∇_θ (1/n) Σ ℓ(f_out^(j)(fP(fin(xi|θ^(j)))), yi)\nend for",
+      "warn": "",
+      "refs": []
+     },
+     {
+      "sec_id": "",
+      "heading": "ResNet-18/50 (5-layer, l=3 MaxPool layers)",
+      "kind": "code",
+      "markdown": "",
+      "steps": [],
+      "fields": [],
+      "code": "Input: 224×224×3\nLayer 1: Conv(3→8, k=3, p=1, s=1) → BN → ReLU → MaxPool(2×2, s=2)\n         Output: 112×112×8\nLayer 2: Conv(8→16, k=3, p=1, s=1) → BN → ReLU → MaxPool(2×2, s=2)\n         Output: 56×56×16\nLayer 3: Conv(16→32, k=3, p=1, s=1) → BN → ReLU → MaxPool(2×2, s=2)\n         Output: 28×28×32\nLayer 4: Conv(32→64, k=3, p=1, s=1) → BN → ReLU\n         Output: 28×28×64\nLayer 5: Conv(64→3, k=3, p=1, s=1)\n         Output: 28×28×3  [= 224/8 × 224/8 × 3]\nTotal parameters: 26,499",
+      "text": "Input: 224×224×3\nLayer 1: Conv(3→8, k=3, p=1, s=1) → BN → ReLU → MaxPool(2×2, s=2)\n         Output: 112×112×8\nLayer 2: Conv(8→16, k=3, p=1, s=1) → BN → ReLU → MaxPool(2×2, s=2)\n         Output: 56×56×16\nLayer 3: Conv(16→32, k=3, p=1, s=1) → BN → ReLU → MaxPool(2×2, s=2)\n         Output: 28×28×32\nLayer 4: Conv(32→64, k=3, p=1, s=1) → BN → ReLU\n         Output: 28×28×64\nLayer 5: Conv(64→3, k=3, p=1, s=1)\n         Output: 28×28×3  [= 224/8 × 224/8 × 3]\nTotal parameters: 26,499",
+      "warn": "",
+      "refs": []
+     },
+     {
+      "sec_id": "",
+      "heading": "ViT-B32 (6-layer, l=3 MaxPool layers)",
+      "kind": "code",
+      "markdown": "",
+      "steps": [],
+      "fields": [],
+      "code": "Input: 384×384×3\nLayer 1: Conv(3→8, k=3, p=1, s=1) → BN → ReLU → MaxPool(2×2, s=2)\n         Output: 192×192×8\nLayer 2: Conv(8→16, k=3, p=1, s=1) → BN → ReLU → MaxPool(2×2, s=2)\n         Output: 96×96×16\nLayer 3: Conv(16→32, k=3, p=1, s=1) → BN → ReLU → MaxPool(2×2, s=2)\n         Output: 48×48×32\nLayer 4: Conv(32→64, k=3, p=1, s=1) → BN → ReLU\n         Output: 48×48×64\nLayer 5: Conv(64→128, k=3, p=1, s=1) → BN → ReLU\n         Output: 48×48×128\nLayer 6: Conv(128→3, k=3, p=1, s=1)\n         Output: 48×48×3  [= 384/8 × 384/8 × 3]\nTotal parameters: 102,339",
+      "text": "Input: 384×384×3\nLayer 1: Conv(3→8, k=3, p=1, s=1) → BN → ReLU → MaxPool(2×2, s=2)\n         Output: 192×192×8\nLayer 2: Conv(8→16, k=3, p=1, s=1) → BN → ReLU → MaxPool(2×2, s=2)\n         Output: 96×96×16\nLayer 3: Conv(16→32, k=3, p=1, s=1) → BN → ReLU → MaxPool(2×2, s=2)\n         Output: 48×48×32\nLayer 4: Conv(32→64, k=3, p=1, s=1) → BN → ReLU\n         Output: 48×48×64\nLayer 5: Conv(64→128, k=3, p=1, s=1) → BN → ReLU\n         Output: 48×48×128\nLayer 6: Conv(128→3, k=3, p=1, s=1)\n         Output: 48×48×3  [= 384/8 × 384/8 × 3]\nTotal parameters: 102,339",
+      "warn": "",
+      "refs": []
+     },
+     {
+      "sec_id": "",
+      "heading": "Patch-wise Interpolation",
+      "kind": "kv",
+      "markdown": "",
+      "steps": [],
+      "fields": [
+       {
+        "label": "Input",
+        "value": "Mask of shape ⌊H/2^l⌋ × ⌊W/2^l⌋ × C"
+       },
+       {
+        "label": "Output",
+        "value": "Mask of shape H × W × C"
+       },
+       {
+        "label": "Operation",
+        "value": "For each pixel (i, j) in the low-resolution mask, copy its value to the corresponding 2^l × 2^l patch in the output. For pixels near the boundary where the patch extends beyond H or W, mirror the nearest available patch value."
+       },
+       {
+        "label": "Complexity",
+        "value": "O(H · W · C) copy operations, no arithmetic, no backpropagation required."
+       },
+       {
+        "label": "Size formula",
+        "value": "Output size per channel: ⌊H/2^l⌋ × ⌊W/2^l⌋. Each pixel is expanded to 2^l × 2^l."
+       }
+      ],
+      "code": "",
+      "text": "Input: Mask of shape ⌊H/2^l⌋ × ⌊W/2^l⌋ × C. Output: Mask of shape H × W × C. Operation: For each pixel (i,j) in the low-resolution mask, copy its value to the corresponding 2^l × 2^l patch in the output; boundary patches mirror the nearest available patch value. Complexity: O(H·W·C) copy operations, no arithmetic, no backpropagation required.",
+      "warn": "",
+      "refs": []
+     }
+    ]
+   },
+   {
+    "file": "architecture.md",
+    "role": "architecture",
+    "file_title": "System Architecture",
+    "sections": [
+     {
+      "sec_id": "",
+      "heading": "Overview",
+      "kind": "prose",
+      "markdown": "",
+      "steps": [],
+      "fields": [],
+      "code": "",
+      "text": "SMM operates as a plug-in input transformation stage placed before a fixed pre-trained classifier. The pipeline consists of five components connected sequentially.",
+      "warn": "",
+      "refs": []
+     },
+     {
+      "sec_id": "",
+      "heading": "Component Graph",
+      "kind": "code",
+      "markdown": "",
+      "steps": [],
+      "fields": [],
+      "code": "Target Image xi (X^T)\n        │\n        ▼\n[1. Resizing Function r(·)]\n        │  (bilinear upsampling: dT → dP)\n        ├──────────────────────────────────────┐\n        ▼                                       ▼\n[2. Mask Generator fmask(·|ϕ)]          r(xi) ∈ R^dP\n   (lightweight CNN, params ϕ)                  │\n        │                                       │\n        ▼                                       │\n  small mask                                    │\n  H/2^l × W/2^l × 3                            │\n        │                                       │\n        ▼                                       │\n[3. Patch-wise Interpolation]                   │\n   (if l > 0; upscales to H×W×3)               │\n        │                                       │\n        ▼                                       │\n  mask ∈ R^dP (H × W × 3)                      │\n        │                 δ ∈ R^dP              │\n        └────────┬─────────────────────┘        │\n                 ▼  (element-wise multiply)      │\n              δ ⊙ fmask(r(xi)|ϕ)                │\n                 │                              │\n                 └──────────────────────────────┘\n                           │ (add)\n                           ▼\n                    fin(xi) ∈ R^dP\n                  = r(xi) + δ ⊙ fmask(r(xi)|ϕ)\n                           │\n                           ▼\n              [4. Fixed Pre-trained Model fP]\n                (ResNet-18/50 or ViT-B32)\n                           │\n                           ▼\n                  source logits ∈ R^|YP|\n                           │\n                           ▼\n              [5. Output Label Mapping fout]\n                (ILM / FLM / RLM — no params)\n                           │\n                           ▼\n                  predicted target label ŷ^T",
+      "text": "Target Image xi (X^T)\n        │\n        ▼\n[1. Resizing Function r(·)]\n        │  (bilinear upsampling: dT → dP)\n        ├──────────────────────────────────────┐\n        ▼                                       ▼\n[2. Mask Generator fmask(·|ϕ)]          r(xi) ∈ R^dP\n   (lightweight CNN, params ϕ)                  │\n        │                                       │\n        ▼                                       │\n  small mask                                    │\n  H/2^l × W/2^l × 3                            │\n        │                                       │\n        ▼                                       │\n[3. Patch-wise Interpolation]                   │\n   (if l > 0; upscales to H×W×3)               │\n        │                                       │\n        ▼                                       │\n  mask ∈ R^dP (H × W × 3)                      │\n        │                 δ ∈ R^dP              │\n        └────────┬─────────────────────┘        │\n                 ▼  (element-wise multiply)      │\n              δ ⊙ fmask(r(xi)|ϕ)                │\n                 │                              │\n                 └──────────────────────────────┘\n                           │ (add)\n                           ▼\n                    fin(xi) ∈ R^dP\n                  = r(xi) + δ ⊙ fmask(r(xi)|ϕ)\n                           │\n                           ▼\n              [4. Fixed Pre-trained Model fP]\n                (ResNet-18/50 or ViT-B32)\n                           │\n                           ▼\n                  source logits ∈ R^|YP|\n                           │\n                           ▼\n              [5. Output Label Mapping fout]\n                (ILM / FLM / RLM — no params)\n                           │\n                           ▼\n                  predicted target label ŷ^T",
+      "warn": "",
+      "refs": []
+     },
+     {
+      "sec_id": "",
+      "heading": "Component 1: Resizing Function r(·)",
+      "kind": "kv",
+      "markdown": "",
+      "steps": [],
+      "fields": [
+       {
+        "label": "Purpose",
+        "value": "Upsamples target domain images from their native resolution to the pre-trained model's input size"
+       },
+       {
+        "label": "Input",
+        "value": "xi ∈ X^T ⊆ R^dT (e.g., 32×32×3 for CIFAR, 128×128×3 for Flowers102)"
+       },
+       {
+        "label": "Output",
+        "value": "r(xi) ∈ R^dP (224×224×3 for ResNet, 384×384×3 for ViT)"
+       },
+       {
+        "label": "Implementation",
+        "value": "Bilinear interpolation upsampling"
+       },
+       {
+        "label": "Interaction",
+        "value": "Output feeds both the mask generator (Component 2) and the final addition"
+       }
+      ],
+      "code": "",
+      "text": "Upsamples target domain images from their native resolution to the pre-trained model's input size.",
+      "warn": "",
+      "refs": []
+     },
+     {
+      "sec_id": "",
+      "heading": "Component 2: Mask Generator fmask(·|ϕ)",
+      "kind": "kv",
+      "markdown": "",
+      "steps": [],
+      "fields": [
+       {
+        "label": "Purpose",
+        "value": "Generates a sample-specific three-channel continuous mask indicating noise placement strength per pixel"
+       },
+       {
+        "label": "Input",
+        "value": "r(xi) ∈ R^dP"
+       },
+       {
+        "label": "Output",
+        "value": "Small mask of shape ⌊H/2^l⌋ × ⌊W/2^l⌋ × 3"
+       },
+       {
+        "label": "Implementation",
+        "value": "Lightweight CNN (5-layer for ResNet, 6-layer for ViT; all conv3×3 padding=1 stride=1; MaxPool2×2 stride=2). ResNet: Conv(3→8)+BN+ReLU+MaxPool → Conv(8→16)+BN+ReLU+MaxPool → Conv(16→32)+BN+ReLU+MaxPool → Conv(32→64)+BN+ReLU → Conv(64→3). ViT: Same as ResNet + extra Conv(64→128)+BN+ReLU layer, final Conv(128→3)."
+       },
+       {
+        "label": "Interaction",
+        "value": "Output feeds into patch-wise interpolation (Component 3)"
+       },
+       {
+        "label": "Key design choice",
+        "value": "3 Max-Pool layers (l=3) by default, giving output size H/8 × W/8. The three output channels enable channel-specific mask values."
+       }
+      ],
+      "code": "",
+      "text": "Generates a sample-specific three-channel continuous mask indicating noise placement strength per pixel.",
+      "warn": "",
+      "refs": []
+     },
+     {
+      "sec_id": "",
+      "heading": "Component 3: Patch-wise Interpolation",
+      "kind": "kv",
+      "markdown": "",
+      "steps": [],
+      "fields": [
+       {
+        "label": "Purpose",
+        "value": "Upscales CNN-generated masks from H/2^l × W/2^l back to H × W without floating-point derivation"
+       },
+       {
+        "label": "Input",
+        "value": "Small mask of shape ⌊H/2^l⌋ × ⌊W/2^l⌋ × 3"
+       },
+       {
+        "label": "Output",
+        "value": "Full-resolution mask of shape H × W × 3"
+       },
+       {
+        "label": "Implementation",
+        "value": "Each pixel value is replicated to fill a 2^l × 2^l patch; non-divisible edges use nearest-patch mirroring"
+       },
+       {
+        "label": "Interaction",
+        "value": "Output is multiplied with δ (the shared pattern), then added to r(xi)"
+       },
+       {
+        "label": "Key design choice",
+        "value": "Pure copy operation — no learnable parameters, no floating-point math, no backpropagation gradient required through this step. Omitted when l=0."
+       }
+      ],
+      "code": "",
+      "text": "Upscales CNN-generated masks from H/2^l × W/2^l back to H × W without floating-point derivation.",
+      "warn": "",
+      "refs": []
+     },
+     {
+      "sec_id": "",
+      "heading": "Component 4: Fixed Pre-trained Model fP",
+      "kind": "kv",
+      "markdown": "",
+      "steps": [],
+      "fields": [
+       {
+        "label": "Purpose",
+        "value": "Extracts features and produces source-domain classification logits"
+       },
+       {
+        "label": "Input",
+        "value": "fin(xi) = r(xi) + δ ⊙ fmask(r(xi)|ϕ) ∈ R^dP"
+       },
+       {
+        "label": "Output",
+        "value": "Logits ∈ R^|YP| (|YP| = 1000 for ImageNet-1K)"
+       },
+       {
+        "label": "Implementation",
+        "value": "ResNet-18, ResNet-50, or ViT-B32 (frozen; no gradient flows into these parameters)"
+       }
+      ],
+      "code": "",
+      "text": "Extracts features and produces source-domain classification logits.",
+      "warn": "",
+      "refs": []
+     },
+     {
+      "sec_id": "",
+      "heading": "Component 5: Output Label Mapping fout",
+      "kind": "kv",
+      "markdown": "",
+      "steps": [],
+      "fields": [
+       {
+        "label": "Purpose",
+        "value": "Maps predicted source labels to target labels"
+       },
+       {
+        "label": "Input",
+        "value": "Source logits subset Y^P_sub ⊆ Y^P"
+       },
+       {
+        "label": "Output",
+        "value": "Target label ŷ^T ∈ Y^T"
+       },
+       {
+        "label": "Implementation",
+        "value": "Iterative Label Mapping (ILM) — updated each epoch by computing label frequency statistics; also Frequent (FLM) and Random (RLM) variants"
+       },
+       {
+        "label": "Interaction",
+        "value": "No trainable parameters; mapping is updated externally between training epochs (for ILM)"
+       }
+      ],
+      "code": "",
+      "text": "Maps predicted source labels to target labels.",
+      "warn": "",
+      "refs": []
+     },
+     {
+      "sec_id": "",
+      "heading": "Shared Learnable Pattern δ",
+      "kind": "kv",
+      "markdown": "",
+      "steps": [],
+      "fields": [
+       {
+        "label": "Shape",
+        "value": "R^dP (224×224×3 for ResNet, 384×384×3 for ViT)"
+       },
+       {
+        "label": "Initialization",
+        "value": "Zero matrix {0}^dP"
+       },
+       {
+        "label": "Role",
+        "value": "Shared across all training samples; captures dataset-level noise structure; combined with per-sample mask for sample-specific adaptation"
+       },
+       {
+        "label": "Update rule",
+        "value": "SGD with learning rate α1 (same as ϕ: α2=α1=0.01 for ResNet, 0.001 for ViT)"
+       }
+      ],
+      "code": "",
+      "text": "Shared across all training samples; captures dataset-level noise structure; combined with per-sample mask for sample-specific adaptation.",
+      "warn": "",
+      "refs": []
+     }
+    ]
+   },
+   {
+    "file": "constraints.md",
+    "role": "constraints",
+    "file_title": "Boundary Conditions and Limitations",
+    "sections": [
+     {
+      "sec_id": "BC1",
+      "heading": "BC1: Pre-trained label space must dominate target label space",
+      "kind": "kv",
+      "markdown": "",
+      "steps": [],
+      "fields": [
+       {
+        "label": "Condition",
+        "value": "|Y^T| ≤ |Y^P|"
+       },
+       {
+        "label": "Reason",
+        "value": "Output label mapping is injective from Y^P_sub (|Y^P_sub| = |Y^T|) to Y^T; cannot map more target classes than source classes exist."
+       },
+       {
+        "label": "Impact",
+        "value": "SMM cannot be applied to target tasks with more classes than the pre-trained model."
+       }
+      ],
+      "code": "",
+      "text": "|Y^T| ≤ |Y^P| Output label mapping is injective from Y^P_sub (|Y^P_sub| = |Y^T|) to Y^T; cannot map more target classes than source classes exist. SMM cannot be applied to target tasks with more classes than the pre-trained model.",
+      "warn": "",
+      "refs": []
+     },
+     {
+      "sec_id": "BC2",
+      "heading": "BC2: Input domain must support bilinear upsampling to pre-trained input size",
+      "kind": "kv",
+      "markdown": "",
+      "steps": [],
+      "fields": [
+       {
+        "label": "Condition",
+        "value": "Target images must be upsamplable to the pre-trained model's input size (224×224 for ResNet, 384×384 for ViT)"
+       },
+       {
+        "label": "Reason",
+        "value": "r(xi) must match the expected input shape of fP"
+       },
+       {
+        "label": "Impact",
+        "value": "Downsampling (target images larger than pre-trained input) is not the focus of this paper."
+       }
+      ],
+      "code": "",
+      "text": "Target images must be upsamplable to the pre-trained model's input size (224×224 for ResNet, 384×384 for ViT) r(xi) must match the expected input shape of fP Downsampling (target images larger than pre-trained input) is not the focus of this paper.",
+      "warn": "",
+      "refs": []
+     },
+     {
+      "sec_id": "BC3",
+      "heading": "BC3: Mask generator output size must match pattern size (or patch-wise interpolation applied)",
+      "kind": "kv",
+      "markdown": "",
+      "steps": [],
+      "fields": [
+       {
+        "label": "Condition",
+        "value": "If l > 0 (any Max-Pool layers), patch-wise interpolation must be applied to align mask size with dP"
+       },
+       {
+        "label": "Reason",
+        "value": "Element-wise product δ ⊙ fmask(r(xi)|ϕ) requires both tensors to have shape dP"
+       },
+       {
+        "label": "Impact",
+        "value": "Setting l=0 removes the interpolation requirement but also removes spatial abstraction."
+       }
+      ],
+      "code": "",
+      "text": "If l > 0 (any Max-Pool layers), patch-wise interpolation must be applied to align mask size with dP Element-wise product δ ⊙ fmask(r(xi)|ϕ) requires both tensors to have shape dP Setting l=0 removes the interpolation requirement but also removes spatial abstraction.",
+      "warn": "",
+      "refs": []
+     },
+     {
+      "sec_id": "SC1",
+      "heading": "SC1: Target task must not require fine-grained appearance discrimination",
+      "kind": "kv",
+      "markdown": "",
+      "steps": [],
+      "fields": [
+       {
+        "label": "Condition",
+        "value": "VR methods (including SMM) fail when classification requires detecting subtle appearance differences at the object part level"
+       },
+       {
+        "label": "Evidence",
+        "value": "StanfordCars (196 classes) achieves &lt;10% accuracy for all VR methods including SMM"
+       },
+       {
+        "label": "Impact",
+        "value": "SMM provides no benefit over baselines when the VR paradigm fundamentally fails."
+       }
+      ],
+      "code": "",
+      "text": "VR methods (including SMM) fail when classification requires detecting subtle appearance differences at the object part level StanfordCars (196 classes) achieves &lt;10% accuracy for all VR methods including SMM SMM provides no benefit over baselines when the VR paradigm fundamentally fails.",
+      "warn": "",
+      "refs": []
+     },
+     {
+      "sec_id": "SC2",
+      "heading": "SC2: Patch size should be 8 (l=3 MaxPool layers) for the default configuration",
+      "kind": "kv",
+      "markdown": "",
+      "steps": [],
+      "fields": [
+       {
+        "label": "Condition",
+        "value": "Patch size 2^l where l=3 provides the best balance between over-fitting (small patches, l=0,1) and information loss (large patches, l=4)"
+       },
+       {
+        "label": "Evidence",
+        "value": "Figure 4 showing accuracy vs patch size across EuroSAT, Flowers102, CIFAR100, SVHN"
+       },
+       {
+        "label": "Impact",
+        "value": "Using l=0 risks overfitting; l=4 causes accuracy plateau or decline."
+       }
+      ],
+      "code": "",
+      "text": "Patch size 2^l where l=3 provides the best balance between over-fitting (small patches, l=0,1) and information loss (large patches, l=4) Figure 4 showing accuracy vs patch size across EuroSAT, Flowers102, CIFAR100, SVHN Using l=0 risks overfitting; l=4 causes accuracy plateau or decline.",
+      "warn": "",
+      "refs": [
+       {
+        "raw": "Figure 4",
+        "kind": "figure",
+        "target": null
+       }
+      ]
+     },
+     {
+      "sec_id": "SC3",
+      "heading": "SC3: The mask generator should remain lightweight (&lt; few ×10^4 parameters)",
+      "kind": "kv",
+      "markdown": "",
+      "steps": [],
+      "fields": [
+       {
+        "label": "Condition",
+        "value": "Enlarging fmask increases estimation error; at ~1M parameters (same order as pre-trained model), overfitting becomes noticeable"
+       },
+       {
+        "label": "Evidence",
+        "value": "Table 11 (EuroSAT/ResNet-18): test accuracy does not improve beyond ~92-93% even as training accuracy rises to 98%"
+       },
+       {
+        "label": "Impact",
+        "value": "The theoretical advantage of lower approximation error may be offset by higher estimation error for large fmask."
+       }
+      ],
+      "code": "",
+      "text": "Enlarging fmask increases estimation error; at ~1M parameters (same order as pre-trained model), overfitting becomes noticeable Table 11 (EuroSAT/ResNet-18): test accuracy does not improve beyond ~92-93% even as training accuracy rises to 98% The theoretical advantage of lower approximation error may be offset by higher estimation error for large fmask.",
+      "warn": "",
+      "refs": [
+       {
+        "raw": "Table 11",
+        "kind": "figure",
+        "target": null
+       }
+      ]
+     },
+     {
+      "sec_id": "SC4",
+      "heading": "SC4: DTD (texture dataset) with ResNet-18 is an exception",
+      "kind": "kv",
+      "markdown": "",
+      "steps": [],
+      "fields": [
+       {
+        "label": "Condition",
+        "value": "For texture classification tasks with relatively simple pre-trained models, watermark-style noise adversely affects texture features"
+       },
+       {
+        "label": "Evidence",
+        "value": "Padding-based method achieves 35.3% vs SMM 33.6% for ResNet-18/DTD"
+       },
+       {
+        "label": "Impact",
+        "value": "Resizing-based methods (including SMM) add noise over the entire image, interfering with texture patterns. Padding preserves original pixels."
+       }
+      ],
+      "code": "",
+      "text": "For texture classification tasks with relatively simple pre-trained models, watermark-style noise adversely affects texture features Padding-based method achieves 35.3% vs SMM 33.6% for ResNet-18/DTD Resizing-based methods (including SMM) add noise over the entire image, interfering with texture patterns. Padding preserves original pixels.",
+      "warn": "",
+      "refs": []
+     },
+     {
+      "sec_id": "SC5",
+      "heading": "SC5: ViT/EuroSAT is an exception",
+      "kind": "kv",
+      "markdown": "",
+      "steps": [],
+      "fields": [
+       {
+        "label": "Condition",
+        "value": "When target task is very simple (EuroSAT has limited task complexity) and pre-trained model is powerful (ViT), resizing-based methods overfit"
+       },
+       {
+        "label": "Evidence",
+        "value": "ViT-B32/EuroSAT: Pad=95.9% vs SMM=93.5%"
+       },
+       {
+        "label": "Impact",
+        "value": "Padding-based method preserves the overfit-resistant structure for simple satellite imagery tasks with ViT."
+       }
+      ],
+      "code": "",
+      "text": "When target task is very simple (EuroSAT has limited task complexity) and pre-trained model is powerful (ViT), resizing-based methods overfit ViT-B32/EuroSAT: Pad=95.9% vs SMM=93.5% Padding-based method preserves the overfit-resistant structure for simple satellite imagery tasks with ViT.",
+      "warn": "",
+      "refs": []
+     },
+     {
+      "sec_id": "L1",
+      "heading": "L1: UCF101 with ViT requires dataset-specific learning rate",
+      "kind": "prose",
+      "markdown": "",
+      "steps": [],
+      "fields": [],
+      "code": "",
+      "text": "The default unified LR=0.001 with γ=1 is suboptimal for ViT/UCF101; using LR=0.01 with γ=0.1 achieves 49.9% vs 42.6%. Using unified hyperparameters for fairness sacrifices some performance on this dataset.",
+      "warn": "",
+      "refs": []
+     },
+     {
+      "sec_id": "L2",
+      "heading": "L2: SMM does not improve VR when VR itself is fundamentally ineffective",
+      "kind": "prose",
+      "markdown": "",
+      "steps": [],
+      "fields": [],
+      "code": "",
+      "text": "Adding SMM on top of a failing VR paradigm (StanfordCars) does not recover performance. SMM amplifies existing VR capacity; it cannot create capacity where none exists.",
+      "warn": "",
+      "refs": []
+     },
+     {
+      "sec_id": "L3",
+      "heading": "L3: Orthogonality with finetuning is beneficial but untested at scale",
+      "kind": "prose",
+      "markdown": "",
+      "steps": [],
+      "fields": [],
+      "code": "",
+      "text": "Combining SMM with LoRA or full FC-layer finetuning shows gains (Table 14), but optimal joint training strategies are not explored in depth.",
+      "warn": "",
+      "refs": [
+       {
+        "raw": "Table 14",
+        "kind": "figure",
+        "target": null
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "file": "heuristics.md",
+    "role": "heuristics",
+    "file_title": "Heuristics",
+    "sections": [
+     {
+      "sec_id": "H01",
+      "heading": "H01: Initialize δ (shared pattern) to zero matrix",
+      "kind": "kv",
+      "markdown": "",
+      "steps": [],
+      "fields": [
+       {
+        "label": "Rationale",
+        "value": "Starting δ from zeros prevents the noise pattern from disrupting the pre-trained model's predictions at the beginning of training, allowing the label mapping (ILM) to first stabilize before noise is introduced. This avoids initialization bias that could destabilize early training."
+       },
+       {
+        "label": "Sensitivity",
+        "value": "high"
+       },
+       {
+        "label": "Bounds",
+        "value": "δ must be initialized to exactly {0}^dP; non-zero initialization degrades early training stability"
+       },
+       {
+        "label": "Code ref",
+        "value": "[src/execution/smm.py]"
+       },
+       {
+        "label": "Source",
+        "value": "Section 3.4, Algorithm 1 line 3"
+       }
+      ],
+      "code": "",
+      "text": "Starting δ from zeros prevents the noise pattern from disrupting the pre-trained model's predictions at the beginning of training, allowing the label mapping (ILM) to first stabilize before noise is introduced. This avoids initialization bias that could destabilize early training. high δ must be initialized to exactly {0}^dP; non-zero initialization degrades early training stability [src/execution/smm.py] Section 3.4, Algorithm 1 line 3",
+      "warn": "",
+      "refs": []
+     },
+     {
+      "sec_id": "H02",
+      "heading": "H02: Use patch size 8 (l=3 Max-Pool layers) as default",
+      "kind": "kv",
+      "markdown": "",
+      "steps": [],
+      "fields": [
+       {
+        "label": "Rationale",
+        "value": "Empirical ablation over patch sizes {1, 2, 4, 8, 16} (i.e., l ∈ {0, 1, 2, 3, 4}) shows that accuracy increases from l=0 to l=3, then plateaus or decreases at l=4. Small patches (l=0,1) cause overfitting due to too much spatial freedom; large patches (l≥4) lose spatial detail. l=3 (patch=8) balances these effects."
+       },
+       {
+        "label": "Sensitivity",
+        "value": "medium"
+       },
+       {
+        "label": "Bounds",
+        "value": "l ∈ {0, 1, 2, 3} for ResNet (5-layer CNN has at most 4 MaxPool layers, but l=4 is not recommended); l=3 is optimal across tested datasets"
+       },
+       {
+        "label": "Code ref",
+        "value": "[src/execution/smm.py]"
+       },
+       {
+        "label": "Source",
+        "value": "Section 5 \"Impact of Patch Size\", Figure 4"
+       }
+      ],
+      "code": "",
+      "text": "Empirical ablation over patch sizes {1, 2, 4, 8, 16} (i.e., l ∈ {0, 1, 2, 3, 4}) shows that accuracy increases from l=0 to l=3, then plateaus or decreases at l=4. Small patches (l=0,1) cause overfitting due to too much spatial freedom; large patches (l≥4) lose spatial detail. l=3 (patch=8) balances these effects. medium l ∈ {0, 1, 2, 3} for ResNet (5-layer CNN has at most 4 MaxPool layers, but l=4 is not recommended); l=3 is optimal across tested datasets [src/execution/smm.py] Section 5 \"Impact of Patch Size\", Figure 4",
+      "warn": "",
+      "refs": [
+       {
+        "raw": "Figure 4",
+        "kind": "figure",
+        "target": null
+       }
+      ]
+     },
+     {
+      "sec_id": "H03",
+      "heading": "H03: Use a unified learning rate schedule across all datasets for fair comparison",
+      "kind": "kv",
+      "markdown": "",
+      "steps": [],
+      "fields": [
+       {
+        "label": "Rationale",
+        "value": "For ResNet models: initial LR=0.01, decay=0.1 at epochs 100 and 145, 200 total epochs. For ViT: LR=0.001, decay=1 (no decay). While dataset-specific tuning can improve individual results (e.g., ViT/UCF101 benefits from LR=0.01), unified parameters ensure fair comparison across methods and reflect practical deployment scenarios."
+       },
+       {
+        "label": "Sensitivity",
+        "value": "medium"
+       },
+       {
+        "label": "Bounds",
+        "value": "ResNet: LR ∈ [0.001, 0.1]; ViT: LR ∈ [0.0001, 0.01] based on Table 7 search; milestones at epochs [100, 145] for ResNet"
+       },
+       {
+        "label": "Code ref",
+        "value": "[src/configs/training.md]"
+       },
+       {
+        "label": "Source",
+        "value": "Section 5, Appendix C, Tables 7-9"
+       }
+      ],
+      "code": "",
+      "text": "For ResNet models: initial LR=0.01, decay=0.1 at epochs 100 and 145, 200 total epochs. For ViT: LR=0.001, decay=1 (no decay). While dataset-specific tuning can improve individual results (e.g., ViT/UCF101 benefits from LR=0.01), unified parameters ensure fair comparison across methods and reflect practical deployment scenarios. medium ResNet: LR ∈ [0.001, 0.1]; ViT: LR ∈ [0.0001, 0.01] based on Table 7 search; milestones at epochs [100, 145] for ResNet [src/configs/training.md] Section 5, Appendix C, Tables 7-9",
+      "warn": "",
+      "refs": [
+       {
+        "raw": "Table 7",
+        "kind": "figure",
+        "target": null
+       },
+       {
+        "raw": "Table 9",
+        "kind": "figure",
+        "target": null
+       }
+      ]
+     },
+     {
+      "sec_id": "H04",
+      "heading": "H04: Use batch size 64 for small datasets (DTD, OxfordPets), 256 for others",
+      "kind": "kv",
+      "markdown": "",
+      "steps": [],
+      "fields": [
+       {
+        "label": "Rationale",
+        "value": "DTD has only 2820 training samples and OxfordPets only 2944; using batch=256 would mean very few iterations per epoch and noisy gradient estimates. Batch=64 provides more stable gradients for these smaller datasets."
+       },
+       {
+        "label": "Sensitivity",
+        "value": "low"
+       },
+       {
+        "label": "Bounds",
+        "value": "batch=64 for datasets with &lt;5000 training samples; batch=256 for datasets with ≥5000 training samples"
+       },
+       {
+        "label": "Code ref",
+        "value": "[src/configs/training.md]"
+       },
+       {
+        "label": "Source",
+        "value": "Appendix C, Table 9"
+       }
+      ],
+      "code": "",
+      "text": "DTD has only 2820 training samples and OxfordPets only 2944; using batch=256 would mean very few iterations per epoch and noisy gradient estimates. Batch=64 provides more stable gradients for these smaller datasets. low batch=64 for datasets with &lt;5000 training samples; batch=256 for datasets with ≥5000 training samples [src/configs/training.md] Appendix C, Table 9",
+      "warn": "",
+      "refs": [
+       {
+        "raw": "Table 9",
+        "kind": "figure",
+        "target": null
+       }
+      ]
+     },
+     {
+      "sec_id": "H05",
+      "heading": "H05: Apply patch-wise interpolation (not bilinear/bicubic) for mask upscaling",
+      "kind": "kv",
+      "markdown": "",
+      "steps": [],
+      "fields": [
+       {
+        "label": "Rationale",
+        "value": "Patch-wise interpolation performs only copy operations with no floating-point arithmetic, requiring 0.151×10^6 pixel accesses vs 0.602×10^6 (bilinear) and 2.408×10^6 (bicubic) for ResNet-18/50. It also avoids gradient computation through the upsampling step, simplifying backpropagation. This is especially important since upsampling is applied at every forward pass for every training sample."
+       },
+       {
+        "label": "Sensitivity",
+        "value": "low"
+       },
+       {
+        "label": "Bounds",
+        "value": "Acceptable whenever l > 0; provides ~4× speedup over bilinear and ~8× over bicubic per batch"
+       },
+       {
+        "label": "Code ref",
+        "value": "[src/execution/smm.py]"
+       },
+       {
+        "label": "Source",
+        "value": "Section 3.3, Appendix A.3, Table 5"
+       }
+      ],
+      "code": "",
+      "text": "Patch-wise interpolation performs only copy operations with no floating-point arithmetic, requiring 0.151×10^6 pixel accesses vs 0.602×10^6 (bilinear) and 2.408×10^6 (bicubic) for ResNet-18/50. It also avoids gradient computation through the upsampling step, simplifying backpropagation. This is especially important since upsampling is applied at every forward pass for every training sample. low Acceptable whenever l > 0; provides ~4× speedup over bilinear and ~8× over bicubic per batch [src/execution/smm.py] Section 3.3, Appendix A.3, Table 5",
+      "warn": "",
+      "refs": [
+       {
+        "raw": "Table 5",
+        "kind": "figure",
+        "target": null
+       }
+      ]
+     }
+    ]
+   }
+  ]
+ }
+}
+/* __ARA_DATA_END__ */
+</script>
+
+<script>
+"use strict";
+(function () {
+  const GLYPH = { question:"Q", experiment:"✦", decision:"→", dead_end:"✗", pivot:"↻", insight:"!", default:"•" };
+  const TYPES = ["question","experiment","decision","dead_end","pivot","insight"];
+
+  let DATA;
+  try {
+    // The payload sits between the BEGIN/END marker comments (kept in-file so the
+    // skill can re-inject). Strip ONLY those two named markers before parsing; the
+    // rest of textContent is pure JSON. (Marker text is not written literally here,
+    // so it stays a single injection site.)
+    var raw = document.getElementById("ara-data").textContent
+                .replace(/\/\*\s*__ARA_DATA_(?:BEGIN|END)__\s*\*\//g, "");
+    DATA = JSON.parse(raw);
+  } catch (e) {
+    document.getElementById("detail").innerHTML =
+      '<div class="none">Could not parse embedded ARA data: ' + String(e) + '</div>';
+    return;
+  }
+
+  const nodes = DATA.nodes || [];
+  const byId = new Map(nodes.map(n => [n.id, n]));
+  const kids = new Map();
+  nodes.forEach(n => kids.set(n.id, []));
+  let roots = [];
+  nodes.forEach(n => {
+    if (n.parent && byId.has(n.parent)) kids.get(n.parent).push(n.id);
+    else roots.push(n.id);
+  });
+  // Traversal order: explicit DATA.order if given, else DFS from roots.
+  let order = Array.isArray(DATA.order) && DATA.order.length ? DATA.order.filter(id => byId.has(id)) : [];
+  if (!order.length) { const seen=new Set(); const dfs=id=>{if(seen.has(id))return;seen.add(id);order.push(id);(kids.get(id)||[]).forEach(dfs)}; roots.forEach(dfs); }
+
+  const esc = s => String(s==null?"":s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  const glyph = t => GLYPH[t] || GLYPH.default;
+  const cls = t => TYPES.includes(t) ? t : "default";
+
+  // ---- header ----
+  const m = DATA.meta || {};
+  document.getElementById("h-title").textContent = m.title || "ARA Trajectory";
+  document.getElementById("h-sub").textContent =
+    [ (m.authors||[]).join(", "), m.venue, m.year ].filter(Boolean).join(" · ");
+  if (m.abstract) document.getElementById("h-abstract").textContent = m.abstract;
+  else document.getElementById("h-abstract-wrap").style.display = "none";
+
+  const ftype = document.getElementById("ftype");
+  const present = [...new Set(nodes.map(n => n.type))];
+  TYPES.concat(present.filter(t=>!TYPES.includes(t))).filter(t=>present.includes(t))
+    .forEach(t => { const o=document.createElement("option"); o.value=t; o.textContent=t; ftype.appendChild(o); });
+
+  // ---- minimal markdown-table renderer ----
+  function renderMd(md){
+    if(!md) return "";
+    const lines = String(md).split("\n");
+    let out=[], i=0;
+    while(i<lines.length){
+      if(/^\s*\|/.test(lines[i]) && i+1<lines.length && /^\s*\|?[\s:|-]+\|?\s*$/.test(lines[i+1])){
+        const row = l => l.replace(/^\s*\|/,"").replace(/\|\s*$/,"").split("|").map(c=>c.trim());
+        const head = row(lines[i]); i+=2; const body=[];
+        while(i<lines.length && /^\s*\|/.test(lines[i])){ body.push(row(lines[i])); i++; }
+        out.push('<table class="md"><thead><tr>'+head.map(h=>"<th>"+esc(h)+"</th>").join("")+
+          '</tr></thead><tbody>'+body.map(r=>"<tr>"+r.map(c=>"<td>"+esc(c)+"</td>").join("")+"</tr>").join("")+"</tbody></table>");
+      } else { if(lines[i].trim()) out.push("<div>"+esc(lines[i])+"</div>"); i++; }
+    }
+    return out.join("");
+  }
+
+  // ---- detail pane ----
+  function block(title, tag, inner, open, cls){
+    return '<details class="block'+(cls?" "+cls:"")+'"'+(open?" open":"")+'><summary>'+esc(title)+
+      (tag?'<span class="tag">'+esc(tag)+'</span>':'')+'</summary><div class="body">'+inner+'</div></details>';
+  }
+  function chips(arr, klass){ return arr&&arr.length ? '<div class="chips">'+arr.map(x=>'<span class="chip '+(klass||"")+'">'+esc(x)+'</span>').join("")+'</div>' : ""; }
+
+  function renderDetail(n){
+    const d = document.getElementById("detail");
+    let h = '<div class="dhead"><span class="badge '+cls(n.type)+'">'+esc(n.type)+'</span>'+
+      '<span class="did">'+esc(n.id)+'</span>'+
+      (n.support_level?'<span class="pill '+esc(n.support_level)+'">'+esc(n.support_level)+'</span>':'')+
+      (n.isolated?'<span class="pill iso">isolated</span>':'')+'</div>';
+    h += '<div class="dtitle">'+esc(n.title||"(untitled)")+'</div>';
+
+    // reasoning (primary, always open) — the agent's thinking IS the content of a step
+    let reason="";
+    if(n.thinking){
+      reason += '<div class="lead">'+esc(n.thinking)+'</div>';
+      if(n.body) reason += '<div class="didwhat">what it did</div><div>'+esc(n.body)+'</div>';
+    } else {
+      reason += n.body ? '<div class="lead">'+esc(n.body)+'</div>' : '<div class="empty">No description.</div>';
+    }
+    if(n.depends_on&&n.depends_on.length) reason += chips(n.depends_on.map(x=>"⇠ depends on "+x));
+    if(n.source_refs&&n.source_refs.length) reason += chips(n.source_refs, "ext");
+    if(n.built_on&&n.built_on.length) reason += chipRow("built on", n.built_on, "chip-built");
+    if(n.rejected_here&&n.rejected_here.length) reason += chipRow("rejected here", n.rejected_here, "chip-rej");
+    if(n.recipe_refs&&n.recipe_refs.length) reason += recipeChips(n.recipe_refs);
+    h += block(n.thinking?"reasoning":"what", n.type, reason, true, "reason");
+
+    // result (the grounded payload) — open
+    const r = n.result||{};
+    if((r.sources&&r.sources.length)||(r.figures&&r.figures.length)||(r.tables&&r.tables.length)||(r.data&&r.data.length)){
+      let s="";
+      (r.figures||[]).forEach(f=>{ s+='<figure><img src="'+esc(f.img)+'" alt="'+esc(f.caption||f.id)+'"/>'+
+        (f.caption?'<figcaption>'+esc(f.caption)+'</figcaption>':'')+'</figure>'; });
+      (r.tables||[]).forEach(t=>{ s+=(t.caption?'<div class="empty">'+esc(t.caption)+'</div>':'')+renderMd(t.markdown); });
+      (r.sources||[]).forEach(q=>{ s+='<div class="quote">'+esc(q.quote)+(q.ref?'<div class="ref">← '+esc(q.ref)+'</div>':'')+'</div>'; });
+      (r.data||[]).forEach(x=>{ s+='<div class="ptr">⛁ <span class="path">'+esc(x.path)+'</span>'+(x.note?' — '+esc(x.note):'')+'</div>'; });
+      h += block("result", "", s, true);
+    }
+
+    // why (claims) — supporting detail, collapsed
+    if(n.why&&n.why.length){
+      const w = n.why.map(c=>{
+        let s='<div class="claim"><h4>'+esc(c.id)+(c.title?' — '+esc(c.title):'')+'</h4>';
+        if(c.statement) s+='<div class="kv">'+esc(c.statement)+'</div>';
+        if(c.status) s+='<div class="kv"><b>status</b> <span class="status '+esc(String(c.status).toLowerCase())+'">'+esc(c.status)+'</span></div>';
+        if(c.conditions) s+='<div class="kv"><b>conditions</b> '+esc(c.conditions)+'</div>';
+        if(c.falsification) s+='<div class="kv"><b>falsified if</b> '+esc(c.falsification)+'</div>';
+        if(c.dependencies&&c.dependencies.length) s+='<div class="kv"><b>depends on</b> '+esc(c.dependencies.join(", "))+'</div>';
+        if(c.provenance) s+='<div class="kv"><span class="prov">provenance: '+esc(c.provenance)+'</span></div>';
+        return s+'</div>';
+      }).join("");
+      h += block("why", n.why.map(c=>c.id).join(" · "), w);
+    }
+
+    // how verified (experiments) — supporting detail, collapsed
+    if(n.verified_by&&n.verified_by.length){
+      const v = n.verified_by.map(e=>'<div class="claim"><h4>'+esc(e.id)+(e.title?' — '+esc(e.title):'')+'</h4>'+
+        (e.run?'<div class="kv"><b>run</b> <span class="path mono">'+esc(e.run)+'</span></div>':'')+
+        (e.setup?'<div class="kv"><b>setup</b> '+esc(e.setup)+'</div>':'')+
+        (e.metrics?'<div class="kv"><b>metrics</b> '+esc(e.metrics)+'</div>':'')+'</div>').join("");
+      h += block("how verified", n.verified_by.map(e=>e.id).join(" · "), v);
+    }
+
+    // artifact pointers (src/artifacts.md) — collapsed
+    if(n.artifact&&n.artifact.length){
+      const a = n.artifact.map(x=>'<div class="ptr">▸ <b>'+esc(x.name)+'</b> — <span class="path">'+esc(x.pointer)+'</span>'+
+        (x.what?'<div class="empty">'+esc(x.what)+'</div>':'')+'</div>').join("");
+      h += block("artifact", "pointer", a);
+    }
+
+    d.innerHTML = h;
+    if(typeof LEX!=="undefined" && LEX) linkifyConcepts(d);
+    d.scrollTop = 0;
+  }
+
+  // ---- map ----
+  let selected = null;
+  function selectNode(id){
+    if(!byId.has(id)) return;
+    selected = id;
+    document.querySelectorAll(".node").forEach(el=>el.classList.toggle("sel", el.dataset.id===id));
+    const el = document.querySelector('.node[data-id="'+CSS.escape(id)+'"]');
+    if(el) el.scrollIntoView({block:"nearest"});
+    renderDetail(byId.get(id));
+    rstat();
+  }
+
+  function nodeRow(n){
+    const row = document.createElement("div");
+    row.className = "node "+(n.type==="dead_end"?"dead":"");
+    row.dataset.id = n.id; row.dataset.type = n.type;
+    // calmer than before: one glyph + id + (quiet) cross-edge marker; the ⊕/⊘ count soup is gone.
+    row.innerHTML = '<span class="glyph '+cls(n.type)+'">'+glyph(n.type)+'</span>'+
+      '<span><span class="meta"><span class="nid">'+esc(n.id)+'</span>'+
+      (n.depends_on&&n.depends_on.length?'<span class="dep" title="depends on '+esc(n.depends_on.join(", "))+'">⇠ '+esc(n.depends_on.join(","))+'</span>':'')+
+      '</span><div class="ntitle">'+esc(n.title||n.body||"(untitled)")+'</div></span>';
+    row.addEventListener("click", ()=>selectNode(n.id));
+    // hover a node to highlight its cross-edge targets (gentler than always-on connectors)
+    if(n.depends_on&&n.depends_on.length){
+      row.addEventListener("mouseenter", ()=>n.depends_on.forEach(t=>{ const el=document.querySelector('.node[data-id="'+CSS.escape(t)+'"]'); if(el) el.classList.add("deptarget"); }));
+      row.addEventListener("mouseleave", ()=>document.querySelectorAll(".node.deptarget").forEach(el=>el.classList.remove("deptarget")));
+    }
+    return row;
+  }
+  function renderSubtree(id, container){
+    const n = byId.get(id); if(!n) return;
+    container.appendChild(nodeRow(n));
+    const cs = kids.get(id)||[];
+    if(cs.length){ const wrap=document.createElement("div"); wrap.className="kid"; cs.forEach(c=>renderSubtree(c,wrap)); container.appendChild(wrap); }
+  }
+  function renderMap(){
+    const map = document.getElementById("map"); map.innerHTML="";
+    const normalRoots = roots.filter(id=>!byId.get(id).isolated);
+    const isoRoots = roots.filter(id=>byId.get(id).isolated);
+    normalRoots.forEach(id=>renderSubtree(id, map));
+    if(isoRoots.length){
+      const box=document.createElement("div"); box.className="isobox";
+      const hdr=document.createElement("div"); hdr.className="isohdr"; hdr.textContent="isolated subtree"; box.appendChild(hdr);
+      isoRoots.forEach(id=>renderSubtree(id, box)); map.appendChild(box);
+    }
+  }
+
+  // ---- filter / search ----
+  function applyFilters(){
+    const q = document.getElementById("q").value.trim().toLowerCase();
+    const ty = document.getElementById("ftype").value;
+    const deadOnly = document.getElementById("fdead").checked;
+    let shown=0;
+    document.querySelectorAll(".node").forEach(el=>{
+      const n = byId.get(el.dataset.id);
+      const text = (n.id+" "+(n.title||"")+" "+(n.body||"")).toLowerCase();
+      const ok = (!q||text.includes(q)) && (!ty||n.type===ty) && (!deadOnly||n.type==="dead_end");
+      el.classList.toggle("dim", !ok);
+      if(ok) shown++;
+    });
+    document.getElementById("rstat").textContent = shown+" / "+nodes.length+" steps";
+  }
+  function rstat(){
+    const i = selected?order.indexOf(selected):-1;
+    document.getElementById("rstat").textContent = (i>=0?("step "+(i+1)+" / "+order.length):(nodes.length+" steps"));
+  }
+
+  // ---- replay ----
+  let timer=null;
+  function step(delta){
+    let i = selected?order.indexOf(selected):-1;
+    i = Math.max(0, Math.min(order.length-1, i+delta));
+    selectNode(order[i]);
+  }
+  function play(){
+    if(timer){ stop(); return; }
+    if(!selected) selectNode(order[0]);
+    document.getElementById("rplay").textContent="⏸ Pause";
+    timer = setInterval(()=>{
+      const i = selected?order.indexOf(selected):-1;
+      if(i>=order.length-1){ stop(); return; }
+      step(1);
+    }, 1300);
+  }
+  function stop(){ if(timer){clearInterval(timer);timer=null;} document.getElementById("rplay").textContent="▶ Replay"; }
+
+  // ======================= v1.1 enrichment layers (all inert unless present) =======================
+  const CTX = DATA.context, GLO = DATA.glossary, DEP = DATA.dependencies, REC = DATA.recipes;
+  const LAYERS = { context:CTX, glossary:GLO, dependencies:DEP, recipes:REC };
+
+  // ---- indexes (built once) ----
+  const claimToNodes = new Map();
+  nodes.forEach(n => (n.why||[]).forEach(c => { if(c&&c.id){ if(!claimToNodes.has(c.id)) claimToNodes.set(c.id,[]); claimToNodes.get(c.id).push(n.id); } }));
+  const firstNodeForClaim = id => (claimToNodes.get(id)||[])[0] || null;
+  const rwById   = new Map(((DEP&&DEP.entries)||[]).map(e => [e.rw_id, e]));
+  const termById = new Map(((GLO&&GLO.terms)||[]).map(t => [t.term_id, t]));
+  // concept "used by" (inferred) from each node's name-matched concepts[]
+  if(GLO){
+    const nameToTerm = new Map();
+    (GLO.terms||[]).forEach(t => { if(t.name) nameToTerm.set(String(t.name).toLowerCase(), t); (t.aliases||[]).forEach(a=>nameToTerm.set(String(a).toLowerCase(), t)); });
+    nodes.forEach(n => (n.concepts||[]).forEach(cn => { const t=nameToTerm.get(String(cn).toLowerCase()); if(t){ (t._used=t._used||[]).push(n.id); } }));
+  }
+
+  // ---- tiny inline-math fallback (no CDN; operates on already-escaped text, adds only safe tags) ----
+  const GK={alpha:"α",beta:"β",gamma:"γ",delta:"δ",epsilon:"ε",eta:"η",theta:"θ",kappa:"κ",lambda:"λ",mu:"μ",nu:"ν",pi:"π",rho:"ρ",sigma:"σ",tau:"τ",phi:"φ",chi:"χ",psi:"ψ",omega:"ω",Delta:"Δ",Sigma:"Σ",Omega:"Ω",Phi:"Φ",Theta:"Θ",Lambda:"Λ",Gamma:"Γ",nabla:"∇",partial:"∂",times:"×",cdot:"·",infty:"∞",approx:"≈",leq:"≤",geq:"≥",neq:"≠",to:"→",in:"∈",sum:"Σ",prod:"Π",sqrt:"√",mathbb:"",mathcal:"",mathbf:"",mathrm:"",left:"",right:""};
+  function texInner(s){
+    s=s.replace(/\\(?:mathbb|mathcal|mathbf|mathrm)\{([^{}]*)\}/g,"$1");
+    s=s.replace(/\\frac\{([^{}]*)\}\{([^{}]*)\}/g,"($1)/($2)");
+    s=s.replace(/\\([A-Za-z]+)/g,(m,w)=>GK[w]!==undefined?GK[w]:m);
+    s=s.replace(/\^\{([^{}]*)\}/g,"<sup>$1</sup>").replace(/\^([\w()+\-])/g,"<sup>$1</sup>");
+    s=s.replace(/_\{([^{}]*)\}/g,"<sub>$1</sub>").replace(/_([\w()+\-])/g,"<sub>$1</sub>");
+    return s;
+  }
+  function mathPass(escaped){
+    if(escaped.indexOf("$")<0) return escaped;
+    return escaped.replace(/\$\$([^$]+)\$\$/g,(m,x)=>'<span class="math">'+texInner(x)+'</span>')
+                  .replace(/\$([^$]+)\$/g,(m,x)=>'<span class="math">'+texInner(x)+'</span>');
+  }
+  function mtext(v){ const e=esc(v); try{ return mathPass(e); }catch(_){ return e; } }
+
+  // ---- typed-ref rendering (off-ARA pointers stay inert; in-ARA targets become jump chips) ----
+  function refUrl(rf){
+    const raw=rf.raw||"";
+    if(rf.kind==="url"){ const m=raw.match(/https?:\/\/\S+/); return m?m[0]:""; }
+    if(rf.kind==="arxiv"){ const m=raw.match(/(\d{4}\.\d{4,5})/); return m?("https://arxiv.org/abs/"+m[1]):""; }
+    if(rf.kind==="doi"){ const m=raw.match(/(10\.\d{4,}\/\S+)/); return m?("https://doi.org/"+m[1]):""; }
+    return "";
+  }
+  function refChip(rf){
+    const raw=esc(rf.raw||""), url=refUrl(rf);
+    if(url) return '<a class="chip ext" href="'+esc(url)+'" target="_blank" rel="noopener">'+raw+'</a>';
+    if(rf.target){
+      if(rf.kind==="claim")        return '<span class="chip jump" data-jump-claim="'+esc(rf.target)+'">'+raw+'</span>';
+      if(rf.kind==="node")         return '<span class="chip jump" data-jump-node="'+esc(rf.target)+'">'+raw+'</span>';
+      if(rf.kind==="concept")      return '<span class="chip jump" data-open-term="'+esc(rf.target)+'">'+raw+'</span>';
+      if(rf.kind==="related_work") return '<span class="chip jump" data-open-panel="dependencies" data-anchor="ov-'+esc(rf.target)+'">'+raw+'</span>';
+      return '<span class="chip jump" data-scroll="ov-'+esc(rf.target)+'">'+raw+'</span>';
+    }
+    const dangle=(rf.kind==="claim"||rf.kind==="related_work"||rf.kind==="concept");
+    return '<span class="chip '+(dangle?'dangle" title="referenced but not found in this ARA':'ext')+'">'+raw+'</span>';
+  }
+  function refRow(refs){ return refs&&refs.length ? '<div class="chips">'+refs.map(refChip).join("")+'</div>' : ""; }
+
+  // ---- per-node provenance chips (consumed by renderDetail) ----
+  function chipRow(label, arr, klass){
+    const cs=arr.map(x=>{
+      const txt=[x.rw_id,x.name].filter(Boolean).join(" · ")||"?";
+      const tip=x.relation_raw?(' title="'+esc(x.relation_raw)+'"'):'';
+      const op =x.rw_id?(' data-open-panel="dependencies" data-anchor="ov-'+esc(x.rw_id)+'"'):'';
+      return '<span class="chip '+klass+(x.rw_id?' jump':'')+'"'+tip+op+'>'+esc(txt)+'</span>';
+    }).join("");
+    return '<div class="chiplabel">'+esc(label)+'</div><div class="chips">'+cs+'</div>';
+  }
+  function recipeChips(arr){
+    const cs=arr.map(x=>{
+      const anchor="ov-sec-"+(x.file||"")+"-"+(x.sec_id||"");
+      return '<span class="chip chip-recipe jump" data-open-panel="recipes" data-anchor="'+esc(anchor)+'" title="'+esc((x.file||"")+(x.role?(" · "+x.role):""))+'">▦ '+esc(x.heading||x.file||"recipe")+'</span>';
+    }).join("");
+    return '<div class="chiplabel">recipe</div><div class="chips">'+cs+'</div>';
+  }
+
+  // ---- the four overlay renderers (reuse block/chips/renderMd) ----
+  function renderContext(){
+    let h=""; if(CTX.summary) h+='<div class="ribbon">'+esc(CTX.summary)+'</div>';
+    (CTX.sections||[]).forEach(sec=>{
+      let inner="";
+      if(sec.present===false){ inner='<div class="muted grey">(not specified in this ARA)</div>'; }
+      else (sec.entries||[]).forEach(en=>{
+        let c='<div class="card" id="ov-'+esc(en.ent_id||"")+'"><h4>'+(en.ent_id?'<span class="did">'+esc(en.ent_id)+'</span> ':'')+esc(en.ent_title||"")+(en.inferred_id?' <span class="sub">(pos.)</span>':'')+'</h4>';
+        if(!en.unstructured && en.fields && en.fields.length) en.fields.forEach(f=>c+='<div class="kv"><b>'+esc(f.label)+'</b> '+mtext(f.value)+'</div>');
+        else if(en.text) c+='<div class="kv">'+mtext(en.text)+'</div>';
+        if(en.unstructured) c+='<div class="sub">unstructured</div>';
+        c+=refRow(en.refs)+'</div>'; inner+=c;
+      });
+      h+=block(sec.heading||sec.role||"section", sec.role||"", inner, sec.role==="insight");
+    });
+    return h || '<div class="muted">No problem context.</div>';
+  }
+  function renderGlossary(filter){
+    const f=(filter||"").trim().toLowerCase();
+    const match=t=>!f||((t.name||"")+" "+(t.aliases||[]).join(" ")+" "+(t.definition||"")).toLowerCase().includes(f);
+    function card(t){
+      let c='<div class="card" id="ov-'+esc(t.term_id)+'"><h4>'+esc(t.name)+(t.group?' <span class="sub">'+esc(t.group)+'</span>':'')+'</h4>';
+      if(t.aliases&&t.aliases.length) c+='<div class="chips">'+t.aliases.map(a=>'<span class="chip">'+esc(a)+'</span>').join("")+'</div>';
+      if(t.definition) c+='<div class="kv">'+mtext(t.definition)+'</div>';
+      (t.fields||[]).forEach(fl=>c+='<div class="kv"><b>'+esc(fl.label)+'</b> '+mtext(fl.value)+'</div>');
+      if(t.related&&t.related.length) c+='<div class="kv"><b>related</b> '+t.related.map(r=>{const rt=termById.get(r);return '<span class="chip jump" data-open-term="'+esc(r)+'">'+esc(rt?rt.name:r)+'</span>';}).join(" ")+'</div>';
+      if(t._used&&t._used.length) c+='<div class="kv"><b>mentions</b> '+[...new Set(t._used)].map(nid=>'<span class="chip jump" data-jump-node="'+esc(nid)+'">'+esc(nid)+'</span>').join(" ")+' <span class="sub">(inferred)</span></div>';
+      return c+refRow(t.refs)+'</div>';
+    }
+    const groups=GLO.groups&&GLO.groups.length?GLO.groups:null; let h="";
+    if(groups){
+      const grouped=new Set();
+      groups.forEach(g=>{ (g.term_ids||[]).forEach(id=>grouped.add(id)); const ts=(g.term_ids||[]).map(id=>termById.get(id)).filter(Boolean).filter(match); if(ts.length) h+=block(g.name||"group", String(ts.length), ts.map(card).join(""), true); });
+      const rest=(GLO.terms||[]).filter(t=>!grouped.has(t.term_id)).filter(match);
+      if(rest.length) h+=block("other", String(rest.length), rest.map(card).join(""), true);
+    } else { const ts=(GLO.terms||[]).filter(match); h=ts.map(card).join(""); }
+    return h || '<div class="muted">No matching terms.</div>';
+  }
+  function renderDeps(filter){
+    const f=(filter||"").trim().toLowerCase(); let h="";
+    if(DEP.preamble) h+='<div class="muted">'+esc(DEP.preamble)+'</div>';
+    if(DEP.attribution) h+='<div class="ribbon">'+esc(DEP.attribution)+'</div>';
+    const ents=(DEP.entries||[]).filter(e=>!e.is_footprint).filter(e=>!f||(((e.rw_id||"")+" "+(e.name||"")+" "+(e.relation_raw||"")+" "+(e.delta||"")).toLowerCase().includes(f)));
+    ents.forEach(e=>{
+      const rn=e.relation_norm, relc=["baseline","imports","extends","bounds","refutes"].includes(rn)?rn:"neutral";
+      let c='<div class="card" id="ov-'+esc(e.rw_id||"")+'"><h4>'+(e.rw_id?'<span class="did">'+esc(e.rw_id)+'</span> ':'')+esc(e.name||"")+'</h4>';
+      c+='<div class="chips"><span class="rel '+relc+'">'+esc(e.relation_raw||rn||"related")+'</span>'+(e.cross_agent?'<span class="chip" title="other-agent provenance">↔ other-agent</span>':'')+'</div>';
+      if(e.delta) c+='<div class="kv">'+mtext(e.delta)+'</div>';
+      if(e.adopted) c+='<div class="kv"><b>adopted</b> '+esc(e.adopted)+'</div>';
+      let prov=(e.grounding||[]).map(refChip).join("");
+      (e.claims||[]).filter(id=>claimToNodes.has(id)).forEach(id=>prov+='<span class="chip jump" data-jump-claim="'+esc(id)+'">'+esc(id)+'</span>');
+      c+= prov?('<div class="kv"><b>grounding</b> '+prov+'</div>'):'<div class="muted">ungrounded</div>';
+      h+=c+'</div>';
+    });
+    if(!ents.length) h+='<div class="muted">No matching dependencies.</div>';
+    const fp=DEP.footprint||[];
+    if(fp.length) h+=block("Citation footprint", String(fp.length), fp.map(x=>'<div class="ptr"><span class="muted">'+esc(x.ref_id||"")+'</span> '+esc(x.citation||"")+'</div>').join(""), false);
+    return h;
+  }
+  function renderRecipes(){
+    let h="";
+    (REC.files||[]).forEach(file=>{
+      let inner="";
+      (file.sections||[]).forEach(sec=>{
+        let c='<div class="card" id="ov-sec-'+esc((file.file||"")+"-"+(sec.sec_id||""))+'"><h4>'+(sec.sec_id?'<span class="did">'+esc(sec.sec_id)+'</span> ':'')+esc(sec.heading||"")+'</h4>';
+        if(sec.kind==="table"&&sec.markdown) c+=renderMd(sec.markdown);
+        else if(sec.kind==="steps"&&sec.steps&&sec.steps.length) c+='<ol>'+sec.steps.map(s=>'<li>'+mtext(String(s).replace(/^\s*\d+\.\s*/,""))+'</li>').join("")+'</ol>';
+        else if(sec.kind==="kv"&&sec.fields&&sec.fields.length) sec.fields.forEach(fl=>c+='<div class="kv"><b>'+esc(fl.label)+'</b> '+mtext(fl.value)+'</div>');
+        else if(sec.kind==="code"&&sec.code) c+='<pre class="snip">'+esc(sec.code)+'</pre>';
+        else if(sec.kind==="math"&&sec.code) c+='<div class="kv math">'+mtext(sec.code)+'</div>';
+        else if(sec.text) c+='<div class="kv">'+mtext(sec.text)+'</div>';
+        if(sec.warn) c+='<div class="warn">'+esc(sec.warn)+'</div>';
+        inner+=c+refRow(sec.refs)+'</div>';
+      });
+      h+=block((file.file_title||file.file||"recipe")+(file.role?("  ·  "+file.role):""), String((file.sections||[]).length), inner, true);
+    });
+    return h || '<div class="muted">No recipe content.</div>';
+  }
+
+  // ---- overlay open/close + layerbar wiring ----
+  const ov=document.getElementById("overlay");
+  let lastTrigger=null;
+  const PANEL_RENDER={ context:renderContext, glossary:()=>renderGlossary(""), dependencies:()=>renderDeps(""), recipes:renderRecipes };
+  function hasContent(name){ const L=LAYERS[name]; if(!L) return false;
+    if(name==="context") return (L.sections||[]).length>0;
+    if(name==="glossary") return (L.terms||[]).length>0;
+    if(name==="dependencies") return (L.entries||[]).length>0||(L.footprint||[]).length>0;
+    if(name==="recipes") return (L.files||[]).length>0; return false; }
+  function panelTitle(name){ const L=LAYERS[name]||{}; return L.title || ({context:"Context",glossary:"Concepts",dependencies:"Dependencies",recipes:"Solution"}[name]); }
+  function panelCount(name){ const L=LAYERS[name]||{};
+    if(name==="glossary") return (L.terms||[]).length;
+    if(name==="dependencies") return (L.entries||[]).length;
+    if(name==="recipes") return (L.files||[]).reduce((a,f)=>a+(f.sections||[]).length,0); return 0; }
+  function openPanel(name, anchor){
+    if(!hasContent(name)) return;
+    stop(); lastTrigger=document.activeElement;
+    document.getElementById("ov-title").textContent=panelTitle(name);
+    const body=document.getElementById("ov-body"); body.innerHTML=PANEL_RENDER[name]();
+    if(LEX) linkifyConcepts(body);
+    const q=document.getElementById("ov-q");
+    if(name==="glossary"||name==="dependencies"){ q.hidden=false; q.value=""; q.dataset.panel=name; } else { q.hidden=true; }
+    ov.hidden=false;
+    if(anchor){ const el=document.getElementById(anchor); if(el) el.scrollIntoView({block:"center"}); } else body.scrollTop=0;
+    (q.hidden?document.getElementById("ov-close"):q).focus();
+  }
+  function closePanel(){ ov.hidden=true; if(lastTrigger&&lastTrigger.focus) lastTrigger.focus(); }
+  document.querySelectorAll(".lbtn").forEach(b=>{ const name=b.dataset.panel;
+    if(hasContent(name)){ b.hidden=false; const c=b.querySelector(".cnt"); if(c){ const n=panelCount(name); if(n) c.textContent=n; } b.addEventListener("click",()=>openPanel(name)); } });
+  document.getElementById("ov-q").addEventListener("input", e=>{ const p=e.target.dataset.panel, body=document.getElementById("ov-body");
+    body.innerHTML = p==="glossary"?renderGlossary(e.target.value):renderDeps(e.target.value); if(LEX) linkifyConcepts(body); });
+
+  // ---- glossary lexicon + popover ----
+  const LEX=(GLO&&GLO.lexicon&&Object.keys(GLO.lexicon).length)?(function(){
+    const surf=Object.keys(GLO.lexicon).filter(s=>s.length>=3).sort((a,b)=>b.length-a.length);
+    if(!surf.length) return null;
+    const re=s=>s.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+    return { re:new RegExp("\\b("+surf.map(re).join("|")+")\\b","i"), map:GLO.lexicon };
+  })():null;
+  const SKIP_TAGS={A:1,CODE:1,PRE:1,BUTTON:1,SCRIPT:1,STYLE:1,H4:1,H5:1,SUMMARY:1};
+  function linkifyConcepts(root){
+    if(!LEX) return;
+    const walker=document.createTreeWalker(root, NodeFilter.SHOW_TEXT, { acceptNode(t){
+      if(!t.nodeValue||!t.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+      let p=t.parentNode; while(p&&p!==root){ if(p.classList&&p.classList.contains("gterm")) return NodeFilter.FILTER_REJECT; if(SKIP_TAGS[p.tagName]) return NodeFilter.FILTER_REJECT; p=p.parentNode; }
+      return NodeFilter.FILTER_ACCEPT; } });
+    const seen=new Set(), hits=[]; let t;
+    while((t=walker.nextNode())){ const m=LEX.re.exec(t.nodeValue); if(!m) continue; const tid=LEX.map[m[1].toLowerCase()]; if(!tid||seen.has(tid)) continue; seen.add(tid); hits.push({node:t,index:m.index,len:m[1].length,tid}); }
+    hits.forEach(hp=>{ const tn=hp.node, txt=tn.nodeValue, par=tn.parentNode; if(!par) return;
+      const span=document.createElement("span"); span.className="gterm"; span.dataset.term=hp.tid; span.tabIndex=0; span.textContent=txt.slice(hp.index,hp.index+hp.len);
+      const after=document.createTextNode(txt.slice(hp.index+hp.len));
+      par.replaceChild(after,tn); par.insertBefore(span,after); par.insertBefore(document.createTextNode(txt.slice(0,hp.index)),span); });
+  }
+  const gpop=document.getElementById("gpop");
+  function gpopShow(span){ const t=termById.get(span.dataset.term); if(!t) return;
+    const def=t.definition||""; gpop.innerHTML='<h5>'+esc(t.name)+'</h5><div>'+mtext(def.slice(0,240))+(def.length>240?'…':'')+'</div><span class="gp-open" data-open-term="'+esc(t.term_id)+'">open in glossary →</span>';
+    gpop.style.display="block"; const r=span.getBoundingClientRect();
+    gpop.style.left=Math.max(6,Math.min(r.left, window.innerWidth-372))+"px"; gpop.style.top=(r.bottom+6)+"px"; }
+  function gpopHide(){ gpop.style.display="none"; }
+
+  // ---- delegated interactions for the new layers ----
+  document.addEventListener("click", e=>{
+    const el=e.target.closest&&e.target.closest("[data-close],[data-jump-node],[data-jump-claim],[data-open-panel],[data-open-term],[data-scroll]");
+    if(!el) return;
+    if(el.hasAttribute("data-close")){ closePanel(); return; }
+    if(el.dataset.jumpNode){ closePanel(); selectNode(el.dataset.jumpNode); return; }
+    if(el.dataset.jumpClaim){ const nid=firstNodeForClaim(el.dataset.jumpClaim); if(nid){ closePanel(); selectNode(nid); } return; }
+    if(el.dataset.openTerm){ openPanel("glossary","ov-"+el.dataset.openTerm); return; }
+    if(el.hasAttribute("data-open-panel")){ openPanel(el.dataset.openPanel, el.dataset.anchor||null); return; }
+    if(el.dataset.scroll){ const t=document.getElementById(el.dataset.scroll); if(t) t.scrollIntoView({block:"center"}); return; }
+  });
+  document.addEventListener("mouseover", e=>{ const g=e.target.closest&&e.target.closest(".gterm"); if(g) gpopShow(g); });
+  document.addEventListener("mouseout",  e=>{ const g=e.target.closest&&e.target.closest(".gterm"); if(g) gpopHide(); });
+  document.addEventListener("focusin",   e=>{ const g=e.target.closest&&e.target.closest(".gterm"); if(g) gpopShow(g); });
+  document.addEventListener("focusout",  e=>{ const g=e.target.closest&&e.target.closest(".gterm"); if(g) gpopHide(); });
+  window.addEventListener("scroll", gpopHide, true);
+
+  document.getElementById("q").addEventListener("input", applyFilters);
+  document.getElementById("ftype").addEventListener("change", applyFilters);
+  document.getElementById("fdead").addEventListener("change", applyFilters);
+  document.getElementById("rplay").addEventListener("click", play);
+  document.getElementById("rprev").addEventListener("click", ()=>{stop();step(-1);});
+  document.getElementById("rnext").addEventListener("click", ()=>{stop();step(1);});
+  document.addEventListener("keydown", e=>{
+    if(e.key==="Escape"){ if(!ov.hidden){ closePanel(); return; } gpopHide(); }
+    if(e.target.tagName==="INPUT"||e.target.tagName==="SELECT") return;
+    if(e.key==="ArrowLeft"){stop();step(-1);} else if(e.key==="ArrowRight"){stop();step(1);}
+    else if(e.key==="c"||e.key==="g"||e.key==="d"||e.key==="r"){ const p={c:"context",g:"glossary",d:"dependencies",r:"recipes"}[e.key]; if(hasContent(p)) openPanel(p); }
+  });
+
+  renderMap();
+  rstat();
+})();
+</script>
+</body>
+</html>

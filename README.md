@@ -12,66 +12,67 @@ Every artifact lives at `artifacts/<benchmark>/<name>/` and contains:
 | Cognitive | `logic/` | `claims.md`, `concepts.md`, `experiments.md`, `problem.md`, `related_work.md`, and `solution/` (`algorithm.md`, `architecture.md`, `constraints.md`, `heuristics.md`). Claims carry falsification criteria and proof pointers. |
 | Artifact | `src/` | Runnable code, configs, and `environment.md`. |
 | Evidence | `evidence/` | `figures/` and `tables/`, each tied back to the claims it supports. |
-| Trace | `trace/` | `exploration_tree.yaml` and `exploration_tree.html`: the research DAG, including branches that failed. |
+| Trajectory | `trajectory.html` | Self-contained interactive viewer: a clickable process map (left) plus a per-step drill-down (right) linking each step to its claim, grounded result, and code. Open in a browser. |
+| Trace | `trace/` | `exploration_tree.yaml` (the research DAG source) and `exploration_tree.html` (a tree-only view). |
 
 ## How to browse
 
 - Read any `artifacts/<benchmark>/<name>/PAPER.md` for the overview, then drill into `logic/` and `evidence/`.
-- Open a `trace/exploration_tree.html` in a browser to replay the research trajectory step by step; dead-end branches are rendered distinctly from the chosen path. (GitHub shows the HTML source inline; clone the repo or download the file to view it rendered.)
+- Open an artifact's `trajectory.html` in a browser to replay the research process step by step: a process map on the left (dead-end branches included) and a per-step drill-down on the right (what the step did, its linked claim, the grounded result, and the code pointer). (GitHub shows the HTML source inline; clone the repo or download the file to view it rendered.)
 
 ## Artifacts
 
 ### Paperbench (23)
 
-| Artifact | Title | Trace |
+| Artifact | Title | Trajectory |
 |----------|-------|-------|
-| [adaptive-pruning](artifacts/paperbench/adaptive-pruning/) | APT: Adaptive Pruning and Tuning of Pretrained Language Models for Efficient Training and Inference | [tree](artifacts/paperbench/adaptive-pruning/trace/exploration_tree.html) |
-| [all-in-one](artifacts/paperbench/all-in-one/) | All-in-one Simulation-Based Inference (Simformer) | [tree](artifacts/paperbench/all-in-one/trace/exploration_tree.html) |
-| [bam](artifacts/paperbench/bam/) | Batch and Match: Black-Box Variational Inference with a Score-Based Divergence | [tree](artifacts/paperbench/bam/trace/exploration_tree.html) |
-| [bbox](artifacts/paperbench/bbox/) | BBox-Adapter: Lightweight Adapting for Black-Box Large Language Models | [tree](artifacts/paperbench/bbox/trace/exploration_tree.html) |
-| [bridging-data-gaps](artifacts/paperbench/bridging-data-gaps/) | Efficient Transfer Learning in Diffusion Models via Adversarial Noise | [tree](artifacts/paperbench/bridging-data-gaps/trace/exploration_tree.html) |
-| [fre](artifacts/paperbench/fre/) | Unsupervised Zero-Shot Reinforcement Learning via Functional Reward Encodings | [tree](artifacts/paperbench/fre/trace/exploration_tree.html) |
-| [ftrl](artifacts/paperbench/ftrl/) | Fine-Tuning RL Models is Secretly a Forgetting Mitigation Problem | [tree](artifacts/paperbench/ftrl/trace/exploration_tree.html) |
-| [lbcs](artifacts/paperbench/lbcs/) | Refined Coreset Selection: Minimal Coreset Size under Model Performance Constraints | [tree](artifacts/paperbench/lbcs/trace/exploration_tree.html) |
-| [lca-on-the-line](artifacts/paperbench/lca-on-the-line/) | LCA-on-the-Line: Benchmarking Out-of-Distribution Generalization with Class Taxonomies | [tree](artifacts/paperbench/lca-on-the-line/trace/exploration_tree.html) |
-| [mechanistic-understanding](artifacts/paperbench/mechanistic-understanding/) | A Mechanistic Understanding of Alignment Algorithms: A Case Study on DPO | [tree](artifacts/paperbench/mechanistic-understanding/trace/exploration_tree.html) |
-| [pinn](artifacts/paperbench/pinn/) | Challenges in Training PINNs: A Loss Landscape Perspective | [tree](artifacts/paperbench/pinn/trace/exploration_tree.html) |
-| [rice](artifacts/paperbench/rice/) | RICE: Breaking Through the Training Bottlenecks of Reinforcement Learning with Explanation | [tree](artifacts/paperbench/rice/trace/exploration_tree.html) |
-| [robust-clip](artifacts/paperbench/robust-clip/) | Robust CLIP: Unsupervised Adversarial Fine-Tuning of Vision Embeddings for Robust Vision-Language Models | [tree](artifacts/paperbench/robust-clip/trace/exploration_tree.html) |
-| [sample-specific-masks](artifacts/paperbench/sample-specific-masks/) | Sample-specific Masks for Visual Reprogramming-based Prompting | [tree](artifacts/paperbench/sample-specific-masks/trace/exploration_tree.html) |
-| [sapg](artifacts/paperbench/sapg/) | SAPG: Split and Aggregate Policy Gradients | [tree](artifacts/paperbench/sapg/trace/exploration_tree.html) |
-| [self-composing-policies](artifacts/paperbench/self-composing-policies/) | Self-Composing Policies for Scalable Continual Reinforcement Learning | [tree](artifacts/paperbench/self-composing-policies/trace/exploration_tree.html) |
-| [self-expansion](artifacts/paperbench/self-expansion/) | Self-Expansion of Pre-trained Models with Mixture of Adapters for Continual Learning | [tree](artifacts/paperbench/self-expansion/trace/exploration_tree.html) |
-| [semantic-self-consistency](artifacts/paperbench/semantic-self-consistency/) | Semantic Self-Consistency: Enhancing Language Model Reasoning via Semantic Weighting | [tree](artifacts/paperbench/semantic-self-consistency/trace/exploration_tree.html) |
-| [sequential-neural-score-estimation](artifacts/paperbench/sequential-neural-score-estimation/) | Sequential Neural Posterior Score Estimation (NPSE) | [tree](artifacts/paperbench/sequential-neural-score-estimation/trace/exploration_tree.html) |
-| [stay-on-topic-with-classifier-free-guidance](artifacts/paperbench/stay-on-topic-with-classifier-free-guidance/) | Stay on Topic with Classifier-Free Guidance | [tree](artifacts/paperbench/stay-on-topic-with-classifier-free-guidance/trace/exploration_tree.html) |
-| [stochastic-interpolants](artifacts/paperbench/stochastic-interpolants/) | Stochastic Interpolants with Data-Dependent Couplings | [tree](artifacts/paperbench/stochastic-interpolants/trace/exploration_tree.html) |
-| [test-time-model-adaptation](artifacts/paperbench/test-time-model-adaptation/) | Test-Time Model Adaptation with Only Forward Passes (FOA) | [tree](artifacts/paperbench/test-time-model-adaptation/trace/exploration_tree.html) |
-| [what-will-my-model-forget](artifacts/paperbench/what-will-my-model-forget/) | What Will My Model Forget? Forecasting Forgotten Examples in Language Model Refinement | [tree](artifacts/paperbench/what-will-my-model-forget/trace/exploration_tree.html) |
+| [adaptive-pruning](artifacts/paperbench/adaptive-pruning/) | APT: Adaptive Pruning and Tuning of Pretrained Language Models for Efficient Training and Inference | [view](artifacts/paperbench/adaptive-pruning/trajectory.html) |
+| [all-in-one](artifacts/paperbench/all-in-one/) | All-in-one Simulation-Based Inference (Simformer) | [view](artifacts/paperbench/all-in-one/trajectory.html) |
+| [bam](artifacts/paperbench/bam/) | Batch and Match: Black-Box Variational Inference with a Score-Based Divergence | [view](artifacts/paperbench/bam/trajectory.html) |
+| [bbox](artifacts/paperbench/bbox/) | BBox-Adapter: Lightweight Adapting for Black-Box Large Language Models | [view](artifacts/paperbench/bbox/trajectory.html) |
+| [bridging-data-gaps](artifacts/paperbench/bridging-data-gaps/) | Efficient Transfer Learning in Diffusion Models via Adversarial Noise | [view](artifacts/paperbench/bridging-data-gaps/trajectory.html) |
+| [fre](artifacts/paperbench/fre/) | Unsupervised Zero-Shot Reinforcement Learning via Functional Reward Encodings | [view](artifacts/paperbench/fre/trajectory.html) |
+| [ftrl](artifacts/paperbench/ftrl/) | Fine-Tuning RL Models is Secretly a Forgetting Mitigation Problem | [view](artifacts/paperbench/ftrl/trajectory.html) |
+| [lbcs](artifacts/paperbench/lbcs/) | Refined Coreset Selection: Minimal Coreset Size under Model Performance Constraints | [view](artifacts/paperbench/lbcs/trajectory.html) |
+| [lca-on-the-line](artifacts/paperbench/lca-on-the-line/) | LCA-on-the-Line: Benchmarking Out-of-Distribution Generalization with Class Taxonomies | [view](artifacts/paperbench/lca-on-the-line/trajectory.html) |
+| [mechanistic-understanding](artifacts/paperbench/mechanistic-understanding/) | A Mechanistic Understanding of Alignment Algorithms: A Case Study on DPO | [view](artifacts/paperbench/mechanistic-understanding/trajectory.html) |
+| [pinn](artifacts/paperbench/pinn/) | Challenges in Training PINNs: A Loss Landscape Perspective | [view](artifacts/paperbench/pinn/trajectory.html) |
+| [rice](artifacts/paperbench/rice/) | RICE: Breaking Through the Training Bottlenecks of Reinforcement Learning with Explanation | [view](artifacts/paperbench/rice/trajectory.html) |
+| [robust-clip](artifacts/paperbench/robust-clip/) | Robust CLIP: Unsupervised Adversarial Fine-Tuning of Vision Embeddings for Robust Vision-Language Models | [view](artifacts/paperbench/robust-clip/trajectory.html) |
+| [sample-specific-masks](artifacts/paperbench/sample-specific-masks/) | Sample-specific Masks for Visual Reprogramming-based Prompting | [view](artifacts/paperbench/sample-specific-masks/trajectory.html) |
+| [sapg](artifacts/paperbench/sapg/) | SAPG: Split and Aggregate Policy Gradients | [view](artifacts/paperbench/sapg/trajectory.html) |
+| [self-composing-policies](artifacts/paperbench/self-composing-policies/) | Self-Composing Policies for Scalable Continual Reinforcement Learning | [view](artifacts/paperbench/self-composing-policies/trajectory.html) |
+| [self-expansion](artifacts/paperbench/self-expansion/) | Self-Expansion of Pre-trained Models with Mixture of Adapters for Continual Learning | [view](artifacts/paperbench/self-expansion/trajectory.html) |
+| [semantic-self-consistency](artifacts/paperbench/semantic-self-consistency/) | Semantic Self-Consistency: Enhancing Language Model Reasoning via Semantic Weighting | [view](artifacts/paperbench/semantic-self-consistency/trajectory.html) |
+| [sequential-neural-score-estimation](artifacts/paperbench/sequential-neural-score-estimation/) | Sequential Neural Posterior Score Estimation (NPSE) | [view](artifacts/paperbench/sequential-neural-score-estimation/trajectory.html) |
+| [stay-on-topic-with-classifier-free-guidance](artifacts/paperbench/stay-on-topic-with-classifier-free-guidance/) | Stay on Topic with Classifier-Free Guidance | [view](artifacts/paperbench/stay-on-topic-with-classifier-free-guidance/trajectory.html) |
+| [stochastic-interpolants](artifacts/paperbench/stochastic-interpolants/) | Stochastic Interpolants with Data-Dependent Couplings | [view](artifacts/paperbench/stochastic-interpolants/trajectory.html) |
+| [test-time-model-adaptation](artifacts/paperbench/test-time-model-adaptation/) | Test-Time Model Adaptation with Only Forward Passes (FOA) | [view](artifacts/paperbench/test-time-model-adaptation/trajectory.html) |
+| [what-will-my-model-forget](artifacts/paperbench/what-will-my-model-forget/) | What Will My Model Forget? Forecasting Forgotten Examples in Language Model Refinement | [view](artifacts/paperbench/what-will-my-model-forget/trajectory.html) |
 
 ### ReBench (5)
 
-| Artifact | Title | Trace |
+| Artifact | Title | Trajectory |
 |----------|-------|-------|
-| [rebench-fix_embedding](artifacts/rebench/rebench-fix_embedding/) | Fix Embedding (RE-Bench task) | [tree](artifacts/rebench/rebench-fix_embedding/trace/exploration_tree.html) |
-| [rebench-nanogpt_chat_rl](artifacts/rebench/rebench-nanogpt_chat_rl/) | nanoGPT Chat RL (RE-Bench task) | [tree](artifacts/rebench/rebench-nanogpt_chat_rl/trace/exploration_tree.html) |
-| [rebench-restricted_mlm](artifacts/rebench/rebench-restricted_mlm/) | Restricted-Architecture MLM (RE-Bench task) | [tree](artifacts/rebench/rebench-restricted_mlm/trace/exploration_tree.html) |
-| [rebench-rust_codecontests](artifacts/rebench/rebench-rust_codecontests/) | Rust CodeContests Inference (RE-Bench task) | [tree](artifacts/rebench/rebench-rust_codecontests/trace/exploration_tree.html) |
-| [rebench-triton_cumsum](artifacts/rebench/rebench-triton_cumsum/) | Triton Cumsum Kernel (RE-Bench task) | [tree](artifacts/rebench/rebench-triton_cumsum/trace/exploration_tree.html) |
+| [rebench-fix_embedding](artifacts/rebench/rebench-fix_embedding/) | Fix Embedding (RE-Bench task) | [view](artifacts/rebench/rebench-fix_embedding/trajectory.html) |
+| [rebench-nanogpt_chat_rl](artifacts/rebench/rebench-nanogpt_chat_rl/) | nanoGPT Chat RL (RE-Bench task) | [view](artifacts/rebench/rebench-nanogpt_chat_rl/trajectory.html) |
+| [rebench-restricted_mlm](artifacts/rebench/rebench-restricted_mlm/) | Restricted-Architecture MLM (RE-Bench task) | [view](artifacts/rebench/rebench-restricted_mlm/trajectory.html) |
+| [rebench-rust_codecontests](artifacts/rebench/rebench-rust_codecontests/) | Rust CodeContests Inference (RE-Bench task) | [view](artifacts/rebench/rebench-rust_codecontests/trajectory.html) |
+| [rebench-triton_cumsum](artifacts/rebench/rebench-triton_cumsum/) | Triton Cumsum Kernel (RE-Bench task) | [view](artifacts/rebench/rebench-triton_cumsum/trajectory.html) |
 
 ### Speedrun (1)
 
-| Artifact | Title | Trace |
+| Artifact | Title | Trajectory |
 |----------|-------|-------|
-| [nanogpt-speedrun](artifacts/speedrun/nanogpt-speedrun/) | NanoGPT Speedrun | [tree](artifacts/speedrun/nanogpt-speedrun/trace/exploration_tree.html) |
+| [nanogpt-speedrun](artifacts/speedrun/nanogpt-speedrun/) | NanoGPT Speedrun | [view](artifacts/speedrun/nanogpt-speedrun/trajectory.html) |
 
 ### Extra (3)
 
-| Artifact | Title | Trace |
+| Artifact | Title | Trajectory |
 |----------|-------|-------|
-| [andes](artifacts/extra/andes/) | Andes: Defining and Enhancing Quality-of-Experience in LLM-Based Text Streaming Services | [tree](artifacts/extra/andes/trace/exploration_tree.html) |
-| [venn](artifacts/extra/venn/) | Venn: Resource Management for Collaborative Learning Jobs | [tree](artifacts/extra/venn/trace/exploration_tree.html) |
-| [expbench](artifacts/extra/expbench/) | EXP-Bench: Can AI Conduct AI Research Experiments? | [tree](artifacts/extra/expbench/trace/exploration_tree.html) |
+| [andes](artifacts/extra/andes/) | Andes: Defining and Enhancing Quality-of-Experience in LLM-Based Text Streaming Services | [view](artifacts/extra/andes/trajectory.html) |
+| [venn](artifacts/extra/venn/) | Venn: Resource Management for Collaborative Learning Jobs | [view](artifacts/extra/venn/trajectory.html) |
+| [expbench](artifacts/extra/expbench/) | EXP-Bench: Can AI Conduct AI Research Experiments? | [view](artifacts/extra/expbench/trajectory.html) |
 
 ## Provenance & quality
 

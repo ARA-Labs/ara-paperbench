@@ -1,0 +1,2778 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ARA Trajectory</title>
+<!--
+  ARA Trajectory Viewer — canonical self-contained scaffold for the `research-visualizer` skill.
+
+  HOW THE SKILL USES THIS FILE
+  ----------------------------
+  The rendering logic below is FIXED. The agent does NOT rewrite it. The agent only:
+    1. Parses the ARA into one ARA_DATA object (schema in references/binding.md).
+    2. base64-inlines every referenced figure .png into node.result.figures[].img.
+    3. Replaces ONLY the JSON between the BEGIN/END markers in the <script id="ara-data"> block.
+    4. Writes the result to <ara>/trajectory.html (or --output).
+  Everything is inline (no CDN, no fetch, no server) so the output is one portable file.
+
+  INJECTION CONTRACT
+  ------------------
+  - Replace exactly the lines between  __ARA_DATA_BEGIN__  and  __ARA_DATA_END__.
+  - The payload MUST be valid JSON (it is read with JSON.parse).
+  - JSON must not contain the literal substring "</script>"; escape any "<" in inlined
+    markdown/text as "<" to be safe.
+  - The demo payload shipped here renders a 3-node sample so the bare template opens and
+    shows every node state (experiment, dead_end, isolated). The skill overwrites it.
+-->
+<style>
+  /* Research Visualizer — "field notebook of a machine scientist".
+     Cool archival vellum + ink; monospace is the machine-readout voice for
+     structure / IDs / data, a humanist serif carries the reasoning prose. The
+     signature is a traced trajectory spine that forks at branches and is struck
+     through at dead ends. Type is read from glyph + label; colour is reserved
+     for true epistemic status (teal = chrome, green = supported, amber =
+     tentative, clay-red = dead end) — never decoration. */
+  :root{
+    /* paper & ink — deliberately cool vellum, NOT warm cream */
+    --bg:#e9ece4; --panel:#f4f6f0; --panel2:#e3e7dd; --line:#ccd3c7; --ink:#1b2420;
+    --muted:#67726a; --faint:#8a948b; --accent:#0e6b62; --accent-ink:#0a4f48; --chip:#e6eae0;
+    --ok:#3a6a39; --warn:#a6402c; --tentative:#8a6310; --glyph-bg:#e0e5da; --glyph-ink:#4a544c;
+    --sel-bg:#e3ede7; --code-bg:#eaeee6; --reason-bg:#f4f6f0;
+    --iso-line:#b7c0ae; --iso-bg:#e5eadf; --iso-ink:#5f6b58;
+    --scrim:rgba(20,28,24,.42); --shadow:rgba(20,28,24,.16);
+    --add-bg:#e0ebdb; --add-ink:#2f5a2e; --del-bg:#f1e0da; --del-ink:#8c3623; --hunk:#67726a;
+    --spine:#c3ccbd; --grid:rgba(27,36,32,.05);
+    /* legacy type vars retained so any leftover hooks resolve */
+    --q:var(--glyph-bg); --exp:var(--glyph-bg); --dec:var(--glyph-bg); --piv:var(--glyph-bg); --ins:var(--glyph-bg); --def:var(--glyph-bg); --dead:var(--warn);
+    /* type roles: a serif reads the prose, monospace reads the machine */
+    --serif:ui-serif,"New York","Iowan Old Style",Palatino,Georgia,serif;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--bg);color:var(--ink);font:14px/1.65 var(--sans);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  code,pre,.mono{font-family:var(--mono)}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+
+  /* ---- masthead ---- */
+  header{padding:20px 24px 14px;border-bottom:1px solid var(--line);background:var(--panel)}
+  header .title{font-family:var(--serif);font-size:23px;font-weight:600;margin:0;letter-spacing:-.012em}
+  header .sub{font-family:var(--mono);color:var(--muted);font-size:11.5px;margin-top:5px;letter-spacing:.01em}
+  header details{margin-top:10px;color:var(--ink)}
+  header summary{cursor:pointer;color:var(--accent-ink);font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em}
+  .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:16px}
+  .toolbar input[type=search],.toolbar select{background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:6px 10px;font-size:13px;font-family:var(--sans)}
+  .toolbar input[type=search]{min-width:230px}
+  .toolbar input[type=search]:focus,.toolbar select:focus{border-color:var(--accent);outline:none}
+  .toolbar label{color:var(--muted);font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.06em;display:flex;gap:6px;align-items:center}
+  .btn{background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:6px 11px;font-size:12.5px;font-family:var(--mono);cursor:pointer;transition:border-color .12s,color .12s,background .12s}
+  .btn:hover{border-color:var(--accent);color:var(--accent-ink)}
+  .btn.primary{border-color:var(--accent);color:#fff;background:var(--accent)}
+  .btn.primary:hover{background:var(--accent-ink)}
+  .spacer{flex:1}
+  .count{color:var(--muted);font-family:var(--mono);font-size:11px;letter-spacing:.04em;padding-left:10px;border-left:1px solid var(--line)}
+
+  main{display:grid;grid-template-columns:minmax(300px,36%) 1fr;height:calc(100% - 0px);min-height:0}
+  #map{overflow:auto;border-right:1px solid var(--line);padding:18px 12px 56px;background:var(--bg);
+    background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+    background-size:24px 24px;background-position:-1px -1px}
+  #detail{overflow:auto;padding:26px 32px 80px;background:var(--bg)}
+
+  /* ---- process map: the trajectory spine is the signature ---- */
+  .node{position:relative;display:flex;gap:10px;align-items:flex-start;padding:7px 9px;border-radius:6px;cursor:pointer;border:1px solid transparent}
+  .node:hover{background:var(--panel2)}
+  .node.sel{background:var(--sel-bg);border-color:var(--accent)}
+  .node.deptarget{background:var(--sel-bg);outline:1px dashed var(--accent);outline-offset:-1px}
+  .node.dim{opacity:.32}
+  .node .glyph{flex:none;width:20px;height:20px;border-radius:5px;display:grid;place-items:center;font-family:var(--mono);font-size:11px;font-weight:700;color:var(--glyph-ink);background:var(--glyph-bg);border:1px solid var(--line);margin-top:1px}
+  .node.sel .glyph{border-color:var(--accent);color:var(--accent-ink)}
+  .node .nid{color:var(--muted);font-size:10.5px;font-family:var(--mono);letter-spacing:.02em}
+  .node .ntitle{font-size:13px;line-height:1.45}
+  .node.dead .ntitle{color:var(--warn);text-decoration:line-through;text-decoration-color:rgba(166,64,44,.45)}
+  .node .meta{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  /* the spine + branch connectors: nested steps trace back to their parent */
+  .kid{margin-left:19px;border-left:2px solid var(--spine);padding-left:14px}
+  .kid>.node::before{content:"";position:absolute;left:-14px;top:14px;width:10px;height:2px;background:var(--spine)}
+  .kid>.node.sel::before{background:var(--accent)}
+  .isobox{border:1px dashed var(--iso-line);border-radius:8px;margin:12px 2px;padding:6px 4px;background:var(--iso-bg)}
+  .isobox .isohdr{color:var(--iso-ink);font-family:var(--mono);font-size:10px;padding:3px 8px 7px;text-transform:uppercase;letter-spacing:.1em}
+  .dep{color:var(--muted);font-size:10px;font-family:var(--mono);border:1px solid var(--line);border-radius:4px;padding:0 5px}
+
+  .glyph.dead_end{background:var(--warn);color:#fff;border-color:var(--warn)}
+
+  /* ---- detail pane ---- */
+  .dhead{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-bottom:2px}
+  .badge{font-family:var(--mono);font-size:10px;font-weight:700;border-radius:4px;padding:3px 9px;color:var(--glyph-ink);background:var(--glyph-bg);border:1px solid var(--line);text-transform:uppercase;letter-spacing:.08em}
+  .badge.dead_end{background:var(--warn);color:#fff;border-color:var(--warn)}
+  .pill{font-family:var(--mono);font-size:10px;border:1px solid var(--line);border-radius:20px;padding:2px 9px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+  .pill.explicit{border-color:var(--ok);color:var(--ok)} .pill.inferred{border-color:var(--tentative);color:var(--tentative)}
+  .pill.iso{border-color:var(--iso-line);color:var(--iso-ink)}
+  .dtitle{font-family:var(--serif);font-size:25px;font-weight:600;margin:12px 0 6px;letter-spacing:-.012em;line-height:1.28}
+  .did{color:var(--muted);font-family:var(--mono);font-size:11.5px}
+
+  .block{border:1px solid var(--line);border-radius:7px;margin:15px 0;background:var(--panel)}
+  .block>summary{cursor:pointer;padding:11px 15px;font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);list-style:none;display:flex;align-items:center;gap:8px}
+  .block>summary::-webkit-details-marker{display:none}
+  .block>summary:hover{color:var(--accent-ink)}
+  .block>summary .tag{margin-left:auto;color:var(--faint);font-size:10.5px;font-weight:400;font-family:var(--mono);text-transform:none;letter-spacing:0}
+  .block .body{padding:4px 16px 16px}
+  /* the primary reasoning block: the agent's thinking, set as typeset prose */
+  .block.reason{border-left:3px solid var(--accent);background:var(--reason-bg)}
+  .block.reason>summary{color:var(--accent-ink)}
+  .block.reason .lead{font-family:var(--serif);font-size:17px;line-height:1.7;color:var(--ink)}
+  .didwhat{color:var(--muted);font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.09em;margin:16px 0 4px}
+  .lead{font-family:var(--serif);color:#2a322c;font-size:16px;line-height:1.7}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:11px}
+  .chip{background:var(--chip);border:1px solid var(--line);border-radius:4px;padding:2px 8px;font-size:11px;color:#46504a;font-family:var(--mono)}
+  .chip.ext{color:var(--muted)}
+
+  .claim{border:1px solid var(--line);border-left:2px solid var(--accent);border-radius:0 6px 6px 0;padding:11px 13px;margin:11px 0;background:var(--panel2)}
+  .claim h4{margin:0 0 6px;font-family:var(--mono);font-size:12px}
+  .claim .kv{font-size:13px;line-height:1.6;margin:4px 0;color:#3a423c}
+  .claim .kv b{color:var(--muted);font-weight:600;font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em}
+  .status{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.05em;border-radius:4px;padding:1px 7px;border:1px solid var(--line)}
+  .status.supported{color:var(--ok);border-color:var(--ok)}
+  .status.refuted{color:var(--warn);border-color:var(--warn)}
+  .status.hypothesis{color:var(--tentative);border-color:var(--tentative)}
+  .prov{font-size:11px;color:var(--iso-ink);font-family:var(--mono)}
+
+  .quote{border-left:3px solid var(--accent);background:var(--panel);border-radius:0 6px 6px 0;padding:9px 13px;margin:9px 0;font-size:13.5px;line-height:1.6;color:#2a322c}
+  .quote .ref{color:var(--muted);font-size:10.5px;font-family:var(--mono);margin-top:5px}
+  figure{margin:14px 0}
+  figure img{max-width:100%;border:1px solid var(--line);border-radius:5px;background:#fff;padding:6px}
+  figcaption{color:var(--muted);font-family:var(--mono);font-size:11px;margin-top:7px}
+
+  table.md{border-collapse:collapse;width:100%;font-family:var(--mono);font-size:12px;margin:10px 0}
+  table.md th,table.md td{border:1px solid var(--line);padding:5px 9px;text-align:left}
+  table.md th{background:var(--panel2);color:var(--ink);font-weight:700;text-transform:uppercase;font-size:10.5px;letter-spacing:.04em}
+  pre.snip{background:var(--code-bg);border:1px solid var(--line);border-radius:6px;padding:10px 12px;overflow:auto;font-size:12px;color:var(--ink);white-space:pre-wrap}
+
+  .ptr{font-size:13px;margin:7px 0}
+  .ptr .path{font-family:var(--mono);color:#46504a}
+  .truncated{color:var(--muted);font-size:11.5px;font-style:italic}
+  .empty{color:var(--muted);font-size:13px}
+  .none{color:var(--muted);padding:40px 24px;text-align:center;font-family:var(--mono);font-size:12px;letter-spacing:.02em}
+  kbd{background:var(--panel2);border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 5px;font-family:var(--mono);font-size:11px}
+
+  /* ---- enrichment layers (all inert unless the data is present) ---- */
+  .layerbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+  .lbtn .cnt{color:var(--muted);font-size:10.5px}
+  .chiplabel{color:var(--muted);font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.08em;margin:12px 0 3px}
+  .chip.jump{cursor:pointer}
+  .chip.jump:hover{border-color:var(--accent);color:var(--accent-ink)}
+  .chip.dangle{color:#9aa49b;text-decoration:line-through;cursor:not-allowed}
+  .chip.infer{border-style:dashed}
+  .chip-built{border-color:var(--ok);color:var(--ok)}
+  .chip-rej{border-color:var(--warn);color:var(--warn)}
+  .chip-recipe{border-color:var(--accent);color:var(--accent-ink)}
+  .nmark{color:var(--muted);font-size:10px;margin-left:5px;font-family:var(--mono)}
+  .rel{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.05em;border-radius:4px;padding:2px 8px;color:var(--glyph-ink);background:var(--glyph-bg);font-weight:700}
+  .rel.bounds,.rel.refutes{background:var(--warn);color:#fff}
+  .rel.neutral{background:var(--chip);color:var(--ink);border:1px solid var(--line);font-weight:400}
+  .ribbon{border-left:3px solid var(--accent);background:var(--panel2);border-radius:0 6px 6px 0;padding:9px 13px;margin:9px 0;color:#3a423c;font-size:13px;line-height:1.6}
+  .warn{border-left:3px solid var(--warn);background:var(--del-bg);border-radius:0 6px 6px 0;padding:9px 13px;margin:9px 0;font-size:13px;line-height:1.6}
+  .muted{color:var(--muted);font-size:11.5px}
+  .math{font-family:var(--serif);font-style:italic}
+  .gterm{border-bottom:1px dashed var(--accent);cursor:help}
+  #gpop{position:fixed;max-width:360px;background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:11px 13px;z-index:60;box-shadow:0 8px 28px var(--shadow);font-size:13px;line-height:1.55;display:none}
+  #gpop h5{margin:0 0 5px;font-family:var(--mono);font-size:12px;text-transform:uppercase;letter-spacing:.05em}
+  #gpop .gp-open{color:var(--accent);cursor:pointer;font-family:var(--mono);font-size:11px;margin-top:7px;display:inline-block}
+  .ov{position:fixed;inset:0;z-index:50}
+  .ov[hidden]{display:none}
+  .ov-scrim{position:absolute;inset:0;background:var(--scrim)}
+  .ov-sheet{position:relative;margin:5vh auto;max-width:920px;max-height:86vh;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 16px 48px var(--shadow)}
+  .ov-head{position:sticky;top:0;display:flex;gap:10px;align-items:center;padding:13px 17px;border-bottom:1px solid var(--line);background:var(--panel);z-index:1}
+  .ov-head #ov-title{font-family:var(--mono);font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.09em;color:var(--accent-ink)}
+  .ov-head input[type=search]{flex:1;max-width:260px;background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:5px 10px;font-size:13px}
+  .ov-body{padding:10px 17px 26px}
+  .ov-body .spacer{flex:1}
+  .card{border:1px solid var(--line);border-radius:6px;padding:11px 13px;margin:11px 0;background:var(--panel2)}
+  .card h4{margin:0 0 6px;font-family:var(--mono);font-size:12px}
+  .card .sub{color:var(--muted);font-family:var(--mono);font-size:10.5px}
+  .grey{opacity:.5}
+
+  /* responsive: stack the two panes on a narrow screen */
+  @media (max-width:720px){
+    main{grid-template-columns:1fr;grid-template-rows:42vh 1fr}
+    #map{border-right:none;border-bottom:1px solid var(--line)}
+    #detail{padding:20px 18px 64px}
+    .dtitle{font-size:21px}
+  }
+  /* honour reduced-motion */
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<header>
+  <h1 class="title" id="h-title">ARA Trajectory</h1>
+  <div class="sub" id="h-sub"></div>
+  <details id="h-abstract-wrap"><summary>Abstract</summary><div class="lead" id="h-abstract"></div></details>
+  <div class="toolbar">
+    <input type="search" id="q" placeholder="search steps…" autocomplete="off" />
+    <label>type
+      <select id="ftype"><option value="">all</option></select>
+    </label>
+    <label><input type="checkbox" id="fdead" /> dead ends only</label>
+    <span class="spacer"></span>
+    <button class="btn" id="rprev" title="previous (←)">‹</button>
+    <button class="btn primary" id="rplay">▶ Replay</button>
+    <button class="btn" id="rnext" title="next (→)">›</button>
+    <span class="count" id="rstat"></span>
+  </div>
+  <div class="layerbar" id="layerbar">
+    <button class="btn lbtn" data-panel="context" hidden>◧ Context</button>
+    <button class="btn lbtn" data-panel="glossary" hidden>▤ Glossary <span class="cnt"></span></button>
+    <button class="btn lbtn" data-panel="dependencies" hidden>⇄ Dependencies <span class="cnt"></span></button>
+    <button class="btn lbtn" data-panel="recipes" hidden>▦ Recipes <span class="cnt"></span></button>
+  </div>
+</header>
+
+<main>
+  <aside id="map"></aside>
+  <section id="detail"><div class="none">Select a step on the left, or press <kbd>▶ Replay</kbd>.</div></section>
+</main>
+
+<!-- v1.1: one shared modal overlay for the Context/Glossary/Dependencies/Recipes panels, + a glossary popover. Both inert unless their data is present. -->
+<div id="overlay" class="ov" hidden role="dialog" aria-modal="true">
+  <div class="ov-scrim" data-close></div>
+  <div class="ov-sheet">
+    <div class="ov-head"><span id="ov-title"></span>
+      <input type="search" id="ov-q" placeholder="filter…" hidden autocomplete="off" />
+      <span class="spacer"></span>
+      <button class="btn" id="ov-close" data-close>✕ <kbd>Esc</kbd></button>
+    </div>
+    <div class="ov-body" id="ov-body"></div>
+  </div>
+</div>
+<div id="gpop"></div>
+
+<!-- The skill replaces ONLY the JSON between the two markers below. -->
+<script id="ara-data" type="application/json">
+/* __ARA_DATA_BEGIN__ */
+{
+  "meta": {
+    "title": "BBOX-ADAPTER: Lightweight Adapting for Black-Box Large Language Models",
+    "authors": [
+      "Haotian Sun",
+      "Yuchen Zhuang",
+      "Wei Wei",
+      "Chao Zhang",
+      "Bo Dai"
+    ],
+    "year": "2024",
+    "venue": "ICML 2024 (Proceedings of the 41st International Conference on Machine Learning)",
+    "ara_dir": "bbox",
+    "abstract": "Adapting state-of-the-art Large Language Models (LLMs) like GPT-4 and Gemini for specific tasks is challenging. Due to the opacity in their parameters, embeddings, and even output probabilities, existing fine-tuning adaptation methods are inapplicable. Consequently, adapting these black-box LLMs is only possible through their API services, raising concerns about transparency, privacy, and cost. To address these challenges, we introduce BBOX-ADAPTER, a novel lightweight adapter for black-box LLMs. BBOX-ADAPTER distinguishes target and source domain data by treating target data as positive and source data as negative. It employs a ranking-based Noise Contrastive Estimation (NCE) loss to promote the likelihood of target domain data while penalizing that of the source domain. Furthermore, it features an online adaptation mechanism, which incorporates real-time positive data sampling from ground-truth, human, or AI feedback, coupled with negative data from previous adaptations. Extensive experiments demonstrate BBOX-ADAPTER's effectiveness and cost efficiency. It improves model performance by up to 6.77% across diverse tasks and domains, while reducing training and inference costs by 31.30x and 1.84x, respectively."
+  },
+  "order": [
+    "N01",
+    "N02",
+    "N03",
+    "N04",
+    "N05",
+    "N06",
+    "N07",
+    "N08",
+    "N09",
+    "N10",
+    "N11",
+    "N12",
+    "N13",
+    "N14"
+  ],
+  "nodes": [
+    {
+      "id": "N01",
+      "type": "question",
+      "parent": null,
+      "title": "How can we adapt state-of-the-art black-box LLMs (no parameters, no probabilities) to specific tasks?",
+      "body": "GPT-3.5-turbo, GPT-4, PaLM-2, Gemini expose only text-in/text-out APIs. Fine-tuning APIs are opaque, privacy-risky, and costly. No method exists that adapts these LLMs without either their fine-tuning APIs or token probabilities.",
+      "thinking": "The starting point is a capability gap. The strongest LLMs available today (GPT-3.5-turbo, GPT-4, PaLM-2, Gemini) can only be reached through a plain text-in, text-out API: no parameters, no internal representations, not even token-level probabilities. Their official fine-tuning services exist, but they are opaque about what is actually happening, raise privacy concerns, and are costly to use. At the outset there was no known method for adapting these models to a specific task without going through one of those two unattractive doors, the fine-tuning API or probability access that simply is not offered. That gap is the question the rest of this investigation tries to close.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": []
+    },
+    {
+      "id": "N02",
+      "type": "experiment",
+      "parent": "N01",
+      "title": "Can grey-box methods (logit combination, kNN-Adapter) work on modern black-box LLMs?",
+      "body": "No. GPT-3.5-turbo and PaLM-2 do not expose full token probability distributions. The logprobs API returns only top-5 tokens; the echo parameter was deprecated October 2023.",
+      "thinking": "Before inventing something new, the natural move is to check whether an existing family of techniques already solves the problem. Grey-box methods, things like logit combination or kNN-Adapter, promise to adapt a model by blending or interpolating its output token probabilities with a smaller model's. That would be a much simpler answer if it worked. It does not: GPT-3.5-turbo and PaLM-2 never hand over a full probability distribution over the vocabulary. The logprobs endpoint caps out at the top 5 tokens, and OpenAI even removed the echo option that used to expose more of this signal, in October 2023. So the entire grey-box family is a dead end for these APIs, which rules out the easiest path and forces a genuinely black-box approach.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [
+        "Appendix C",
+        "§2"
+      ],
+      "why": [],
+      "verified_by": [],
+      "artifact": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [
+          {
+            "id": "T1",
+            "caption": "Table 1: Comparison of LLM Adaptation Methods (Source: Table 1, §2) — Categorization of LLM adaptation methods by five accessibility axes. ✓ = feature present (without requirement) / ✗ = feature absent (requires access).",
+            "markdown": "| Methods | w/o Model Parameters | w/o High-Dim Representation | w/o Token Probabilities | w/o Retrieval Corpus | w/ Smaller Adapter |\n|---|---|---|---|---|---|\n| **White-Box LLM Fine-Tuning** | | | | | |\n| Fine-Tuning (Devlin et al., 2019) | ✗ | ✗ | ✗ | ✓ | ✗ |\n| Instruction-Tuning (Wei et al., 2021) | ✗ | ✗ | ✗ | ✓ | ✗ |\n| Continual Pre-Training (Gururangan et al., 2020) | ✗ | ✗ | ✗ | ✓ | ✗ |\n| Adapter (Houlsby et al., 2019) | ✗ | ✗ | ✗ | ✓ | ✓ |\n| Prefix-Tuning (Liu et al., 2022) | ✗ | ✗ | ✗ | ✓ | ✓ |\n| LoRA (Hu et al., 2021) | ✗ | ✗ | ✗ | ✓ | ✓ |\n| **Grey-Box LLM Adaptation** | | | | | |\n| LMaaS (Sun et al., 2022) | ✓ | ✗ | ✗ | ✓ | ✓ |\n| kNN-Adapter (Huang et al., 2023) | ✓ | ✓ | ✗ | ✗ | ✓ |\n| CombLM (Ormazabal et al., 2023) | ✓ | ✓ | ✗ | ✓ | ✓ |\n| IPA (Lu et al., 2023) | ✓ | ✓ | ✗ | ✓ | ✓ |\n| Proxy-Tuning (Liu et al., 2024) | ✓ | ✓ | ✗ | ✓ | ✓ |\n| **Black-Box LLM Adaptation** | | | | | |\n| **BBOX-ADAPTER (Ours)** | ✓ | ✓ | ✓ | ✓ | ✓ |"
+          }
+        ],
+        "data": []
+      }
+    },
+    {
+      "id": "N03",
+      "type": "dead_end",
+      "parent": "N02",
+      "title": "Grey-box approaches (CombLM, Proxy-Tuning, kNN-Adapter, IPA) for black-box adaptation",
+      "body": "Hypothesis: Token-level probability combination methods could work on recent black-box LLMs\nFailure mode: Output token probabilities are inaccessible in GPT-3.5-turbo, GPT-4, PaLM-2; even top-5 logprobs are insufficient for full vocabulary distribution modeling\nLesson: Must operate purely on text outputs; any method requiring probability distributions is inapplicable",
+      "thinking": "This is the formal write-up of the dead end from the previous check. The hypothesis was that a family of published techniques, CombLM, Proxy-Tuning, kNN-Adapter, IPA, which all combine or interpolate token-level probabilities, could be repurposed for today's black-box APIs. It fails for a structural reason, not an implementation one: these APIs never expose the full probability distribution over the vocabulary, and even the partial top-5 signal that is exposed is not enough to reconstruct it. The lesson that carries forward: any viable method has to work purely from the text that comes back from the API, not from probabilities.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": []
+    },
+    {
+      "id": "N04",
+      "type": "decision",
+      "parent": "N02",
+      "title": "Frame black-box LLM adaptation as text-only ranking/scoring problem",
+      "body": "Train a small auxiliary model as an energy-based scorer that distinguishes target-domain from source-domain text using only text inputs and outputs\nalternatives: Prompt engineering and in-context learning (no persistent adaptation); Fine-tuning via API (Azure-SFT) — opaque, expensive, privacy-risky; Retrieval-augmented generation (kNN-Adapter) — still needs probabilities for interpolation",
+      "thinking": "With the probability-based route closed off, the design has to commit to something that only needs text in, text out. The decision here is to reframe the whole adaptation problem as ranking and scoring: train a small auxiliary model whose only job is to tell target-domain text apart from source-domain text, using nothing but the LLM's own text outputs. This is grounded in the residual energy-based model formulation from Deng et al. (2020), which shows a distribution can be reshaped by multiplying it with an exponentiated score function, without ever touching the base model's internals. The alternatives considered were weaker: prompting alone does not persist any adaptation, fine-tuning through the API is exactly the opaque and costly path this project is trying to avoid, and retrieval-augmented approaches like kNN-Adapter still secretly depend on probability interpolation. Framing the problem as text-only scoring is the one option that survives all three constraints at once.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [
+        "Residual EBM formulation (Deng et al., 2020) enables distribution shaping without accessing LLM internals; only text outputs needed"
+      ],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [
+        {
+          "name": "BBOX-ADAPTER core module",
+          "pointer": "src/execution/bbox_adapter.py",
+          "what": "Core module implementing the overall algorithm this framing decision leads to: the energy adapter g_theta, the NCE loss with spectral normalization, and the sentence-level beam search inference procedure."
+        }
+      ]
+    },
+    {
+      "id": "N05",
+      "type": "question",
+      "parent": "N04",
+      "title": "How to train the energy scorer without access to partition function or probabilities?",
+      "body": "The normalizing constant Z_theta(x) is intractable; maximum likelihood estimation requires sampling from model distributions.",
+      "thinking": "Committing to an energy-based scorer creates an immediate technical problem. The standard way to train such a model, maximum likelihood, requires normalizing by a partition function Z_theta(x), and that normalizing constant is intractable to compute here: it would require integrating over every possible output the LLM could produce. Standard maximum-likelihood training also wants samples drawn from the model's own distribution, which is expensive and awkward for a fixed black-box LLM. This question sets up the next branch of exploration: find a training objective that never needs Z_theta(x) at all.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": []
+    },
+    {
+      "id": "N06",
+      "type": "dead_end",
+      "parent": "N05",
+      "title": "Standard MLE or MCMC for EBM training",
+      "body": "Hypothesis: Direct MLE or MCMC sampling could estimate Z_theta(x) sufficiently\nFailure mode: Computationally intensive and imprecise; MCMC for discrete text is especially problematic\nLesson: Noise Contrastive Estimation (NCE) avoids Z_theta entirely by converting density estimation to classification",
+      "thinking": "The first thing tried was the textbook approach: estimate the intractable normalizing constant directly, either by maximum likelihood or by MCMC sampling. It does not hold up. Both are computationally heavy, and MCMC is particularly ill-suited to discrete text, where the sampling procedure has none of the smooth structure that makes MCMC practical in continuous spaces. The useful takeaway is a specific alternative: Noise Contrastive Estimation reframes the whole problem as classification, so the partition function never needs to be computed at all. That reframing is what the next decision picks up.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": []
+    },
+    {
+      "id": "N07",
+      "type": "decision",
+      "parent": "N05",
+      "title": "Use ranking-based NCE loss to bypass intractable partition function",
+      "body": "Minimize KL between parameterized posterior pθ(k|{xk}) and data-to-noise ratio q(k|{xk}); extends binary NCE to ranking over multiple samples\nalternatives: Standard binary NCE (Gutmann & Hyvarinen 2010) — only real vs. noise, no ranking; MLM loss — mask words in ground-truth, train on masked word prediction; Contrastive learning with fixed negatives",
+      "thinking": "Building on the NCE insight from the previous dead end, the decision is to go further than the standard binary version. Instead of just distinguishing one real example from noise, the objective ranks a whole set of candidates by minimizing the KL divergence between the model's own posterior over which sample is real and the true data-to-noise ratio. This ranking-based extension, following Ma & Collins (2018), comes with a guarantee: at the optimum, the model distribution recovers the true data distribution, without ever computing the partition function. The alternatives on the table, plain binary NCE, masked-language-model loss, or contrastive learning against fixed negatives, were each weaker in some way: binary NCE only makes a single real-vs-noise call rather than ranking, and the masked-language-model alternative was tested directly downstream (see the MLM comparison) and came up short.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [
+        "Ma & Collins (2018) ranking NCE; optimal solution recovers p_theta(x) = p_data(x)"
+      ],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [
+        {
+          "name": "NCE adapter training",
+          "pointer": "src/execution/nce_adapter.py",
+          "what": "Implements the ranking-based NCE loss training for the adapter g_theta that this decision commits to."
+        }
+      ]
+    },
+    {
+      "id": "N08",
+      "type": "dead_end",
+      "parent": "N07",
+      "title": "MLM loss as adapter training objective",
+      "body": "Hypothesis: Masked language model loss could score text quality by measuring masked word prediction probability\nFailure mode: MLM loss achieves 61.52%/60.41% on StrategyQA vs NCE 71.62%/71.18% — up to 10% gap; MLM does not effectively capture distributional gap between source and target domains\nLesson: Ranking-based NCE directly optimizes the distributional distinction needed; MLM is a proxy that doesn't capture the full objective",
+      "thinking": "As a check on the NCE decision, a masked-language-model objective was also tried: score a candidate by how well the adapter predicts a randomly masked word in it. It underperforms substantially, by up to roughly ten percentage points on StrategyQA. The reason is conceptual, not just empirical: masked-word prediction is only a proxy for the thing that actually needs to be learned, telling target-domain text apart from source-domain text, while the ranking-based NCE loss optimizes that distinction directly. This result, formalized next as a controlled validation experiment, confirms the NCE decision was the right one.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [
+        {
+          "name": "MLM ablation adapter",
+          "pointer": "src/execution/mlm_adapter.py",
+          "what": "MLM-based adapter used as the ablation baseline in §4.5 (Table 5) that this dead end formalizes."
+        }
+      ]
+    },
+    {
+      "id": "N09",
+      "type": "experiment",
+      "parent": "N07",
+      "title": "Validate NCE loss vs MLM loss on StrategyQA and GSM8K",
+      "body": "NCE outperforms MLM by up to 10.10% (StrategyQA 0.1B: 71.62 vs 61.52); consistent advantage across adapter sizes",
+      "thinking": "This experiment turns the MLM dead end into a controlled, quantified comparison. Training the same adapter architecture with the two different objectives, NCE and MLM, and evaluating on StrategyQA and GSM8K, shows NCE ahead in every configuration, by as much as 10.10 percentage points on StrategyQA's smaller adapter and by a smaller but still consistent margin on GSM8K. The gap holding across both adapter sizes (0.1B and 0.3B) is what makes the comparison a validation rather than a coincidence; it is claim C04 of the paper. This closes the loss-function branch of the exploration and locks in ranking-based NCE as the training objective.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [
+        "§4.5"
+      ],
+      "why": [
+        {
+          "id": "C04",
+          "title": "Ranking-based NCE loss outperforms MLM loss by up to ~10%",
+          "statement": "On StrategyQA with 0.1B adapter, NCE achieves 71.62% accuracy vs MLM's 61.52% (+10.10%); on GSM8K with 0.3B adapter, NCE achieves 73.86% vs MLM's 70.81% (+3.05%).",
+          "status": "supported",
+          "conditions": "",
+          "falsification": "MLM loss achieves accuracy equal to or greater than NCE loss on both StrategyQA and GSM8K under any adapter size.",
+          "dependencies": [],
+          "provenance": null
+        }
+      ],
+      "verified_by": [
+        {
+          "id": "E05",
+          "title": "Ablation — NCE Loss vs MLM Loss",
+          "run": "",
+          "setup": "Model: gpt-3.5-turbo; Adapter: deberta-v3-base (0.1B) and deberta-v3-large (0.3B); Hardware: NVIDIA A100-SXM4-80GB; Dataset: StrategyQA (229 test), GSM8K (1319 test); System: MLM baseline: randomly mask words in ground-truth text, train adapter on masked word prediction; score beam search candidates by probability of a randomly masked word",
+          "metrics": "Accuracy (%) for StrategyQA and GSM8K; 0.1B and 0.3B adapter sizes separately"
+        }
+      ],
+      "artifact": [
+        {
+          "name": "NCE adapter training",
+          "pointer": "src/execution/nce_adapter.py",
+          "what": "Ranking-based NCE training path compared in this experiment."
+        },
+        {
+          "name": "MLM ablation adapter",
+          "pointer": "src/execution/mlm_adapter.py",
+          "what": "MLM training/inference path compared in this experiment."
+        }
+      ],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [
+          {
+            "id": "T5",
+            "caption": "Table 5: Ablation — NCE Loss vs MLM Loss (Source: Table 5, §4.5) — \"Accuracy (%) of BBOX-ADAPTER fine-tuned with two types of loss: MLM loss and ranking-based NCE loss.\"",
+            "markdown": "| Loss | StrategyQA 0.1B | StrategyQA 0.3B | GSM8K 0.1B | GSM8K 0.3B |\n|------|-----------------|-----------------|------------|------------|\n| MLM  | 61.52           | 60.41           | 70.56      | 70.81      |\n| NCE  | 71.62           | 71.18           | 72.06      | 73.86      |"
+          }
+        ],
+        "data": []
+      },
+      "built_on": [
+        {
+          "rw_id": "RW01",
+          "name": "Devlin et al., 2019 (BERT)",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW03",
+          "name": "Gutmann & Hyvarinen, 2010 (NCE)",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW04",
+          "name": "Ma & Collins, 2018 (Ranking NCE)",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW05",
+          "name": "Du & Mordatch, 2019 (EBM with spectral normalization)",
+          "relation_raw": "imports"
+        },
+        {
+          "rw_id": "RW12",
+          "name": "Deng et al., 2020 (Residual EBM for Text Generation)",
+          "relation_raw": "imports"
+        }
+      ],
+      "rejected_here": []
+    },
+    {
+      "id": "N10",
+      "type": "question",
+      "parent": "N09",
+      "title": "How to handle training instability from sharp EBM gradients?",
+      "body": "Energy values can diverge, leading to unstable NCE training.",
+      "thinking": "With the NCE objective settled, a new problem surfaces once training actually runs: energy-based models are notorious for producing gradients that can spike sharply, and here that shows up as the energy values themselves diverging during training. The next decision has to address this instability directly, or the NCE objective that was just validated will not train reliably in practice.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": []
+    },
+    {
+      "id": "N11",
+      "type": "decision",
+      "parent": "N10",
+      "title": "Apply spectral normalization to the adapter head",
+      "body": "Normalize the final linear classification layer by its largest singular value; add regularization terms alpha*E[g(y)^2] to the loss\nalternatives: Gradient clipping alone; Learning rate reduction; Layer normalization",
+      "thinking": "The fix chosen for gradient instability is spectral normalization on the adapter's final classification layer: constrain that layer by its largest singular value, and add a small regularization term that penalizes large energy values directly. This follows Du & Mordatch (2019), who show the same technique stabilizes implicit generation in energy-based models more generally. Simpler fixes, gradient clipping on its own, just lowering the learning rate, or ordinary layer normalization, were considered but do not address the underlying Lipschitz-continuity problem that spectral normalization targets directly. This closes out the training-stability branch and completes the adapter-training side of the method.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [
+        "Du & Mordatch (2019) demonstrate spectral normalization stabilizes EBM implicit generation"
+      ],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [
+        {
+          "name": "EBM adapter (spectral normalization)",
+          "pointer": "src/execution/ebm_adapter.py",
+          "what": "Energy adapter module that wraps the DeBERTa/BERT backbone with a spectral-normalized scalar head; the concrete code path for this decision (also the code ref cited by heuristic H01)."
+        }
+      ],
+      "concepts": [
+        "Spectral Normalization"
+      ]
+    },
+    {
+      "id": "N12",
+      "type": "question",
+      "parent": null,
+      "title": "How to leverage the trained adapter for inference without probability access?",
+      "body": "At inference time, we cannot compute p_theta(y|x) directly since Z_theta is intractable and p_LLM probabilities are unavailable.",
+      "thinking": "Training the adapter is only half the problem. Once it exists, actually using it at inference time hits the same wall as before: the adapted distribution p_theta(y|x) cannot be computed directly, because Z_theta is still intractable and the underlying LLM still will not hand over its probabilities. This question opens the inference-side branch of the exploration, which builds directly on the NCE-trained adapter from the earlier branch, hence the explicit dependency back to that decision.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [
+        "N07"
+      ],
+      "source_refs": [],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": []
+    },
+    {
+      "id": "N13",
+      "type": "decision",
+      "parent": "N12",
+      "title": "Use sentence-level beam search: LLM proposes, adapter scores",
+      "body": "Decompose generation into sentence-level steps; LLM generates n candidates per beam, adapter scores partial chains, top-k beams are retained. Final answer = highest adapter-scored complete chain.\nalternatives: Score only complete answers (single-step) — lower accuracy, lower cost; Token-level beam search — requires token probabilities, not available; Self-consistency majority voting — no adapter guidance, no improvement",
+      "thinking": "The answer to the inference question splits the work between the two components cleanly: let the black-box LLM keep doing what it is good at, proposing candidate text, and let the trained adapter do the scoring. Concretely, generation is decomposed into sentence-level steps; at each step the LLM proposes several candidate continuations per beam, the adapter scores each partial chain, and only the top-k beams survive to the next step. The final answer is whichever complete chain the adapter scores highest. Token-level beam search was ruled out immediately since it would need token probabilities that are not available; scoring only complete answers is simpler but forgoes the intermediate guidance that makes multi-step reasoning problems tractable; and self-consistency voting does not use the adapter's judgment at all. Sentence-level decomposition is the balance point between search efficiency and reasoning quality.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [
+        "Sentence-level decomposition balances search efficiency with multi-step reasoning quality; shown to improve ~2.41% per additional beam"
+      ],
+      "why": [],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [],
+        "data": []
+      },
+      "verified_by": [],
+      "artifact": [
+        {
+          "name": "Sentence-level beam search",
+          "pointer": "src/execution/beam_search.py",
+          "what": "Implements the adapted inference process (§3.3): the black-box LLM generates candidate sentences and the adapter scores/selects the top-k beams, per this decision."
+        }
+      ],
+      "concepts": [
+        "Adapted Inference",
+        "Black-Box Large Language Model"
+      ]
+    },
+    {
+      "id": "N14",
+      "type": "experiment",
+      "parent": "N13",
+      "title": "Validate beam size scaling (k=1,3,5) and iteration scaling (T=0..4)",
+      "body": "k=1→5 improves ~2.41% average; T=0 hurts performance (misguided search); T=1 surpasses base; T=3 near-optimal. Full-step (k=3) achieves 5.90% avg. improvement; single-step achieves 3.45%.",
+      "thinking": "The final experiment stress-tests the two main knobs of the method along both axes at once: how many beams to search with, and how many rounds of online adaptation to run. Widening the beam from k=1 to k=5 buys about 2.41% average accuracy. On the adaptation side, an untrained (T=0) adapter actively hurts performance because its scores are essentially noise and misguide the beam search; a single round of adaptation (T=1) is already enough to beat the unadapted base model, and gains keep accumulating up to roughly T=3, after which they level off. Put together, the full-step variant (beam search, k=3) delivers a 5.90% average improvement, well ahead of the simpler single-step variant's 3.45%, at the cost of more LLM calls per question. This experiment is the empirical payoff of the entire beam-search and online-adaptation design chain built up over the previous nodes.",
+      "support_level": null,
+      "isolated": false,
+      "depends_on": [],
+      "source_refs": [
+        "§4.6"
+      ],
+      "why": [
+        {
+          "id": "C07",
+          "title": "Increasing beam size improves performance by ~2.41% on average",
+          "statement": "Increasing beam size from k=1 to k=5 on StrategyQA with gpt-3.5-turbo contributes to an average performance enhancement of 2.41% across 0.1B and 0.3B adapter sizes.",
+          "status": "supported",
+          "conditions": "",
+          "falsification": "Performance does not increase monotonically from k=1 to k=5 for both adapter sizes on StrategyQA.",
+          "dependencies": [
+            "C01"
+          ],
+          "provenance": null
+        },
+        {
+          "id": "C08",
+          "title": "Online adaptation iterations improve performance monotonically (T=1..3)",
+          "statement": "An unfinetuned adapter (T=0) performs below the base model; after T=1 adaptation iteration the model surpasses the base; performance improves consistently through T=3 on StrategyQA.",
+          "status": "supported",
+          "conditions": "",
+          "falsification": "At T=1, BBOX-ADAPTER performance is below or equal to the base model; or performance does not improve from T=1 to T=3.",
+          "dependencies": [
+            "C01"
+          ],
+          "provenance": null
+        }
+      ],
+      "verified_by": [
+        {
+          "id": "E06",
+          "title": "Scale Analysis — Beam Size",
+          "run": "",
+          "setup": "Model: gpt-3.5-turbo; Adapter: deberta-v3-base (0.1B) and deberta-v3-large (0.3B); Hardware: NVIDIA A100-SXM4-80GB; Dataset: StrategyQA (229 test); System: 2-shot prompting; beam sizes k ∈ {1, 3, 5}",
+          "metrics": "Accuracy (%) for each (k, adapter_size) combination; average delta across adapter sizes from k=1 to k=5"
+        },
+        {
+          "id": "E07",
+          "title": "Scale Analysis — Online Adaptation Iterations",
+          "run": "",
+          "setup": "Model: gpt-3.5-turbo; Adapter: deberta-v3-base (0.1B) and deberta-v3-large (0.3B); Hardware: NVIDIA A100-SXM4-80GB; Dataset: StrategyQA (229 test); System: 2-shot prompting; T ∈ {0, 1, 2, 3, 4} iterations",
+          "metrics": "Accuracy (%) for each (T, adapter_size) combination"
+        }
+      ],
+      "artifact": [
+        {
+          "name": "Sentence-level beam search",
+          "pointer": "src/execution/beam_search.py",
+          "what": "Beam-size scaling (k) is exercised through this inference module."
+        },
+        {
+          "name": "Online adaptation loop",
+          "pointer": "src/execution/online_adaptation.py",
+          "what": "Iteration-count scaling (T) is exercised through this training loop (Algorithm 1); also the code ref cited by heuristics H04/H05."
+        }
+      ],
+      "result": {
+        "sources": [],
+        "figures": [],
+        "tables": [
+          {
+            "id": "Figure 3(a)",
+            "caption": "Figure 3(a): Accuracy vs. Number of Beams on StrategyQA (Source: Figure 3(a), Section 4.6) — \"Scale analysis on StrategyQA with (a) different beam sizes. Both experiments are conducted with two-shot prompting.\" Key finding: \"increasing the number of beams contributes to an average performance enhancement of 2.41% across different adapter sizes (0.1B and 0.3B)\" — Section 4.6. Note: exact per-beam data points are not tabulated in the paper text; values below are extracted from visual reading of Figure 3(a), marked ≈ for estimated values.",
+            "markdown": "| Beam Size (k) | Base Model Acc. (%) | Adapter 0.1B Acc. (%) | Adapter 0.3B Acc. (%) |\n|---------------|--------------------|-----------------------|-----------------------|\n| 1 | 66.59 | ≈68.0 | ≈68.5 |\n| 3 | 66.59 | 71.62 | 71.18 |\n| 5 | 66.59 | ≈70.5 | ≈71.5 |"
+          },
+          {
+            "id": "Figure 3(b)",
+            "caption": "Figure 3(b): Accuracy vs. Number of Online Adaptation Iterations on StrategyQA (Source: Figure 3(b), Section 4.6) — \"Scale analysis on StrategyQA with (b) different iterations of online adaptation. Both experiments are conducted with two-shot prompting.\" Key findings (Section 4.6): T=0 (un-finetuned adapter) performs BELOW base model; T=1 surpasses base model performance; T=3–4 convergence / plateau. Note: exact per-iteration values not tabulated in paper; values below are extracted from visual reading of Figure 3(b), marked ≈ for estimated values.",
+            "markdown": "| Iteration (T) | Base Model Acc. (%) | Adapter 0.1B Acc. (%) | Adapter 0.3B Acc. (%) |\n|---------------|--------------------|-----------------------|-----------------------|\n| 0 | 66.59 | ≈62.0 | ≈63.0 |\n| 1 | 66.59 | ≈68.5 | ≈69.0 |\n| 2 | 66.59 | ≈70.5 | ≈70.5 |\n| 3 | 66.59 | 71.62 | 71.18 |\n| 4 | 66.59 | ≈71.5 | ≈71.3 |"
+          },
+          {
+            "id": "T4",
+            "caption": "Table 4: Performance and Cost Comparison (Source: Table 4, §4.4) — \"Comparison of performance and cost for the base model, SFT, and BBOX-ADAPTER on the StrategyQA and GSM8K datasets. The performance is shown as accuracy (%), while the costs ($) are reported in training and inference expenses per thousand questions. Note that the inference cost was calculated by aggregating the total token consumption statistics provided by Azure API and subsequently applying the cost per token (gpt-3.5-turbo-1106) as specified in the OpenAI official documentation. The 'single step' refers to a simplified approach wherein the base model generates a set of complete answers in a single step and the adapter then selects the best answer from these candidates as the final response.\"",
+            "markdown": "| Adapter | StrategyQA Acc.(%) | StrategyQA Training Cost ($) | StrategyQA Inference Cost ($/1k Q) | GSM8K Acc.(%) | GSM8K Training Cost ($) | GSM8K Inference Cost ($/1k Q) |\n|---------|-------------------|------------------------------|------------------------------------|----------------|--------------------------|-------------------------------|\n| gpt-3.5-turbo | 66.59 | - | 0.41 | 67.51 | - | 1.22 |\n| Azure-SFT (Peng et al., 2023) | 76.86 | 153.00 | 7.50 | 69.94 | 216.50 | 28.30 |\n| BBOX-ADAPTER (Single-step) | 69.87 | 2.77 | 2.20 | 71.13 | 7.54 | 3.10 |\n| BBOX-ADAPTER (Full-step) | 71.62 | 3.48 | 5.37 | 74.28 | 11.58 | 12.46 |"
+          }
+        ],
+        "data": []
+      }
+    }
+  ],
+  "context": {
+    "title": "Problem",
+    "summary": "A small auxiliary language model (0.1B–0.3B parameters) can be trained as an energy-based scoring function purely from text outputs of the black-box LLM, using a ranking-based NCE objective that pushes target-domain text higher than source-domain text—without ever querying model weights or probabilities.",
+    "sections": [
+      {
+        "role": "setting",
+        "heading": "Setting",
+        "present": false,
+        "entries": []
+      },
+      {
+        "role": "observations",
+        "heading": "Observations",
+        "present": true,
+        "entries": [
+          {
+            "ent_id": "O1",
+            "inferred_id": false,
+            "ent_title": "Black-box LLMs lack parameter and probability access",
+            "text": "State-of-the-art LLMs (GPT-3.5-turbo, GPT-4, PaLM-2, Gemini) expose neither internal model parameters nor output token probability distributions over the full vocabulary. The OpenAI `logprobs` API returns at most top-5 token probabilities; the `echo` probability feature was deprecated after October 5, 2023.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "State-of-the-art LLMs (GPT-3.5-turbo, GPT-4, PaLM-2, Gemini) expose neither internal model parameters nor output token probability distributions over the full vocabulary. The OpenAI `logprobs` API returns at most top-5 token probabilities; the `echo` probability feature was deprecated after October 5, 2023."
+              },
+              {
+                "label": "Evidence",
+                "value": "Appendix C; Table 1 comparison of white/grey/black-box methods"
+              },
+              {
+                "label": "Implication",
+                "value": "All white-box fine-tuning (LoRA, prefix-tuning, adapters) and grey-box adaptation methods (CombLM, Proxy-Tuning, kNN-Adapter, IPA) requiring token probabilities or model weights are inapplicable."
+              }
+            ],
+            "refs": []
+          },
+          {
+            "ent_id": "O2",
+            "inferred_id": false,
+            "ent_title": "Fine-tuning APIs are opaque, privacy-risky, and expensive",
+            "text": "OpenAI's GPT-3.5-turbo fine-tuning API only exposes 3 adjustable hyperparameters (epochs, batch size, learning rate multiplier). Azure-SFT costs $153.00–$216.50 training and $7.50–$28.30 per 1k questions inference on StrategyQA/GSM8K respectively. Uploading training data to external APIs introduces privacy risks for sensitive domains (e.g., healthcare).",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "OpenAI's GPT-3.5-turbo fine-tuning API only exposes 3 adjustable hyperparameters (epochs, batch size, learning rate multiplier). Azure-SFT costs $153.00–$216.50 training and $7.50–$28.30 per 1k questions inference on StrategyQA/GSM8K respectively. Uploading training data to external APIs introduces privacy risks for sensitive domains (e.g., healthcare)."
+              },
+              {
+                "label": "Evidence",
+                "value": "Table 4 (cost analysis); §1 Introduction; Appendix F.3"
+              },
+              {
+                "label": "Implication",
+                "value": "Fine-tuning APIs are impractical for privacy-sensitive applications and hyperparameter search is prohibitively expensive."
+              }
+            ],
+            "refs": []
+          },
+          {
+            "ent_id": "O3",
+            "inferred_id": false,
+            "ent_title": "General-purpose pre-trained LLMs underperform on specialized tasks",
+            "text": "gpt-3.5-turbo achieves only 66.59% accuracy on StrategyQA, 67.51% on GSM8K, 77.00% True+Info on TruthfulQA, and 72.90% on ScienceQA under CoT prompting, leaving significant room for domain adaptation.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "gpt-3.5-turbo achieves only 66.59% accuracy on StrategyQA, 67.51% on GSM8K, 77.00% True+Info on TruthfulQA, and 72.90% on ScienceQA under CoT prompting, leaving significant room for domain adaptation."
+              },
+              {
+                "label": "Evidence",
+                "value": "Table 2 (base model row); §4.2"
+              },
+              {
+                "label": "Implication",
+                "value": "Task-specific adaptation is needed to unlock full LLM utility."
+              }
+            ],
+            "refs": []
+          },
+          {
+            "ent_id": "O4",
+            "inferred_id": false,
+            "ent_title": "Grey-box methods require token probabilities unavailable in modern LLMs",
+            "text": "Methods such as kNN-Adapter (Huang et al., 2023), CombLM (Ormazabal et al., 2023), Proxy-Tuning (Liu et al., 2024), and IPA (Lu et al., 2023) all require access to output token probabilities, which are only available in models predating GPT-3 or in open-source LLMs like LLaMA-2.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "Methods such as kNN-Adapter (Huang et al., 2023), CombLM (Ormazabal et al., 2023), Proxy-Tuning (Liu et al., 2024), and IPA (Lu et al., 2023) all require access to output token probabilities, which are only available in models predating GPT-3 or in open-source LLMs like LLaMA-2."
+              },
+              {
+                "label": "Evidence",
+                "value": "§2 Grey-Box LLM Adaptation; §1 Introduction footnote 1"
+              },
+              {
+                "label": "Implication",
+                "value": "A genuinely black-box adaptation method must operate solely on text outputs."
+              }
+            ],
+            "refs": []
+          }
+        ]
+      },
+      {
+        "role": "gaps",
+        "heading": "Gaps",
+        "present": true,
+        "entries": [
+          {
+            "ent_id": "G1",
+            "inferred_id": false,
+            "ent_title": "No black-box adaptation method without APIs",
+            "text": "There exists no method to adapt black-box LLMs without using their fine-tuning APIs and without accessing model parameters or output probabilities.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "There exists no method to adapt black-box LLMs without using their fine-tuning APIs and without accessing model parameters or output probabilities."
+              },
+              {
+                "label": "Caused by",
+                "value": "O1, O4"
+              },
+              {
+                "label": "Existing attempts",
+                "value": "Fine-tuning APIs (Peng et al., 2023), grey-box methods (Sun et al., 2022; Huang et al., 2023; Ormazabal et al., 2023; Lu et al., 2023; Liu et al., 2024)"
+              },
+              {
+                "label": "Why they fail",
+                "value": "Fine-tuning APIs violate transparency/privacy; grey-box methods require token probabilities unavailable in GPT-3.5+ and PaLM-2."
+              }
+            ],
+            "refs": [
+              {
+                "raw": "O1",
+                "kind": "observation",
+                "target": "O1"
+              },
+              {
+                "raw": "O4",
+                "kind": "observation",
+                "target": "O4"
+              }
+            ]
+          },
+          {
+            "ent_id": "G2",
+            "inferred_id": false,
+            "ent_title": "Lack of cost-efficient adaptation for black-box LLMs",
+            "text": "Fine-tuning APIs cost 31.30× more in training and 1.84× more in inference than the proposed approach, making frequent or iterative adaptation economically infeasible.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "Fine-tuning APIs cost 31.30× more in training and 1.84× more in inference than the proposed approach, making frequent or iterative adaptation economically infeasible."
+              },
+              {
+                "label": "Caused by",
+                "value": "O2"
+              },
+              {
+                "label": "Existing attempts",
+                "value": "Azure-SFT"
+              },
+              {
+                "label": "Why they fail",
+                "value": "API pricing is fixed and opaque; no control over training efficiency."
+              }
+            ],
+            "refs": [
+              {
+                "raw": "O2",
+                "kind": "observation",
+                "target": "O2"
+              }
+            ]
+          },
+          {
+            "ent_id": "G3",
+            "inferred_id": false,
+            "ent_title": "Ground-truth dependency limits adaptation scope",
+            "text": "Existing adaptation methods require labeled ground-truth data, limiting applicability to domains where such labels are scarce or expensive.",
+            "unstructured": false,
+            "fields": [
+              {
+                "label": "Statement",
+                "value": "Existing adaptation methods require labeled ground-truth data, limiting applicability to domains where such labels are scarce or expensive."
+              },
+              {
+                "label": "Caused by",
+                "value": "O2, O3"
+              },
+              {
+                "label": "Existing attempts",
+                "value": "Standard SFT with supervised labels"
+              },
+              {
+                "label": "Why they fail",
+                "value": "Assumes full availability of ground-truth solutions."
+              }
+            ],
+            "refs": [
+              {
+                "raw": "O2",
+                "kind": "observation",
+                "target": "O2"
+              },
+              {
+                "raw": "O3",
+                "kind": "observation",
+                "target": "O3"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "role": "insight",
+        "heading": "Key Insight",
+        "present": true,
+        "entries": [
+          {
+            "ent_id": "1",
+            "inferred_id": true,
+            "ent_title": "Insight",
+            "text": "A small auxiliary language model (0.1B–0.3B parameters) can be trained as an energy-based scoring function purely from text outputs of the black-box LLM, using a ranking-based NCE objective that pushes target-domain text higher than source-domain text—without ever querying model weights or probabilities. The black-box LLM then acts as a proposal generator during inference, and the adapter as a reranker via sentence-level beam search.",
+            "unstructured": true,
+            "fields": [],
+            "refs": []
+          },
+          {
+            "ent_id": "2",
+            "inferred_id": true,
+            "ent_title": "Derived from",
+            "text": "O1, O4 (only text outputs are available) + O3 (adaptation is needed)",
+            "unstructured": true,
+            "fields": [],
+            "refs": [
+              {
+                "raw": "O1",
+                "kind": "observation",
+                "target": "O1"
+              },
+              {
+                "raw": "O4",
+                "kind": "observation",
+                "target": "O4"
+              },
+              {
+                "raw": "O3",
+                "kind": "observation",
+                "target": "O3"
+              }
+            ]
+          },
+          {
+            "ent_id": "3",
+            "inferred_id": true,
+            "ent_title": "Enables",
+            "text": "Full black-box LLM adaptation using only API text generation calls, with online self-improvement through iterative sampling and AI/human feedback.",
+            "unstructured": true,
+            "fields": [],
+            "refs": []
+          }
+        ]
+      },
+      {
+        "role": "assumptions",
+        "heading": "Assumptions",
+        "present": true,
+        "entries": [
+          {
+            "ent_id": "A1",
+            "inferred_id": false,
+            "ent_title": "",
+            "text": "The black-box LLM's text generation API is accessible (text-in, text-out).",
+            "unstructured": true,
+            "fields": [],
+            "refs": []
+          },
+          {
+            "ent_id": "A2",
+            "inferred_id": false,
+            "ent_title": "",
+            "text": "A small white-box model (e.g., DeBERTa-v3-base) can be fine-tuned locally.",
+            "unstructured": true,
+            "fields": [],
+            "refs": []
+          },
+          {
+            "ent_id": "A3",
+            "inferred_id": false,
+            "ent_title": "",
+            "text": "Target domain text can be distinguished from source domain text in meaning and quality.",
+            "unstructured": true,
+            "fields": [],
+            "refs": []
+          },
+          {
+            "ent_id": "A4",
+            "inferred_id": false,
+            "ent_title": "",
+            "text": "Sentence-level decomposition of the generation provides a useful granularity for beam search.",
+            "unstructured": true,
+            "fields": [],
+            "refs": []
+          },
+          {
+            "ent_id": "A5",
+            "inferred_id": false,
+            "ent_title": "",
+            "text": "AI feedback from an advanced LLM (GPT-4) can approximate human preference labels.",
+            "unstructured": true,
+            "fields": [],
+            "refs": []
+          }
+        ]
+      }
+    ]
+  },
+  "glossary": {
+    "title": "Concepts",
+    "groups": [],
+    "terms": [
+      {
+        "term_id": "G01",
+        "name": "Black-Box Large Language Model",
+        "aliases": [
+          "LLM"
+        ],
+        "group": "",
+        "definition": "A language model where the user has access only to text inputs and text outputs via an API. Internal model parameters, high-dimensional intermediate representations, and output token probability distributions over the vocabulary are all inaccessible. Examples: GPT-3.5-turbo, GPT-4, PaLM-2, Gemini.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "$p_{LLM}(y|x)$"
+          },
+          {
+            "label": "Boundary conditions",
+            "value": "Applies when neither model weights nor logprobs can be queried. Distinct from grey-box (token probs available) and white-box (full parameter access). Post-October 2023 OpenAI API removes even the `echo` probabilities feature."
+          }
+        ],
+        "related": [
+          "G07",
+          "G02"
+        ],
+        "refs": []
+      },
+      {
+        "term_id": "G02",
+        "name": "Energy-Based Model (EBM) Adapter",
+        "aliases": [],
+        "group": "",
+        "definition": "A small trainable language model (0.1B–0.3B parameters, e.g., DeBERTa-v3) that outputs a scalar energy score for an input–output pair $(x, y)$. The adapted model distribution is the product of the black-box LLM's distribution and the exponentiated adapter score, normalized by the intractable partition function $Z_\\theta(x) = \\int p_{LLM}(y|x)\\exp(g_\\theta(x,y))dy$.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "$g_\\theta(x, y) \\in \\mathbb{R}$; $p_\\theta(y|x) = \\frac{p_{LLM}(y|x)\\exp(g_\\theta(x,y))}{Z_\\theta(x)}$"
+          },
+          {
+            "label": "Boundary conditions",
+            "value": "Requires only text input/output pairs; does not access LLM internals. Trained with NCE to avoid computing $Z_\\theta$. Spectral normalization is applied to prevent sharp gradients."
+          }
+        ],
+        "related": [
+          "G03",
+          "G04",
+          "G05"
+        ],
+        "refs": []
+      },
+      {
+        "term_id": "G03",
+        "name": "Ranking-Based NCE Loss",
+        "aliases": [],
+        "group": "",
+        "definition": "A Noise Contrastive Estimation objective that avoids computing the intractable partition function. It treats the positive sample (target-domain data $y^+$) as the \"real\" sample and negative samples (source-domain/LLM-generated text $y^-$) as \"noise,\" training the adapter to rank $y^+$ above $y^-$. The gradient is: $\\nabla_\\theta\\ell(\\theta) = \\nabla_\\theta\\{-\\mathbb{E}_{y^+\\sim p_{data}}[g_\\theta(x,y^+)] + \\alpha\\mathbb{E}[g_\\theta(x,y^+)^2] + \\mathbb{E}_{y^-\\sim p_\\theta}[g_\\theta(x,y^-)] + \\alpha\\mathbb{E}[g_\\theta(x,y^-)^2]\\}$ where $\\alpha$ is the spectral normalization regularization weight.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "$\\ell(\\theta) = -\\mathbb{E}_{p_{data}(x)}\\left[g_\\theta(x) - \\log\\sum_{k}\\exp(g_\\theta(x_k))\\right]$"
+          },
+          {
+            "label": "Boundary conditions",
+            "value": "Requires at least one positive and one negative sample per training step. Reduces to standard NCE when only binary real/noise distinction is used. Extended to ranking by minimizing KL divergence between the parameterized posterior and the data-to-noise ratio."
+          }
+        ],
+        "related": [
+          "G02",
+          "G04",
+          "G05"
+        ],
+        "refs": []
+      },
+      {
+        "term_id": "G04",
+        "name": "Spectral Normalization",
+        "aliases": [],
+        "group": "",
+        "definition": "A weight normalization technique applied to the energy model $g_\\theta$ to control the Lipschitz constant of the network, preventing sharp gradients during EBM training. The gradient of the regularized loss includes terms $+\\alpha\\mathbb{E}[g_\\theta(x,y^+)^2]$ and $+\\alpha\\mathbb{E}[g_\\theta(x,y^-)^2]$ which enforce smoothness.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "$\\text{SN}(W) = W / \\sigma(W)$ where $\\sigma(W)$ is the spectral norm (largest singular value)"
+          },
+          {
+            "label": "Boundary conditions",
+            "value": "Necessary for training stability of energy-based models. Applied per (Du & Mordatch, 2019). Without it, energy values may diverge."
+          }
+        ],
+        "related": [
+          "G03",
+          "G02"
+        ],
+        "refs": []
+      },
+      {
+        "term_id": "G05",
+        "name": "Online Adaptation Framework",
+        "aliases": [
+          "Algorithm 1"
+        ],
+        "group": "",
+        "definition": "An iterative training procedure with $T$ rounds. At each iteration $t$: (1) sample $M$ candidates from the current adapted distribution $p_{\\theta_t}(y|x_i)$; (2) update the positive set by selecting the best candidate (via ground-truth, human, or AI feedback); (3) use remaining candidates as negatives; (4) compute NCE loss gradient and update adapter parameters via SGD: $\\theta_{t+1} = \\theta_t - \\eta\\nabla_\\theta\\ell(\\theta_t)$.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "$\\{\\theta_t\\}_{t=0}^{T}$; $y^{(t)}_{i+} = \\text{SEL}(y^{(t-1)}_{i+}, \\{\\hat{y}_{i,m}\\}_{m=1}^M)$; $y^{(t)}_{i-} = \\{\\hat{y}_{i,m} | \\hat{y}_{i,m} \\neq y^{(t)}_{i+}\\}$"
+          },
+          {
+            "label": "Boundary conditions",
+            "value": "Requires an accessible feedback signal (ground-truth labels, human preference, or an advanced AI judge). Performance degrades if $T=0$ (untuned adapter misguides beam search). Improvement saturates around $T=3$–$4$ iterations."
+          }
+        ],
+        "related": [
+          "G02",
+          "G03",
+          "G06"
+        ],
+        "refs": []
+      },
+      {
+        "term_id": "G06",
+        "name": "Adapted Inference",
+        "aliases": [
+          "Sentence-Level Beam Search"
+        ],
+        "group": "",
+        "definition": "An inference procedure that decomposes the full generation $y$ into sentence-level steps $s_1,\\ldots,s_L$. The black-box LLM generates $n$ candidate sentences at each step for each beam (producing $nk$ candidates), and the adapter scores each partial chain $s_{1:l}$ to retain the top-$k$ beams. Default beam size $k=3$; each beam generates multiple candidates per step.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "$y = [s_1, s_2, \\ldots, s_L]$; $p_\\theta(y|x) = \\exp(g_\\theta(s_{1:L},x))\\prod_l p_{LLM}(s_l|x,s_{1:l-1})$"
+          },
+          {
+            "label": "Boundary conditions",
+            "value": "Requires multiple API calls to the black-box LLM (beam_size × candidates per step × steps). The \"single-step\" variant collapses $L=1$, generating complete answers in one shot and reranking. Increases API cost compared to direct CoT inference."
+          }
+        ],
+        "related": [
+          "G02",
+          "G05"
+        ],
+        "refs": []
+      },
+      {
+        "term_id": "G07",
+        "name": "Grey-Box LLM Adaptation",
+        "aliases": [],
+        "group": "",
+        "definition": "Adaptation methods that assume access to output token probabilities but not model parameters. Examples: LMaaS (Sun et al., 2022), kNN-Adapter (Huang et al., 2023), CombLM (Ormazabal et al., 2023), Proxy-Tuning (Liu et al., 2024), IPA (Lu et al., 2023). These methods are inapplicable to post-GPT-3 black-box APIs.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "Methods requiring $p_{LLM}(y_t|x,y_{<t})$ (token-level output probabilities)"
+          },
+          {
+            "label": "Boundary conditions",
+            "value": "Applicable only to models that expose logprobs (e.g., pre-GPT-3, LLaMA-2). Distinct from black-box adaptation (no probabilities) and white-box (full parameter access)."
+          }
+        ],
+        "related": [
+          "G01",
+          "G02"
+        ],
+        "refs": []
+      },
+      {
+        "term_id": "G08",
+        "name": "Positive and Negative Samples",
+        "aliases": [],
+        "group": "",
+        "definition": "In BBOX-ADAPTER training, positive samples are target-domain outputs (from ground-truth solutions, human preference, or AI feedback via GPT-4). Negative samples are outputs generated by the current adapted model. The key distinction from standard supervised learning is that negatives are dynamically sampled from the adapter's own distribution at each iteration, enabling self-improvement.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "$y^+ \\sim p_{data}(y|x)$ (positive); $y^- \\sim p_\\theta(y|x)$ (negative)"
+          },
+          {
+            "label": "Boundary conditions",
+            "value": "Initial positives are selected from K initial LLM samples using SEL(·) (best-of-K). Initial negatives are from a randomly-initialized adapter. At iteration $t$, previous positive is compared against new samples and updated via SEL(·)."
+          }
+        ],
+        "related": [
+          "G05",
+          "G03"
+        ],
+        "refs": []
+      },
+      {
+        "term_id": "G09",
+        "name": "Plug-and-Play Adaptation",
+        "aliases": [],
+        "group": "",
+        "definition": "The property that a BBOX-ADAPTER trained to adapt one black-box LLM (e.g., gpt-3.5-turbo) can be directly applied as a scorer/reranker for a different black-box LLM (e.g., davinci-002, Mixtral-8×7B) without any retraining. This is enabled by the adapter's independence from internal LLM parameters, it operates purely on generated text.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "Adapter $g_{\\theta^*}$ trained on model $A$ applied to model $B$"
+          },
+          {
+            "label": "Boundary conditions",
+            "value": "Requires that the adapted LLM produces text in a similar format/language as the original. Performance gains may be smaller when the target LLM distribution differs substantially from the source."
+          }
+        ],
+        "related": [
+          "G06",
+          "G02"
+        ],
+        "refs": []
+      },
+      {
+        "term_id": "G10",
+        "name": "Parameter-Efficient Fine-Tuning (PEFT)",
+        "aliases": [
+          "PEFT"
+        ],
+        "group": "",
+        "definition": "Fine-tuning approaches that update only a small subset of model parameters rather than the full model. Examples: LoRA (Hu et al., 2021), adapters (Houlsby et al., 2019), prefix-tuning. For the LoRA baseline used in experiments, rank $r=128$ (for 0.1B comparison) or $r=384$ (for 0.3B comparison), with $\\alpha=2r$.",
+        "fields": [
+          {
+            "label": "Notation",
+            "value": "LoRA: $W + \\Delta W = W + BA$ where $B \\in \\mathbb{R}^{d \\times r}$, $A \\in \\mathbb{R}^{r \\times k}$, $r \\ll \\min(d,k)$"
+          },
+          {
+            "label": "Boundary conditions",
+            "value": "Requires access to internal model parameters and backward passes—inapplicable to black-box LLMs. Used as a white-box upper-bound baseline (SFT-LoRA with Mixtral-8×7B)."
+          }
+        ],
+        "related": [
+          "G07",
+          "G02"
+        ],
+        "refs": []
+      }
+    ],
+    "lexicon": {
+      "black-box large language model": "G01",
+      "llm": "G01",
+      "energy-based model (ebm) adapter": "G02",
+      "ranking-based nce loss": "G03",
+      "spectral normalization": "G04",
+      "online adaptation framework": "G05",
+      "algorithm 1": "G05",
+      "adapted inference": "G06",
+      "sentence-level beam search": "G06",
+      "grey-box llm adaptation": "G07",
+      "positive and negative samples": "G08",
+      "plug-and-play adaptation": "G09",
+      "parameter-efficient fine-tuning (peft)": "G10",
+      "peft": "G10"
+    }
+  },
+  "dependencies": {
+    "title": "Related Work / Dependencies",
+    "preamble": "",
+    "legend": [],
+    "attribution": "",
+    "entries": [
+      {
+        "rw_id": "RW01",
+        "inferred_id": false,
+        "name": "Devlin et al., 2019 (BERT)",
+        "relation_raw": "imports",
+        "relation_norm": "imports",
+        "delta": "What changed: BBOX-ADAPTER uses DeBERTa/BERT as an energy scorer (classification head outputting scalar) rather than as a task classifier Why: Pretrained encoders provide rich contextual representations for scoring (question, answer) pairs",
+        "adopted": "Pretrained DeBERTa-v3-base/large and BERT-base-cased as adapter backbones; [CLS] token representation for scoring",
+        "grounding": [
+          {
+            "raw": "10.18653/v1/N19-1423",
+            "kind": "doi",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C01",
+          "C04"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW02",
+        "inferred_id": false,
+        "name": "Hu et al., 2021 (LoRA)",
+        "relation_raw": "baseline",
+        "relation_norm": "baseline",
+        "delta": "What changed: BBOX-ADAPTER adapts black-box LLMs without accessing parameters; LoRA directly updates rank-decomposed weight matrices inside the white-box model Why: LoRA is inapplicable to black-box APIs; used as white-box upper-bound baseline",
+        "adopted": "Used as SFT-LoRA baseline with r=128/384, α=2r, for Mixtral-8×7B comparison (Table 6)",
+        "grounding": [
+          {
+            "raw": "arXiv:2106.09685",
+            "kind": "arxiv",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C01",
+          "C02",
+          "C03"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW03",
+        "inferred_id": false,
+        "name": "Gutmann & Hyvarinen, 2010 (NCE)",
+        "relation_raw": "imports",
+        "relation_norm": "imports",
+        "delta": "What changed: BBOX-ADAPTER extends NCE from binary real/noise to a ranking-based objective that pushes target samples above source samples Why: Standard NCE only distinguishes real vs. noise; ranking-based variant better captures the relative quality of candidates",
+        "adopted": "NCE principle of avoiding intractable partition function; ranking-based variant from Ma & Collins (2018)",
+        "grounding": [],
+        "claims": [
+          "C04"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW04",
+        "inferred_id": false,
+        "name": "Ma & Collins, 2018 (Ranking NCE)",
+        "relation_raw": "imports",
+        "relation_norm": "imports",
+        "delta": "What changed: Applied to energy-based LLM adaptation with online dynamic positive/negative sampling instead of static corpus Why: Enables domain adaptation via ranking without requiring gold probability labels",
+        "adopted": "Ranking-based NCE loss formulation (Eq. 2); proof that optimal solution recovers data distribution",
+        "grounding": [
+          {
+            "raw": "10.18653/v1/D18-1405",
+            "kind": "doi",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C04"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW05",
+        "inferred_id": false,
+        "name": "Du & Mordatch, 2019 (EBM with spectral normalization)",
+        "relation_raw": "imports",
+        "relation_norm": "imports",
+        "delta": "What changed: BBOX-ADAPTER applies spectral normalization specifically to prevent gradient instability in the NCE-trained adapter Why: Sharp gradients destabilize EBM training; spectral normalization provides Lipschitz control",
+        "adopted": "Spectral normalization technique; regularization terms $\\alpha\\mathbb{E}[g_\\theta(x,y)^2]$ in loss gradient",
+        "grounding": [
+          {
+            "raw": "arXiv:1903.08689",
+            "kind": "arxiv",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C04"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW06",
+        "inferred_id": false,
+        "name": "Peng et al., 2023 (Azure-SFT / GPT-3.5-turbo Fine-Tuning API)",
+        "relation_raw": "baseline",
+        "relation_norm": "baseline",
+        "delta": "What changed: BBOX-ADAPTER eliminates the need for fine-tuning APIs by training an external lightweight adapter Why: API fine-tuning is opaque (only 3 adjustable hyperparameters), privacy-risky, and costly (31.30× more expensive in training)",
+        "adopted": "Azure-SFT serves as the primary performance upper bound and cost comparison baseline",
+        "grounding": [],
+        "claims": [
+          "C01",
+          "C02",
+          "C03"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW07",
+        "inferred_id": false,
+        "name": "Huang et al., 2023 (kNN-Adapter)",
+        "relation_raw": "bounds",
+        "relation_norm": "bounds",
+        "delta": "What changed: BBOX-ADAPTER removes the requirement for a domain-specific retrieval datastore and token-probability access Why: kNN-Adapter requires output token probabilities for interpolation (grey-box); unavailable in modern black-box LLMs",
+        "adopted": "Concept of augmenting LLM generation with an external module",
+        "grounding": [
+          {
+            "raw": "arXiv:2302.10879",
+            "kind": "arxiv",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C01"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW08",
+        "inferred_id": false,
+        "name": "Ormazabal et al., 2023 (CombLM)",
+        "relation_raw": "bounds",
+        "relation_norm": "bounds",
+        "delta": "What changed: BBOX-ADAPTER uses text-level energy scoring instead of logit-level combination; no token probabilities required Why: CombLM interpolates log-probabilities from white-box and black-box models, requiring token probability access",
+        "adopted": "Concept of combining a small fine-tuned model with a large black-box LLM",
+        "grounding": [
+          {
+            "raw": "10.18653/v1/2023.emnlp-main.180",
+            "kind": "doi",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C01"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW09",
+        "inferred_id": false,
+        "name": "Liu et al., 2024 (Proxy-Tuning)",
+        "relation_raw": "bounds",
+        "relation_norm": "bounds",
+        "delta": "What changed: BBOX-ADAPTER operates on text outputs only; Proxy-Tuning requires logit-level adjustments using expert/anti-expert token probabilities Why: Logit offsets require probability access; unavailable in black-box APIs",
+        "adopted": "Concept of using a small model to adjust black-box LLM outputs",
+        "grounding": [
+          {
+            "raw": "arXiv:2401.08565",
+            "kind": "arxiv",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C01"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW10",
+        "inferred_id": false,
+        "name": "Sun et al., 2022 (LMaaS)",
+        "relation_raw": "bounds",
+        "relation_norm": "bounds",
+        "delta": "What changed: BBOX-ADAPTER trains an energy-based scorer; LMaaS trains a derivative-free optimizer for discrete prompt tuning requiring high-dimensional input/output representations Why: LMaaS still requires gradient information via high-dimensional representations",
+        "adopted": "Paradigm of adapting LLMs as a service without internal parameter access",
+        "grounding": [],
+        "claims": [
+          "C01"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW11",
+        "inferred_id": false,
+        "name": "Wei et al., 2022 (Chain-of-Thought)",
+        "relation_raw": "baseline",
+        "relation_norm": "baseline",
+        "delta": "What changed: BBOX-ADAPTER combines CoT prompting with adapter-guided beam search; pure CoT is the non-adapted baseline Why: CoT provides a strong baseline that BBOX-ADAPTER must surpass",
+        "adopted": "CoT prompts used as the base generation strategy for all experiments; few-shot prompt format",
+        "grounding": [],
+        "claims": [
+          "C01"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      },
+      {
+        "rw_id": "RW12",
+        "inferred_id": false,
+        "name": "Deng et al., 2020 (Residual EBM for Text Generation)",
+        "relation_raw": "imports",
+        "relation_norm": "imports",
+        "delta": "What changed: BBOX-ADAPTER applies residual EBM to black-box LLM adaptation with online learning; Deng et al. apply it to white-box text generation Why: The residual EBM formulation (Eq. 1) is directly adopted but extended to the black-box setting",
+        "adopted": "Residual EBM parameterization $p_\\theta(y|x) = p_{LLM}(y|x)\\exp(g_\\theta(x,y))/Z_\\theta(x)$",
+        "grounding": [
+          {
+            "raw": "arXiv:2004.11714",
+            "kind": "arxiv",
+            "target": null
+          }
+        ],
+        "claims": [
+          "C01",
+          "C04"
+        ],
+        "cross_agent": false,
+        "is_footprint": false
+      }
+    ],
+    "footprint": []
+  },
+  "recipes": {
+    "title": "Solution",
+    "files": [
+      {
+        "file": "algorithm.md",
+        "role": "algorithm",
+        "file_title": "Algorithm",
+        "sections": [
+          {
+            "sec_id": "",
+            "heading": "EBM Parameterization",
+            "kind": "math",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "p_\\theta(y|x) = \\frac{p_{LLM}(y|x)\\exp(g_\\theta(x,y))}{Z_\\theta(x)}, \\quad Z_\\theta(x) = \\int p_{LLM}(y|x)\\exp(g_\\theta(x,y))dy",
+            "text": "The adapted model distribution:\n\n$$p_\\theta(y|x) = \\frac{p_{LLM}(y|x)\\exp(g_\\theta(x,y))}{Z_\\theta(x)}$$\n\nwhere $Z_\\theta(x) = \\int p_{LLM}(y|x)\\exp(g_\\theta(x,y))dy$ is intractable.",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "",
+            "heading": "Ranking-Based NCE Objective",
+            "kind": "math",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "\\min_\\theta \\ell(\\theta) = \\max_\\theta \\mathbb{E}_{p_{data}(x)}\\left[g_\\theta(x) - \\log\\sum_{k}\\exp(g_\\theta(x_k))\\right] \\quad (2)",
+            "text": "Minimize KL divergence between parameterized posterior and data-to-noise ratio:\n\n$$\\min_\\theta \\ell(\\theta) = \\max_\\theta \\mathbb{E}_{p_{data}(x)}\\left[g_\\theta(x) - \\log\\sum_{k}\\exp(g_\\theta(x_k))\\right] \\quad (2)$$\n\nOptimal solution: $p_\\theta(x) := p_{LLM}(x)\\exp(g_\\theta(x)) = p_{data}(x)$",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "",
+            "heading": "NCE Loss Gradient (with Spectral Normalization)",
+            "kind": "math",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "\\nabla_\\theta\\ell(\\theta) = \\nabla_\\theta\\{-\\mathbb{E}_{y^+\\sim p_{data}(y|x)}[g_\\theta(x,y^+)] + \\alpha\\mathbb{E}[g_\\theta(x,y^+)^2] + \\mathbb{E}_{y^-\\sim p_\\theta(y|x)}[g_\\theta(x,y^-)] + \\alpha\\mathbb{E}[g_\\theta(x,y^-)^2]\\} \\quad (3)",
+            "text": "$$\\nabla_\\theta\\ell(\\theta) = \\nabla_\\theta\\left\\{-\\mathbb{E}_{y^+\\sim p_{data}(y|x)}[g_\\theta(x,y^+)] + \\alpha\\mathbb{E}[g_\\theta(x,y^+)^2] + \\mathbb{E}_{y^-\\sim p_\\theta(y|x)}[g_\\theta(x,y^-)] + \\alpha\\mathbb{E}[g_\\theta(x,y^-)^2]\\right\\} \\quad (3)$$",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "",
+            "heading": "Adapted Inference",
+            "kind": "math",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "p_\\theta(y|x) = p_\\theta(s_{1:L}|x) = \\exp(g_\\theta(s_{1:L},x))\\prod_l p_{LLM}(s_l|x,s_{1:l-1}) \\quad (4)",
+            "text": "$$p_\\theta(y|x) = p_\\theta(s_{1:L}|x) = \\exp(g_\\theta(s_{1:L},x))\\prod_l p_{LLM}(s_l|x,s_{1:l-1}) \\quad (4)$$",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "",
+            "heading": "Online Sampling",
+            "kind": "math",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "y^{(t)}_{i+} = \\text{SEL}(y^{(t-1)}_{i+}, \\{\\hat{y}_{i,m}\\}_{m=1}^M) \\quad (5); \\quad y^{(t)}_{i-} = \\{\\hat{y}_{i,m} | \\hat{y}_{i,m} \\neq y^{(t)}_{i+}\\}_{m=1}^M \\quad (6); \\quad \\theta_{t+1} = \\theta_t - \\eta\\nabla_\\theta\\ell(\\theta_t) \\quad (7)",
+            "text": "$$\\{\\hat{y}_{i,m}\\}_{m=1}^M \\sim p_{\\theta_t}(y|x_i) \\quad (4)$$\n\n$$y^{(t)}_{i+} = \\text{SEL}(y^{(t-1)}_{i+}, \\{\\hat{y}_{i,m}\\}_{m=1}^M) \\quad (5)$$\n\n$$y^{(t)}_{i-} = \\{\\hat{y}_{i,m} | \\hat{y}_{i,m} \\neq y^{(t)}_{i+}\\}_{m=1}^M \\quad (6)$$\n\n$$\\theta_{t+1} = \\theta_t - \\eta\\nabla_\\theta\\ell(\\theta_t) \\quad (7)$$",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "",
+            "heading": "Algorithm 1: BBOX-ADAPTER Online Adaptation",
+            "kind": "code",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "Input:\n  D = {(x_i, y_i)}_{i=1}^N  — SFT dataset\n  p_LLM                       — unadapted black-box LLM (fixed)\n  T                           — number of iterations\n  η = 5e-6                    — learning rate\n  M (= beam_size = 3)         — number of beams / candidates sampled per step\n  K                           — initial candidates per query\n\nInitialize:\n  θ_0 ← random initialization\n\n# --- Initialization Phase ---\nFor each i = 1..N:\n  Sample K candidates: {y_{i,j}}_{j=1}^K ~ p_LLM(y|x_i)\n  y^(0)_{i+} = SEL({y_{i,j}}, feedback=ground_truth_or_AI)\n  y^(0)_{i-} = {y_{i,j} | j ≠ argmax}\n\n# --- Iterative Adaptation ---\nFor t = 0..T-1:\n  For each i = 1..N:\n    # Step 1: Sample from adapted inference\n    {ŷ_{i,m}}_{m=1}^M ~ p_θt(y|x_i)  [via beam search, Eq.4]\n    \n    # Step 2: Update positive samples\n    y^(t)_{i+} = SEL(y^(t-1)_{i+}, {ŷ_{i,m}})  [Eq.5]\n    \n    # Step 3: Update negative samples\n    y^(t)_{i-} = {ŷ_{i,m} | ŷ_{i,m} ≠ y^(t)_{i+}}  [Eq.6]\n  \n  # Step 4: Compute NCE gradient\n  ∇_θ ℓ(θ_t) using y^(t)_{i+} and y^(t)_{i-} via Eq.3\n  \n  # Step 5: Update adapter\n  θ_{t+1} = θ_t - η * ∇_θ ℓ(θ_t)  [Eq.7, AdamW, batch=64, steps=6000]\n\nOutput: θ_T (fine-tuned adapter)",
+            "text": "",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "",
+            "heading": "Adapted Inference (Sentence-Level Beam Search)",
+            "kind": "code",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "Input: x, adapter g_θ, beam_size k=3, candidates_per_beam n\nOutput: best answer y*\n\nInitialize beams: B = [(\"\", 0.0)]  # (partial_sequence, score)\n\nWhile not all beams terminated:\n  candidates = []\n  For each beam b in B:\n    # Sample n next sentences from LLM\n    For j = 1..n:\n      s_new ~ p_LLM(s_l | x, b.prefix)\n      candidates.append((b.prefix + s_new, g_θ(x, b.prefix + s_new)))\n  \n  # Prune to top-k by adapter score\n  B = top_k(candidates, k=k, key=score)\n  \n  # Check stop signals (e.g., \"####\" terminator, L steps reached)\n\nReturn: argmax_{b in B} g_θ(x, b.sequence)",
+            "text": "",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "",
+            "heading": "Complexity Analysis",
+            "kind": "kv",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Training",
+                "value": "$O(T \\cdot N \\cdot M \\cdot C_{LLM} + T \\cdot N \\cdot C_{adapter})$ where $C_{LLM}$ is the cost of one LLM API call and $C_{adapter}$ is one adapter forward-backward pass. Adapter training dominates at 6000 steps with batch size 64."
+              },
+              {
+                "label": "Inference (single-step)",
+                "value": "$O(n \\cdot C_{LLM} + n \\cdot C_{adapter})$ per question — one round of LLM proposals + adapter scoring."
+              },
+              {
+                "label": "Inference (full-step)",
+                "value": "$O(L \\cdot n \\cdot k \\cdot C_{LLM} + L \\cdot n \\cdot k \\cdot C_{adapter})$ per question — scales with sentence count $L$ and beam size $k$."
+              },
+              {
+                "label": "Adapter size",
+                "value": "86M–304M parameters; significantly smaller than the black-box LLM."
+              }
+            ],
+            "code": "",
+            "text": "",
+            "warn": "",
+            "refs": []
+          }
+        ]
+      },
+      {
+        "file": "architecture.md",
+        "role": "architecture",
+        "file_title": "System Architecture",
+        "sections": [
+          {
+            "sec_id": "",
+            "heading": "Component Overview",
+            "kind": "code",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "┌─────────────────────────────────────────────────────────┐\n│                   BBOX-ADAPTER System                           │\n│                                                                 │\n│  ┌─────────────────────┐    ┌─────────────────────────────┐   │\n│  │   Black-Box LLM      │    │  Energy-Based Adapter g_θ   │   │\n│  │  (Proposal Generator)│    │  (Scorer/Reranker)          │   │\n│  │  pLLM(y|x) — FIXED   │    │  DeBERTa-v3 / BERT — TRAIN  │   │\n│  │  API: text-in/out    │    │  Input: (x, y) text pair    │   │\n│  │                      │    │  Output: scalar score ∈ ℝ   │   │\n│  └─────────────────────┘    └─────────────────────────────┘   │\n│           │                              │                      │\n│           ▼                              ▼                      │\n│  ┌────────────────────────────────────────────────────┐  │\n│  │              Online Adaptation Loop (Algorithm 1)         │  │\n│  │  1. Sample M candidates from pθ(y|x) (beam search)        │  │\n│  │  2. Select positive y+ via SEL(·) [GT/human/AI]           │  │\n│  │  3. Set remaining as negatives y−                         │  │\n│  │  4. Compute NCE loss gradient ∇θℓ(θt)                     │  │\n│  │  5. Update θt+1 = θt − η∇θℓ(θt)                          │  │\n│  └────────────────────────────────────────────────────┘  │\n└─────────────────────────────────────────────────────────┘",
+            "text": "",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "1",
+            "heading": "1. Black-Box LLM (Proposal Generator)",
+            "kind": "kv",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Purpose",
+                "value": "Generates candidate text outputs for a given input; serves as the base proposal distribution $p_{LLM}(y|x)$."
+              },
+              {
+                "label": "Inputs",
+                "value": "Text prompt $x$ (formatted with few-shot CoT examples)"
+              },
+              {
+                "label": "Outputs",
+                "value": "Text completions $\\{y_j\\}$ (text-only, no probabilities)"
+              },
+              {
+                "label": "Implementation",
+                "value": "gpt-3.5-turbo (Azure OpenAI API) or Mixtral-8×7B (HuggingFace); temperature=1.0; max_length=512"
+              },
+              {
+                "label": "Interactions",
+                "value": "Called during both training (to generate initial candidates and adaptation samples) and inference (sentence-by-sentence for beam search)"
+              },
+              {
+                "label": "Key design choice",
+                "value": "Treated as completely black-box; only text outputs are consumed."
+              }
+            ],
+            "code": "",
+            "text": "",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "2",
+            "heading": "2. Energy-Based Adapter $g_\\theta$",
+            "kind": "kv",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Purpose",
+                "value": "Assigns a scalar energy score to each (input, output) pair; trained to score target-domain text higher than source-domain text."
+              },
+              {
+                "label": "Inputs",
+                "value": "Concatenated (question, answer) text string as a single sequence"
+              },
+              {
+                "label": "Outputs",
+                "value": "Scalar score $g_\\theta(x, y) \\in \\mathbb{R}$ (higher = more likely from target domain)"
+              },
+              {
+                "label": "Implementation",
+                "value": "DeBERTa-v3-base (86M, `microsoft/deberta-v3-base`) for StrategyQA, GSM8K, ScienceQA; DeBERTa-v3-large (304M, `microsoft/deberta-v3-large`) for StrategyQA, GSM8K, ScienceQA; BERT-base-cased (110M, `bert-base-cased`) for TruthfulQA; final classification head: linear layer mapping [CLS] representation to scalar, output dimension = 1; spectral normalization applied to the linear classification head"
+              },
+              {
+                "label": "Interactions",
+                "value": "Called at each beam step to score partial hypotheses $s_{1:l}$; updated via NCE gradient during training"
+              },
+              {
+                "label": "Key design choice",
+                "value": "Lightweight (0.1B–0.3B) for cost efficiency; uses encoder-only models for discriminative scoring."
+              }
+            ],
+            "code": "",
+            "text": "",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "3",
+            "heading": "3. Online Adaptation Loop",
+            "kind": "kv",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Purpose",
+                "value": "Iteratively improves the adapter by sampling from its own adapted distribution and refining positive/negative sets."
+              },
+              {
+                "label": "Inputs",
+                "value": "Dataset $\\mathcal{D} = \\{(x_i, y_i)\\}_{i=1}^N$; current adapter parameters $\\theta_t$"
+              },
+              {
+                "label": "Outputs",
+                "value": "Refined adapter parameters $\\theta_{T}$ after $T$ iterations"
+              },
+              {
+                "label": "Sub-components",
+                "value": "Sample collection: beam search via adapted inference to obtain $M$ candidates per input; Feedback module: SEL(·) selects best candidate using ground-truth match, human ranking, or GPT-4 AI feedback; Training step: AdamW optimizer (lr=5e-6, wd=0.01), batch size 64, 6000 total steps per iteration"
+              },
+              {
+                "label": "Interactions",
+                "value": "Calls LLM (for new candidates) and adapter (for scoring); updates adapter weights"
+              },
+              {
+                "label": "Key design choice",
+                "value": "Dynamic positive set that improves over iterations; negative set always comes from the adapter's own recent outputs (self-improvement)."
+              }
+            ],
+            "code": "",
+            "text": "",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "4",
+            "heading": "4. Adapted Inference (Sentence-Level Beam Search)",
+            "kind": "kv",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Purpose",
+                "value": "At test time, generates the best output by combining LLM proposals with adapter scoring."
+              },
+              {
+                "label": "Inputs",
+                "value": "Question $x$; current adapter $g_{\\theta_T}$; beam size $k$; candidates per step $n$"
+              },
+              {
+                "label": "Outputs",
+                "value": "Best complete answer $y^*$ according to $g_{\\theta_T}$"
+              },
+              {
+                "label": "Procedure",
+                "value": "At each sentence step $l$, generate $n$ next-sentence candidates per beam (total $nk$); score all with adapter on partial chain $s_{1:l}$; prune to top-$k$; repeat until stop signal or $L$ steps; return highest-scoring complete answer."
+              },
+              {
+                "label": "Interactions",
+                "value": "Calls LLM API multiple times per question (beam × candidates × steps); calls adapter for scoring"
+              },
+              {
+                "label": "Key design choice",
+                "value": "Sentence-level granularity decomposes complex multi-step problems into manageable search steps."
+              }
+            ],
+            "code": "",
+            "text": "",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "",
+            "heading": "Data Flow",
+            "kind": "code",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "Training:\nx_i → [Black-Box LLM (K samples)] → {y_{i,j}} → SEL(·) → y+(0), y-(0)\n       ↓ (per iteration t)\n       [Adapted Inference pθt] → {ŷ_{i,m}} → SEL(y+(t-1), {ŷ}) → y+(t), y-(t)\n       → NCE loss → ∇θℓ(θt) → θt+1\n\nInference:\nx → [Beam Search: LLM proposes, Adapter scores, top-k retained] → y*",
+            "text": "",
+            "warn": "",
+            "refs": []
+          }
+        ]
+      },
+      {
+        "file": "constraints.md",
+        "role": "constraints",
+        "file_title": "Constraints and Limitations",
+        "sections": [
+          {
+            "sec_id": "BC1",
+            "heading": "BC1: Text-only API access required",
+            "kind": "kv",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Condition",
+                "value": "The black-box LLM must expose a text generation API (text-in, text-out). Output token probabilities, logits, and model weights must be completely inaccessible."
+              },
+              {
+                "label": "Implication",
+                "value": "Applicable to GPT-3.5-turbo, GPT-4, PaLM-2, Gemini, davinci-002. Not applicable to models that fully expose logprobs (grey-box) or weights (white-box)."
+              },
+              {
+                "label": "Failure mode",
+                "value": "If logprobs become available, grey-box methods may outperform BBOX-ADAPTER."
+              }
+            ],
+            "code": "",
+            "text": "",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "BC2",
+            "heading": "BC2: Requires local compute for adapter training",
+            "kind": "kv",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Condition",
+                "value": "A local GPU capable of training a 0.1B–0.3B parameter model is needed. Minimum: single GPU with ~4–8 GiB VRAM for adapter (deberta-v3-base or bert-base-cased). Mixtral-8×7B as base requires ~90+ GiB VRAM for inference."
+              },
+              {
+                "label": "Implication",
+                "value": "Not zero-cost; requires local hardware investment."
+              },
+              {
+                "label": "Failure mode",
+                "value": "Without GPU, adapter training at batch size 64 for 6000 steps is too slow."
+              }
+            ],
+            "code": "",
+            "text": "",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "BC3",
+            "heading": "BC3: Sentence-level decomposition assumes sentence-structured reasoning",
+            "kind": "kv",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Condition",
+                "value": "The beam search assumes outputs can be meaningfully decomposed into sentence-level steps $[s_1, \\ldots, s_L]$ with a recognizable stop signal (e.g., \"####\" for GSM8K)."
+              },
+              {
+                "label": "Implication",
+                "value": "Works well for chain-of-thought style outputs. May degrade for single-sentence responses or highly structured outputs (e.g., code, tables)."
+              },
+              {
+                "label": "Failure mode",
+                "value": "Tasks without multi-step reasoning structure may not benefit from beam search; single-step variant is then preferred."
+              }
+            ],
+            "code": "",
+            "text": "",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "BC4",
+            "heading": "BC4: Positive sample quality determines adaptation ceiling",
+            "kind": "kv",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Condition",
+                "value": "The quality of positive samples (ground-truth, human feedback, or AI feedback) bounds the maximum achievable performance improvement."
+              },
+              {
+                "label": "Implication",
+                "value": "Azure-SFT upper-bounds BBOX-ADAPTER because SFT directly optimizes the LLM's own parameters with perfect supervision."
+              },
+              {
+                "label": "Failure mode",
+                "value": "If ground-truth is noisy or AI feedback is inaccurate, the adapter may learn incorrect preferences."
+              }
+            ],
+            "code": "",
+            "text": "",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "BC5",
+            "heading": "BC5: Performance gains vary across task types",
+            "kind": "kv",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Condition",
+                "value": "The method was evaluated on four QA tasks (StrategyQA, GSM8K, TruthfulQA, ScienceQA). Performance gains range from +2.70% (TruthfulQA, Ground-Truth) to +6.77% (GSM8K, Combined)."
+              },
+              {
+                "label": "Implication",
+                "value": "Tasks requiring implicit reasoning (StrategyQA) or factual truthfulness (TruthfulQA) may see smaller gains than mathematical reasoning tasks."
+              },
+              {
+                "label": "Failure mode",
+                "value": "Tasks with very long outputs or code generation may require different stop-signal handling."
+              }
+            ],
+            "code": "",
+            "text": "",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "L1",
+            "heading": "L1: Higher API cost than direct prompting",
+            "kind": "prose",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "",
+            "text": "The full-step beam search requires $k \\times n \\times L$ LLM API calls per question vs. 1 call for direct CoT. Inference cost is $12.46/1k Q for GSM8K vs. $1.22/1k Q for base CoT.",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "L2",
+            "heading": "L2: Adapter is task-specific",
+            "kind": "prose",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "",
+            "text": "While plug-and-play transfer to other LLMs is supported, the adapter is task-specific. Switching to a completely new task domain requires re-training the adapter. No zero-shot task generalization.",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "L3",
+            "heading": "L3: AI feedback depends on an advanced LLM",
+            "kind": "prose",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "",
+            "text": "The AI Feedback setting uses GPT-4 as the judge, which itself incurs API costs and is not infinitely reliable. GPT-4 feedback quality degrades on highly technical or domain-specific tasks.",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "L4",
+            "heading": "L4: Gap to white-box SFT",
+            "kind": "prose",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "",
+            "text": "For Mixtral-8×7B on StrategyQA: BBOX-ADAPTER (66.08%) vs SFT-LoRA (73.80%–75.98%) — a 7.72%–9.90% gap. Direct parameter access confers a significant advantage.",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "L5",
+            "heading": "L5: Security/misuse risks",
+            "kind": "prose",
+            "markdown": "",
+            "steps": [],
+            "fields": [],
+            "code": "",
+            "text": "The adapter can potentially be used to \"jailbreak\" black-box LLMs by engineering toxic target domains. Additionally, gradient information from the adapter combined with LLM logit biases could facilitate adversarial attacks.",
+            "warn": "",
+            "refs": []
+          }
+        ]
+      },
+      {
+        "file": "heuristics.md",
+        "role": "heuristics",
+        "file_title": "Heuristics",
+        "sections": [
+          {
+            "sec_id": "H01",
+            "heading": "H01: Spectral normalization on the energy model",
+            "kind": "kv",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "Energy-based models (EBMs) trained with NCE can produce arbitrarily sharp gradients, causing training instability and divergence. Spectral normalization controls the Lipschitz constant of $g_\\theta$, ensuring gradient magnitudes remain bounded."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "high"
+              },
+              {
+                "label": "Bounds",
+                "value": "Applied to the final linear classification layer of the adapter; spectral norm is constrained to ≤1 by normalizing by the largest singular value at each step."
+              },
+              {
+                "label": "Code ref",
+                "value": "src/execution/ebm_adapter.py"
+              },
+              {
+                "label": "Source",
+                "value": "§3.2; Du & Mordatch (2019)"
+              }
+            ],
+            "code": "",
+            "text": "",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "H02",
+            "heading": "H02: Beam size k=3 as default",
+            "kind": "kv",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "k=3 balances exploration (more candidate chains retain better solutions) against API cost (each step requires k×n LLM calls). Increasing to k=5 yields +2.41% average accuracy gain over k=1 but increases inference cost proportionally."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "medium"
+              },
+              {
+                "label": "Bounds",
+                "value": "k ∈ {1, 3, 5} evaluated; k=3 is the default. Single-step variant uses k=1 effectively."
+              },
+              {
+                "label": "Code ref",
+                "value": "src/execution/ebm_adapter.py"
+              },
+              {
+                "label": "Source",
+                "value": "§4.6, Figure 3(a)"
+              }
+            ],
+            "code": "",
+            "text": "",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "H03",
+            "heading": "H03: Learning rate η=5e-6 for AdamW",
+            "kind": "kv",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "Very small learning rate prevents catastrophic forgetting of pretrained DeBERTa/BERT representations while allowing fine-tuning on the task-specific NCE objective. Larger learning rates destabilize the energy function."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "high"
+              },
+              {
+                "label": "Bounds",
+                "value": "Set to 5e-6; weight decay 0.01; AdamW optimizer."
+              },
+              {
+                "label": "Code ref",
+                "value": "src/execution/ebm_adapter.py"
+              },
+              {
+                "label": "Source",
+                "value": "Appendix H.2"
+              }
+            ],
+            "code": "",
+            "text": "",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "H04",
+            "heading": "H04: Temperature=1.0 for LLM proposal generation",
+            "kind": "kv",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "Temperature 1.0 maintains diversity in generated candidates, which is essential for effective beam search and for obtaining varied negative samples. Temperature 0 (greedy) would collapse all beams to the same output, defeating the purpose."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "medium"
+              },
+              {
+                "label": "Bounds",
+                "value": "Temperature=1.0 for all LLM generation during adaptation and inference. Temperature=0 is used only for Azure-SFT evaluation to reduce variance."
+              },
+              {
+                "label": "Code ref",
+                "value": "src/execution/online_adaptation.py"
+              },
+              {
+                "label": "Source",
+                "value": "Appendix H.2"
+              }
+            ],
+            "code": "",
+            "text": "",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "H05",
+            "heading": "H05: Online iteration count T=3 as sweet spot",
+            "kind": "kv",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "Performance improves from T=0 (worse than base) through T=1,2,3 with diminishing returns by T=4. Three iterations provide sufficient self-improvement without excessive LLM API costs from iterative sampling."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "medium"
+              },
+              {
+                "label": "Bounds",
+                "value": "T ∈ {0,1,2,3,4} evaluated on StrategyQA. Performance plateau observed around T=3. T=0 adapter actually hurts performance (misguided beam search)."
+              },
+              {
+                "label": "Code ref",
+                "value": "src/execution/online_adaptation.py"
+              },
+              {
+                "label": "Source",
+                "value": "§4.6, Figure 3(b)"
+              }
+            ],
+            "code": "",
+            "text": "",
+            "warn": "",
+            "refs": []
+          },
+          {
+            "sec_id": "H06",
+            "heading": "H06: Training steps=6000 and batch size=64",
+            "kind": "kv",
+            "markdown": "",
+            "steps": [],
+            "fields": [
+              {
+                "label": "Rationale",
+                "value": "6000 steps at batch size 64 is sufficient to converge the adapter on datasets of 229–7473 training samples. The NCE loss with dynamic positive/negative sets requires more steps than standard supervised fine-tuning to fully converge."
+              },
+              {
+                "label": "Sensitivity",
+                "value": "low"
+              },
+              {
+                "label": "Bounds",
+                "value": "6000 steps default; batch size 64; max generation length 512 tokens."
+              },
+              {
+                "label": "Code ref",
+                "value": "src/configs/training.md, src/execution/ebm_adapter.py"
+              },
+              {
+                "label": "Source",
+                "value": "Appendix H.2"
+              }
+            ],
+            "code": "",
+            "text": "",
+            "warn": "",
+            "refs": []
+          }
+        ]
+      }
+    ]
+  }
+}
+/* __ARA_DATA_END__ */
+</script>
+
+<script>
+"use strict";
+(function () {
+  const GLYPH = { question:"Q", experiment:"✦", decision:"→", dead_end:"✗", pivot:"↻", insight:"!", default:"•" };
+  const TYPES = ["question","experiment","decision","dead_end","pivot","insight"];
+
+  let DATA;
+  try {
+    // The payload sits between the BEGIN/END marker comments (kept in-file so the
+    // skill can re-inject). Strip ONLY those two named markers before parsing; the
+    // rest of textContent is pure JSON. (Marker text is not written literally here,
+    // so it stays a single injection site.)
+    var raw = document.getElementById("ara-data").textContent
+                .replace(/\/\*\s*__ARA_DATA_(?:BEGIN|END)__\s*\*\//g, "");
+    DATA = JSON.parse(raw);
+  } catch (e) {
+    document.getElementById("detail").innerHTML =
+      '<div class="none">Could not parse embedded ARA data: ' + String(e) + '</div>';
+    return;
+  }
+
+  const nodes = DATA.nodes || [];
+  const byId = new Map(nodes.map(n => [n.id, n]));
+  const kids = new Map();
+  nodes.forEach(n => kids.set(n.id, []));
+  let roots = [];
+  nodes.forEach(n => {
+    if (n.parent && byId.has(n.parent)) kids.get(n.parent).push(n.id);
+    else roots.push(n.id);
+  });
+  // Traversal order: explicit DATA.order if given, else DFS from roots.
+  let order = Array.isArray(DATA.order) && DATA.order.length ? DATA.order.filter(id => byId.has(id)) : [];
+  if (!order.length) { const seen=new Set(); const dfs=id=>{if(seen.has(id))return;seen.add(id);order.push(id);(kids.get(id)||[]).forEach(dfs)}; roots.forEach(dfs); }
+
+  const esc = s => String(s==null?"":s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  const glyph = t => GLYPH[t] || GLYPH.default;
+  const cls = t => TYPES.includes(t) ? t : "default";
+
+  // ---- header ----
+  const m = DATA.meta || {};
+  document.getElementById("h-title").textContent = m.title || "ARA Trajectory";
+  document.getElementById("h-sub").textContent =
+    [ (m.authors||[]).join(", "), m.venue, m.year ].filter(Boolean).join(" · ");
+  if (m.abstract) document.getElementById("h-abstract").textContent = m.abstract;
+  else document.getElementById("h-abstract-wrap").style.display = "none";
+
+  const ftype = document.getElementById("ftype");
+  const present = [...new Set(nodes.map(n => n.type))];
+  TYPES.concat(present.filter(t=>!TYPES.includes(t))).filter(t=>present.includes(t))
+    .forEach(t => { const o=document.createElement("option"); o.value=t; o.textContent=t; ftype.appendChild(o); });
+
+  // ---- minimal markdown-table renderer ----
+  function renderMd(md){
+    if(!md) return "";
+    const lines = String(md).split("\n");
+    let out=[], i=0;
+    while(i<lines.length){
+      if(/^\s*\|/.test(lines[i]) && i+1<lines.length && /^\s*\|?[\s:|-]+\|?\s*$/.test(lines[i+1])){
+        const row = l => l.replace(/^\s*\|/,"").replace(/\|\s*$/,"").split("|").map(c=>c.trim());
+        const head = row(lines[i]); i+=2; const body=[];
+        while(i<lines.length && /^\s*\|/.test(lines[i])){ body.push(row(lines[i])); i++; }
+        out.push('<table class="md"><thead><tr>'+head.map(h=>"<th>"+esc(h)+"</th>").join("")+
+          '</tr></thead><tbody>'+body.map(r=>"<tr>"+r.map(c=>"<td>"+esc(c)+"</td>").join("")+"</tr>").join("")+"</tbody></table>");
+      } else { if(lines[i].trim()) out.push("<div>"+esc(lines[i])+"</div>"); i++; }
+    }
+    return out.join("");
+  }
+
+  // ---- detail pane ----
+  function block(title, tag, inner, open, cls){
+    return '<details class="block'+(cls?" "+cls:"")+'"'+(open?" open":"")+'><summary>'+esc(title)+
+      (tag?'<span class="tag">'+esc(tag)+'</span>':'')+'</summary><div class="body">'+inner+'</div></details>';
+  }
+  function chips(arr, klass){ return arr&&arr.length ? '<div class="chips">'+arr.map(x=>'<span class="chip '+(klass||"")+'">'+esc(x)+'</span>').join("")+'</div>' : ""; }
+
+  function renderDetail(n){
+    const d = document.getElementById("detail");
+    let h = '<div class="dhead"><span class="badge '+cls(n.type)+'">'+esc(n.type)+'</span>'+
+      '<span class="did">'+esc(n.id)+'</span>'+
+      (n.support_level?'<span class="pill '+esc(n.support_level)+'">'+esc(n.support_level)+'</span>':'')+
+      (n.isolated?'<span class="pill iso">isolated</span>':'')+'</div>';
+    h += '<div class="dtitle">'+esc(n.title||"(untitled)")+'</div>';
+
+    // reasoning (primary, always open) — the agent's thinking IS the content of a step
+    let reason="";
+    if(n.thinking){
+      reason += '<div class="lead">'+esc(n.thinking)+'</div>';
+      if(n.body) reason += '<div class="didwhat">what it did</div><div>'+esc(n.body)+'</div>';
+    } else {
+      reason += n.body ? '<div class="lead">'+esc(n.body)+'</div>' : '<div class="empty">No description.</div>';
+    }
+    if(n.depends_on&&n.depends_on.length) reason += chips(n.depends_on.map(x=>"⇠ depends on "+x));
+    if(n.source_refs&&n.source_refs.length) reason += chips(n.source_refs, "ext");
+    if(n.built_on&&n.built_on.length) reason += chipRow("built on", n.built_on, "chip-built");
+    if(n.rejected_here&&n.rejected_here.length) reason += chipRow("rejected here", n.rejected_here, "chip-rej");
+    if(n.recipe_refs&&n.recipe_refs.length) reason += recipeChips(n.recipe_refs);
+    h += block(n.thinking?"reasoning":"what", n.type, reason, true, "reason");
+
+    // result (the grounded payload) — open
+    const r = n.result||{};
+    if((r.sources&&r.sources.length)||(r.figures&&r.figures.length)||(r.tables&&r.tables.length)||(r.data&&r.data.length)){
+      let s="";
+      (r.figures||[]).forEach(f=>{ s+='<figure><img src="'+esc(f.img)+'" alt="'+esc(f.caption||f.id)+'"/>'+
+        (f.caption?'<figcaption>'+esc(f.caption)+'</figcaption>':'')+'</figure>'; });
+      (r.tables||[]).forEach(t=>{ s+=(t.caption?'<div class="empty">'+esc(t.caption)+'</div>':'')+renderMd(t.markdown); });
+      (r.sources||[]).forEach(q=>{ s+='<div class="quote">'+esc(q.quote)+(q.ref?'<div class="ref">← '+esc(q.ref)+'</div>':'')+'</div>'; });
+      (r.data||[]).forEach(x=>{ s+='<div class="ptr">⛁ <span class="path">'+esc(x.path)+'</span>'+(x.note?' — '+esc(x.note):'')+'</div>'; });
+      h += block("result", "", s, true);
+    }
+
+    // why (claims) — supporting detail, collapsed
+    if(n.why&&n.why.length){
+      const w = n.why.map(c=>{
+        let s='<div class="claim"><h4>'+esc(c.id)+(c.title?' — '+esc(c.title):'')+'</h4>';
+        if(c.statement) s+='<div class="kv">'+esc(c.statement)+'</div>';
+        if(c.status) s+='<div class="kv"><b>status</b> <span class="status '+esc(String(c.status).toLowerCase())+'">'+esc(c.status)+'</span></div>';
+        if(c.conditions) s+='<div class="kv"><b>conditions</b> '+esc(c.conditions)+'</div>';
+        if(c.falsification) s+='<div class="kv"><b>falsified if</b> '+esc(c.falsification)+'</div>';
+        if(c.dependencies&&c.dependencies.length) s+='<div class="kv"><b>depends on</b> '+esc(c.dependencies.join(", "))+'</div>';
+        if(c.provenance) s+='<div class="kv"><span class="prov">provenance: '+esc(c.provenance)+'</span></div>';
+        return s+'</div>';
+      }).join("");
+      h += block("why", n.why.map(c=>c.id).join(" · "), w);
+    }
+
+    // how verified (experiments) — supporting detail, collapsed
+    if(n.verified_by&&n.verified_by.length){
+      const v = n.verified_by.map(e=>'<div class="claim"><h4>'+esc(e.id)+(e.title?' — '+esc(e.title):'')+'</h4>'+
+        (e.run?'<div class="kv"><b>run</b> <span class="path mono">'+esc(e.run)+'</span></div>':'')+
+        (e.setup?'<div class="kv"><b>setup</b> '+esc(e.setup)+'</div>':'')+
+        (e.metrics?'<div class="kv"><b>metrics</b> '+esc(e.metrics)+'</div>':'')+'</div>').join("");
+      h += block("how verified", n.verified_by.map(e=>e.id).join(" · "), v);
+    }
+
+    // artifact pointers (src/artifacts.md) — collapsed
+    if(n.artifact&&n.artifact.length){
+      const a = n.artifact.map(x=>'<div class="ptr">▸ <b>'+esc(x.name)+'</b> — <span class="path">'+esc(x.pointer)+'</span>'+
+        (x.what?'<div class="empty">'+esc(x.what)+'</div>':'')+'</div>').join("");
+      h += block("artifact", "pointer", a);
+    }
+
+    d.innerHTML = h;
+    if(typeof LEX!=="undefined" && LEX) linkifyConcepts(d);
+    d.scrollTop = 0;
+  }
+
+  // ---- map ----
+  let selected = null;
+  function selectNode(id){
+    if(!byId.has(id)) return;
+    selected = id;
+    document.querySelectorAll(".node").forEach(el=>el.classList.toggle("sel", el.dataset.id===id));
+    const el = document.querySelector('.node[data-id="'+CSS.escape(id)+'"]');
+    if(el) el.scrollIntoView({block:"nearest"});
+    renderDetail(byId.get(id));
+    rstat();
+  }
+
+  function nodeRow(n){
+    const row = document.createElement("div");
+    row.className = "node "+(n.type==="dead_end"?"dead":"");
+    row.dataset.id = n.id; row.dataset.type = n.type;
+    // calmer than before: one glyph + id + (quiet) cross-edge marker; the ⊕/⊘ count soup is gone.
+    row.innerHTML = '<span class="glyph '+cls(n.type)+'">'+glyph(n.type)+'</span>'+
+      '<span><span class="meta"><span class="nid">'+esc(n.id)+'</span>'+
+      (n.depends_on&&n.depends_on.length?'<span class="dep" title="depends on '+esc(n.depends_on.join(", "))+'">⇠ '+esc(n.depends_on.join(","))+'</span>':'')+
+      '</span><div class="ntitle">'+esc(n.title||n.body||"(untitled)")+'</div></span>';
+    row.addEventListener("click", ()=>selectNode(n.id));
+    // hover a node to highlight its cross-edge targets (gentler than always-on connectors)
+    if(n.depends_on&&n.depends_on.length){
+      row.addEventListener("mouseenter", ()=>n.depends_on.forEach(t=>{ const el=document.querySelector('.node[data-id="'+CSS.escape(t)+'"]'); if(el) el.classList.add("deptarget"); }));
+      row.addEventListener("mouseleave", ()=>document.querySelectorAll(".node.deptarget").forEach(el=>el.classList.remove("deptarget")));
+    }
+    return row;
+  }
+  function renderSubtree(id, container){
+    const n = byId.get(id); if(!n) return;
+    container.appendChild(nodeRow(n));
+    const cs = kids.get(id)||[];
+    if(cs.length){ const wrap=document.createElement("div"); wrap.className="kid"; cs.forEach(c=>renderSubtree(c,wrap)); container.appendChild(wrap); }
+  }
+  function renderMap(){
+    const map = document.getElementById("map"); map.innerHTML="";
+    const normalRoots = roots.filter(id=>!byId.get(id).isolated);
+    const isoRoots = roots.filter(id=>byId.get(id).isolated);
+    normalRoots.forEach(id=>renderSubtree(id, map));
+    if(isoRoots.length){
+      const box=document.createElement("div"); box.className="isobox";
+      const hdr=document.createElement("div"); hdr.className="isohdr"; hdr.textContent="isolated subtree"; box.appendChild(hdr);
+      isoRoots.forEach(id=>renderSubtree(id, box)); map.appendChild(box);
+    }
+  }
+
+  // ---- filter / search ----
+  function applyFilters(){
+    const q = document.getElementById("q").value.trim().toLowerCase();
+    const ty = document.getElementById("ftype").value;
+    const deadOnly = document.getElementById("fdead").checked;
+    let shown=0;
+    document.querySelectorAll(".node").forEach(el=>{
+      const n = byId.get(el.dataset.id);
+      const text = (n.id+" "+(n.title||"")+" "+(n.body||"")).toLowerCase();
+      const ok = (!q||text.includes(q)) && (!ty||n.type===ty) && (!deadOnly||n.type==="dead_end");
+      el.classList.toggle("dim", !ok);
+      if(ok) shown++;
+    });
+    document.getElementById("rstat").textContent = shown+" / "+nodes.length+" steps";
+  }
+  function rstat(){
+    const i = selected?order.indexOf(selected):-1;
+    document.getElementById("rstat").textContent = (i>=0?("step "+(i+1)+" / "+order.length):(nodes.length+" steps"));
+  }
+
+  // ---- replay ----
+  let timer=null;
+  function step(delta){
+    let i = selected?order.indexOf(selected):-1;
+    i = Math.max(0, Math.min(order.length-1, i+delta));
+    selectNode(order[i]);
+  }
+  function play(){
+    if(timer){ stop(); return; }
+    if(!selected) selectNode(order[0]);
+    document.getElementById("rplay").textContent="⏸ Pause";
+    timer = setInterval(()=>{
+      const i = selected?order.indexOf(selected):-1;
+      if(i>=order.length-1){ stop(); return; }
+      step(1);
+    }, 1300);
+  }
+  function stop(){ if(timer){clearInterval(timer);timer=null;} document.getElementById("rplay").textContent="▶ Replay"; }
+
+  // ======================= v1.1 enrichment layers (all inert unless present) =======================
+  const CTX = DATA.context, GLO = DATA.glossary, DEP = DATA.dependencies, REC = DATA.recipes;
+  const LAYERS = { context:CTX, glossary:GLO, dependencies:DEP, recipes:REC };
+
+  // ---- indexes (built once) ----
+  const claimToNodes = new Map();
+  nodes.forEach(n => (n.why||[]).forEach(c => { if(c&&c.id){ if(!claimToNodes.has(c.id)) claimToNodes.set(c.id,[]); claimToNodes.get(c.id).push(n.id); } }));
+  const firstNodeForClaim = id => (claimToNodes.get(id)||[])[0] || null;
+  const rwById   = new Map(((DEP&&DEP.entries)||[]).map(e => [e.rw_id, e]));
+  const termById = new Map(((GLO&&GLO.terms)||[]).map(t => [t.term_id, t]));
+  // concept "used by" (inferred) from each node's name-matched concepts[]
+  if(GLO){
+    const nameToTerm = new Map();
+    (GLO.terms||[]).forEach(t => { if(t.name) nameToTerm.set(String(t.name).toLowerCase(), t); (t.aliases||[]).forEach(a=>nameToTerm.set(String(a).toLowerCase(), t)); });
+    nodes.forEach(n => (n.concepts||[]).forEach(cn => { const t=nameToTerm.get(String(cn).toLowerCase()); if(t){ (t._used=t._used||[]).push(n.id); } }));
+  }
+
+  // ---- tiny inline-math fallback (no CDN; operates on already-escaped text, adds only safe tags) ----
+  const GK={alpha:"α",beta:"β",gamma:"γ",delta:"δ",epsilon:"ε",eta:"η",theta:"θ",kappa:"κ",lambda:"λ",mu:"μ",nu:"ν",pi:"π",rho:"ρ",sigma:"σ",tau:"τ",phi:"φ",chi:"χ",psi:"ψ",omega:"ω",Delta:"Δ",Sigma:"Σ",Omega:"Ω",Phi:"Φ",Theta:"Θ",Lambda:"Λ",Gamma:"Γ",nabla:"∇",partial:"∂",times:"×",cdot:"·",infty:"∞",approx:"≈",leq:"≤",geq:"≥",neq:"≠",to:"→",in:"∈",sum:"Σ",prod:"Π",sqrt:"√",mathbb:"",mathcal:"",mathbf:"",mathrm:"",left:"",right:""};
+  function texInner(s){
+    s=s.replace(/\\(?:mathbb|mathcal|mathbf|mathrm)\{([^{}]*)\}/g,"$1");
+    s=s.replace(/\\frac\{([^{}]*)\}\{([^{}]*)\}/g,"($1)/($2)");
+    s=s.replace(/\\([A-Za-z]+)/g,(m,w)=>GK[w]!==undefined?GK[w]:m);
+    s=s.replace(/\^\{([^{}]*)\}/g,"<sup>$1</sup>").replace(/\^([\w()+\-])/g,"<sup>$1</sup>");
+    s=s.replace(/_\{([^{}]*)\}/g,"<sub>$1</sub>").replace(/_([\w()+\-])/g,"<sub>$1</sub>");
+    return s;
+  }
+  function mathPass(escaped){
+    if(escaped.indexOf("$")<0) return escaped;
+    return escaped.replace(/\$\$([^$]+)\$\$/g,(m,x)=>'<span class="math">'+texInner(x)+'</span>')
+                  .replace(/\$([^$]+)\$/g,(m,x)=>'<span class="math">'+texInner(x)+'</span>');
+  }
+  function mtext(v){ const e=esc(v); try{ return mathPass(e); }catch(_){ return e; } }
+
+  // ---- typed-ref rendering (off-ARA pointers stay inert; in-ARA targets become jump chips) ----
+  function refUrl(rf){
+    const raw=rf.raw||"";
+    if(rf.kind==="url"){ const m=raw.match(/https?:\/\/\S+/); return m?m[0]:""; }
+    if(rf.kind==="arxiv"){ const m=raw.match(/(\d{4}\.\d{4,5})/); return m?("https://arxiv.org/abs/"+m[1]):""; }
+    if(rf.kind==="doi"){ const m=raw.match(/(10\.\d{4,}\/\S+)/); return m?("https://doi.org/"+m[1]):""; }
+    return "";
+  }
+  function refChip(rf){
+    const raw=esc(rf.raw||""), url=refUrl(rf);
+    if(url) return '<a class="chip ext" href="'+esc(url)+'" target="_blank" rel="noopener">'+raw+'</a>';
+    if(rf.target){
+      if(rf.kind==="claim")        return '<span class="chip jump" data-jump-claim="'+esc(rf.target)+'">'+raw+'</span>';
+      if(rf.kind==="node")         return '<span class="chip jump" data-jump-node="'+esc(rf.target)+'">'+raw+'</span>';
+      if(rf.kind==="concept")      return '<span class="chip jump" data-open-term="'+esc(rf.target)+'">'+raw+'</span>';
+      if(rf.kind==="related_work") return '<span class="chip jump" data-open-panel="dependencies" data-anchor="ov-'+esc(rf.target)+'">'+raw+'</span>';
+      return '<span class="chip jump" data-scroll="ov-'+esc(rf.target)+'">'+raw+'</span>';
+    }
+    const dangle=(rf.kind==="claim"||rf.kind==="related_work"||rf.kind==="concept");
+    return '<span class="chip '+(dangle?'dangle" title="referenced but not found in this ARA':'ext')+'">'+raw+'</span>';
+  }
+  function refRow(refs){ return refs&&refs.length ? '<div class="chips">'+refs.map(refChip).join("")+'</div>' : ""; }
+
+  // ---- per-node provenance chips (consumed by renderDetail) ----
+  function chipRow(label, arr, klass){
+    const cs=arr.map(x=>{
+      const txt=[x.rw_id,x.name].filter(Boolean).join(" · ")||"?";
+      const tip=x.relation_raw?(' title="'+esc(x.relation_raw)+'"'):'';
+      const op =x.rw_id?(' data-open-panel="dependencies" data-anchor="ov-'+esc(x.rw_id)+'"'):'';
+      return '<span class="chip '+klass+(x.rw_id?' jump':'')+'"'+tip+op+'>'+esc(txt)+'</span>';
+    }).join("");
+    return '<div class="chiplabel">'+esc(label)+'</div><div class="chips">'+cs+'</div>';
+  }
+  function recipeChips(arr){
+    const cs=arr.map(x=>{
+      const anchor="ov-sec-"+(x.file||"")+"-"+(x.sec_id||"");
+      return '<span class="chip chip-recipe jump" data-open-panel="recipes" data-anchor="'+esc(anchor)+'" title="'+esc((x.file||"")+(x.role?(" · "+x.role):""))+'">▦ '+esc(x.heading||x.file||"recipe")+'</span>';
+    }).join("");
+    return '<div class="chiplabel">recipe</div><div class="chips">'+cs+'</div>';
+  }
+
+  // ---- the four overlay renderers (reuse block/chips/renderMd) ----
+  function renderContext(){
+    let h=""; if(CTX.summary) h+='<div class="ribbon">'+esc(CTX.summary)+'</div>';
+    (CTX.sections||[]).forEach(sec=>{
+      let inner="";
+      if(sec.present===false){ inner='<div class="muted grey">(not specified in this ARA)</div>'; }
+      else (sec.entries||[]).forEach(en=>{
+        let c='<div class="card" id="ov-'+esc(en.ent_id||"")+'"><h4>'+(en.ent_id?'<span class="did">'+esc(en.ent_id)+'</span> ':'')+esc(en.ent_title||"")+(en.inferred_id?' <span class="sub">(pos.)</span>':'')+'</h4>';
+        if(!en.unstructured && en.fields && en.fields.length) en.fields.forEach(f=>c+='<div class="kv"><b>'+esc(f.label)+'</b> '+mtext(f.value)+'</div>');
+        else if(en.text) c+='<div class="kv">'+mtext(en.text)+'</div>';
+        if(en.unstructured) c+='<div class="sub">unstructured</div>';
+        c+=refRow(en.refs)+'</div>'; inner+=c;
+      });
+      h+=block(sec.heading||sec.role||"section", sec.role||"", inner, sec.role==="insight");
+    });
+    return h || '<div class="muted">No problem context.</div>';
+  }
+  function renderGlossary(filter){
+    const f=(filter||"").trim().toLowerCase();
+    const match=t=>!f||((t.name||"")+" "+(t.aliases||[]).join(" ")+" "+(t.definition||"")).toLowerCase().includes(f);
+    function card(t){
+      let c='<div class="card" id="ov-'+esc(t.term_id)+'"><h4>'+esc(t.name)+(t.group?' <span class="sub">'+esc(t.group)+'</span>':'')+'</h4>';
+      if(t.aliases&&t.aliases.length) c+='<div class="chips">'+t.aliases.map(a=>'<span class="chip">'+esc(a)+'</span>').join("")+'</div>';
+      if(t.definition) c+='<div class="kv">'+mtext(t.definition)+'</div>';
+      (t.fields||[]).forEach(fl=>c+='<div class="kv"><b>'+esc(fl.label)+'</b> '+mtext(fl.value)+'</div>');
+      if(t.related&&t.related.length) c+='<div class="kv"><b>related</b> '+t.related.map(r=>{const rt=termById.get(r);return '<span class="chip jump" data-open-term="'+esc(r)+'">'+esc(rt?rt.name:r)+'</span>';}).join(" ")+'</div>';
+      if(t._used&&t._used.length) c+='<div class="kv"><b>mentions</b> '+[...new Set(t._used)].map(nid=>'<span class="chip jump" data-jump-node="'+esc(nid)+'">'+esc(nid)+'</span>').join(" ")+' <span class="sub">(inferred)</span></div>';
+      return c+refRow(t.refs)+'</div>';
+    }
+    const groups=GLO.groups&&GLO.groups.length?GLO.groups:null; let h="";
+    if(groups){
+      const grouped=new Set();
+      groups.forEach(g=>{ (g.term_ids||[]).forEach(id=>grouped.add(id)); const ts=(g.term_ids||[]).map(id=>termById.get(id)).filter(Boolean).filter(match); if(ts.length) h+=block(g.name||"group", String(ts.length), ts.map(card).join(""), true); });
+      const rest=(GLO.terms||[]).filter(t=>!grouped.has(t.term_id)).filter(match);
+      if(rest.length) h+=block("other", String(rest.length), rest.map(card).join(""), true);
+    } else { const ts=(GLO.terms||[]).filter(match); h=ts.map(card).join(""); }
+    return h || '<div class="muted">No matching terms.</div>';
+  }
+  function renderDeps(filter){
+    const f=(filter||"").trim().toLowerCase(); let h="";
+    if(DEP.preamble) h+='<div class="muted">'+esc(DEP.preamble)+'</div>';
+    if(DEP.attribution) h+='<div class="ribbon">'+esc(DEP.attribution)+'</div>';
+    const ents=(DEP.entries||[]).filter(e=>!e.is_footprint).filter(e=>!f||(((e.rw_id||"")+" "+(e.name||"")+" "+(e.relation_raw||"")+" "+(e.delta||"")).toLowerCase().includes(f)));
+    ents.forEach(e=>{
+      const rn=e.relation_norm, relc=["baseline","imports","extends","bounds","refutes"].includes(rn)?rn:"neutral";
+      let c='<div class="card" id="ov-'+esc(e.rw_id||"")+'"><h4>'+(e.rw_id?'<span class="did">'+esc(e.rw_id)+'</span> ':'')+esc(e.name||"")+'</h4>';
+      c+='<div class="chips"><span class="rel '+relc+'">'+esc(e.relation_raw||rn||"related")+'</span>'+(e.cross_agent?'<span class="chip" title="other-agent provenance">↔ other-agent</span>':'')+'</div>';
+      if(e.delta) c+='<div class="kv">'+mtext(e.delta)+'</div>';
+      if(e.adopted) c+='<div class="kv"><b>adopted</b> '+esc(e.adopted)+'</div>';
+      let prov=(e.grounding||[]).map(refChip).join("");
+      (e.claims||[]).filter(id=>claimToNodes.has(id)).forEach(id=>prov+='<span class="chip jump" data-jump-claim="'+esc(id)+'">'+esc(id)+'</span>');
+      c+= prov?('<div class="kv"><b>grounding</b> '+prov+'</div>'):'<div class="muted">ungrounded</div>';
+      h+=c+'</div>';
+    });
+    if(!ents.length) h+='<div class="muted">No matching dependencies.</div>';
+    const fp=DEP.footprint||[];
+    if(fp.length) h+=block("Citation footprint", String(fp.length), fp.map(x=>'<div class="ptr"><span class="muted">'+esc(x.ref_id||"")+'</span> '+esc(x.citation||"")+'</div>').join(""), false);
+    return h;
+  }
+  function renderRecipes(){
+    let h="";
+    (REC.files||[]).forEach(file=>{
+      let inner="";
+      (file.sections||[]).forEach(sec=>{
+        let c='<div class="card" id="ov-sec-'+esc((file.file||"")+"-"+(sec.sec_id||""))+'"><h4>'+(sec.sec_id?'<span class="did">'+esc(sec.sec_id)+'</span> ':'')+esc(sec.heading||"")+'</h4>';
+        if(sec.kind==="table"&&sec.markdown) c+=renderMd(sec.markdown);
+        else if(sec.kind==="steps"&&sec.steps&&sec.steps.length) c+='<ol>'+sec.steps.map(s=>'<li>'+mtext(String(s).replace(/^\s*\d+\.\s*/,""))+'</li>').join("")+'</ol>';
+        else if(sec.kind==="kv"&&sec.fields&&sec.fields.length) sec.fields.forEach(fl=>c+='<div class="kv"><b>'+esc(fl.label)+'</b> '+mtext(fl.value)+'</div>');
+        else if(sec.kind==="code"&&sec.code) c+='<pre class="snip">'+esc(sec.code)+'</pre>';
+        else if(sec.kind==="math"&&sec.code) c+='<div class="kv math">'+mtext(sec.code)+'</div>';
+        else if(sec.text) c+='<div class="kv">'+mtext(sec.text)+'</div>';
+        if(sec.warn) c+='<div class="warn">'+esc(sec.warn)+'</div>';
+        inner+=c+refRow(sec.refs)+'</div>';
+      });
+      h+=block((file.file_title||file.file||"recipe")+(file.role?("  ·  "+file.role):""), String((file.sections||[]).length), inner, true);
+    });
+    return h || '<div class="muted">No recipe content.</div>';
+  }
+
+  // ---- overlay open/close + layerbar wiring ----
+  const ov=document.getElementById("overlay");
+  let lastTrigger=null;
+  const PANEL_RENDER={ context:renderContext, glossary:()=>renderGlossary(""), dependencies:()=>renderDeps(""), recipes:renderRecipes };
+  function hasContent(name){ const L=LAYERS[name]; if(!L) return false;
+    if(name==="context") return (L.sections||[]).length>0;
+    if(name==="glossary") return (L.terms||[]).length>0;
+    if(name==="dependencies") return (L.entries||[]).length>0||(L.footprint||[]).length>0;
+    if(name==="recipes") return (L.files||[]).length>0; return false; }
+  function panelTitle(name){ const L=LAYERS[name]||{}; return L.title || ({context:"Context",glossary:"Concepts",dependencies:"Dependencies",recipes:"Solution"}[name]); }
+  function panelCount(name){ const L=LAYERS[name]||{};
+    if(name==="glossary") return (L.terms||[]).length;
+    if(name==="dependencies") return (L.entries||[]).length;
+    if(name==="recipes") return (L.files||[]).reduce((a,f)=>a+(f.sections||[]).length,0); return 0; }
+  function openPanel(name, anchor){
+    if(!hasContent(name)) return;
+    stop(); lastTrigger=document.activeElement;
+    document.getElementById("ov-title").textContent=panelTitle(name);
+    const body=document.getElementById("ov-body"); body.innerHTML=PANEL_RENDER[name]();
+    if(LEX) linkifyConcepts(body);
+    const q=document.getElementById("ov-q");
+    if(name==="glossary"||name==="dependencies"){ q.hidden=false; q.value=""; q.dataset.panel=name; } else { q.hidden=true; }
+    ov.hidden=false;
+    if(anchor){ const el=document.getElementById(anchor); if(el) el.scrollIntoView({block:"center"}); } else body.scrollTop=0;
+    (q.hidden?document.getElementById("ov-close"):q).focus();
+  }
+  function closePanel(){ ov.hidden=true; if(lastTrigger&&lastTrigger.focus) lastTrigger.focus(); }
+  document.querySelectorAll(".lbtn").forEach(b=>{ const name=b.dataset.panel;
+    if(hasContent(name)){ b.hidden=false; const c=b.querySelector(".cnt"); if(c){ const n=panelCount(name); if(n) c.textContent=n; } b.addEventListener("click",()=>openPanel(name)); } });
+  document.getElementById("ov-q").addEventListener("input", e=>{ const p=e.target.dataset.panel, body=document.getElementById("ov-body");
+    body.innerHTML = p==="glossary"?renderGlossary(e.target.value):renderDeps(e.target.value); if(LEX) linkifyConcepts(body); });
+
+  // ---- glossary lexicon + popover ----
+  const LEX=(GLO&&GLO.lexicon&&Object.keys(GLO.lexicon).length)?(function(){
+    const surf=Object.keys(GLO.lexicon).filter(s=>s.length>=3).sort((a,b)=>b.length-a.length);
+    if(!surf.length) return null;
+    const re=s=>s.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+    return { re:new RegExp("\\b("+surf.map(re).join("|")+")\\b","i"), map:GLO.lexicon };
+  })():null;
+  const SKIP_TAGS={A:1,CODE:1,PRE:1,BUTTON:1,SCRIPT:1,STYLE:1,H4:1,H5:1,SUMMARY:1};
+  function linkifyConcepts(root){
+    if(!LEX) return;
+    const walker=document.createTreeWalker(root, NodeFilter.SHOW_TEXT, { acceptNode(t){
+      if(!t.nodeValue||!t.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+      let p=t.parentNode; while(p&&p!==root){ if(p.classList&&p.classList.contains("gterm")) return NodeFilter.FILTER_REJECT; if(SKIP_TAGS[p.tagName]) return NodeFilter.FILTER_REJECT; p=p.parentNode; }
+      return NodeFilter.FILTER_ACCEPT; } });
+    const seen=new Set(), hits=[]; let t;
+    while((t=walker.nextNode())){ const m=LEX.re.exec(t.nodeValue); if(!m) continue; const tid=LEX.map[m[1].toLowerCase()]; if(!tid||seen.has(tid)) continue; seen.add(tid); hits.push({node:t,index:m.index,len:m[1].length,tid}); }
+    hits.forEach(hp=>{ const tn=hp.node, txt=tn.nodeValue, par=tn.parentNode; if(!par) return;
+      const span=document.createElement("span"); span.className="gterm"; span.dataset.term=hp.tid; span.tabIndex=0; span.textContent=txt.slice(hp.index,hp.index+hp.len);
+      const after=document.createTextNode(txt.slice(hp.index+hp.len));
+      par.replaceChild(after,tn); par.insertBefore(span,after); par.insertBefore(document.createTextNode(txt.slice(0,hp.index)),span); });
+  }
+  const gpop=document.getElementById("gpop");
+  function gpopShow(span){ const t=termById.get(span.dataset.term); if(!t) return;
+    const def=t.definition||""; gpop.innerHTML='<h5>'+esc(t.name)+'</h5><div>'+mtext(def.slice(0,240))+(def.length>240?'…':'')+'</div><span class="gp-open" data-open-term="'+esc(t.term_id)+'">open in glossary →</span>';
+    gpop.style.display="block"; const r=span.getBoundingClientRect();
+    gpop.style.left=Math.max(6,Math.min(r.left, window.innerWidth-372))+"px"; gpop.style.top=(r.bottom+6)+"px"; }
+  function gpopHide(){ gpop.style.display="none"; }
+
+  // ---- delegated interactions for the new layers ----
+  document.addEventListener("click", e=>{
+    const el=e.target.closest&&e.target.closest("[data-close],[data-jump-node],[data-jump-claim],[data-open-panel],[data-open-term],[data-scroll]");
+    if(!el) return;
+    if(el.hasAttribute("data-close")){ closePanel(); return; }
+    if(el.dataset.jumpNode){ closePanel(); selectNode(el.dataset.jumpNode); return; }
+    if(el.dataset.jumpClaim){ const nid=firstNodeForClaim(el.dataset.jumpClaim); if(nid){ closePanel(); selectNode(nid); } return; }
+    if(el.dataset.openTerm){ openPanel("glossary","ov-"+el.dataset.openTerm); return; }
+    if(el.hasAttribute("data-open-panel")){ openPanel(el.dataset.openPanel, el.dataset.anchor||null); return; }
+    if(el.dataset.scroll){ const t=document.getElementById(el.dataset.scroll); if(t) t.scrollIntoView({block:"center"}); return; }
+  });
+  document.addEventListener("mouseover", e=>{ const g=e.target.closest&&e.target.closest(".gterm"); if(g) gpopShow(g); });
+  document.addEventListener("mouseout",  e=>{ const g=e.target.closest&&e.target.closest(".gterm"); if(g) gpopHide(); });
+  document.addEventListener("focusin",   e=>{ const g=e.target.closest&&e.target.closest(".gterm"); if(g) gpopShow(g); });
+  document.addEventListener("focusout",  e=>{ const g=e.target.closest&&e.target.closest(".gterm"); if(g) gpopHide(); });
+  window.addEventListener("scroll", gpopHide, true);
+
+  document.getElementById("q").addEventListener("input", applyFilters);
+  document.getElementById("ftype").addEventListener("change", applyFilters);
+  document.getElementById("fdead").addEventListener("change", applyFilters);
+  document.getElementById("rplay").addEventListener("click", play);
+  document.getElementById("rprev").addEventListener("click", ()=>{stop();step(-1);});
+  document.getElementById("rnext").addEventListener("click", ()=>{stop();step(1);});
+  document.addEventListener("keydown", e=>{
+    if(e.key==="Escape"){ if(!ov.hidden){ closePanel(); return; } gpopHide(); }
+    if(e.target.tagName==="INPUT"||e.target.tagName==="SELECT") return;
+    if(e.key==="ArrowLeft"){stop();step(-1);} else if(e.key==="ArrowRight"){stop();step(1);}
+    else if(e.key==="c"||e.key==="g"||e.key==="d"||e.key==="r"){ const p={c:"context",g:"glossary",d:"dependencies",r:"recipes"}[e.key]; if(hasContent(p)) openPanel(p); }
+  });
+
+  renderMap();
+  rstat();
+})();
+</script>
+</body>
+</html>
