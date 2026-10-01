@@ -1,0 +1,56 @@
+# aratest spec, format version 7. Annotation batch 1: the reviewed Track 1
+# bindings of DissClaimer's ara/src/eval3-track1-authority, converted without a model.
+format_version: 7
+
+evidence:
+  evidence/tables/table1_main_results.md:
+    metric: {axis: measure}
+    axes: {Method: method, group: dataset}
+
+claims:
+  - claim_id: C01
+    properties:
+      - kind: consistency
+        metric: AN
+        treatment: {method: SEMA}
+        baseline: {method: ADAM}
+        comparator: gt
+        over: dataset
+        in_scope: [CIFAR-100, 5-Task IN-R, 10-Task IN-R, 20-Task IN-R, ImageNet-A, VTAB]
+      - kind: consistency
+        metric: AN
+        treatment: {method: SEMA}
+        baseline: {method: DualPrompt}
+        comparator: gt
+        over: dataset
+        in_scope: [CIFAR-100, 5-Task IN-R, 10-Task IN-R, 20-Task IN-R, ImageNet-A, VTAB]
+      - kind: consistency
+        metric: AN
+        treatment: {method: SEMA}
+        baseline: {method: FT Adapter}
+        comparator: gt
+        over: dataset
+        in_scope: [CIFAR-100, 5-Task IN-R, 10-Task IN-R, 20-Task IN-R, ImageNet-A, VTAB]
+      - kind: consistency
+        metric: AN
+        treatment: {method: SEMA}
+        baseline: {method: InfLoRA}
+        comparator: gt
+        over: dataset
+        in_scope: [CIFAR-100, 5-Task IN-R, 10-Task IN-R, 20-Task IN-R, ImageNet-A, VTAB]
+      - kind: consistency
+        metric: AN
+        treatment: {method: SEMA}
+        baseline: {method: L2P}
+        comparator: gt
+        over: dataset
+        in_scope: [CIFAR-100, 5-Task IN-R, 10-Task IN-R, 20-Task IN-R, ImageNet-A, VTAB]
+      - kind: consistency
+        metric: AN
+        treatment: {method: SEMA}
+        baseline: {method: SimpleCIL}
+        comparator: gt
+        over: dataset
+        in_scope: [CIFAR-100, 5-Task IN-R, 10-Task IN-R, 20-Task IN-R, ImageNet-A, VTAB]
+    provenance:
+      author: eval3-track1-authority
