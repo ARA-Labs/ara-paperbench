@@ -1,0 +1,1 @@
+{"maximum_control":0.1,"minimum_drop":0.05,"rationale":"Diagnostic engineering gate frozen before launch: null rejection at most twice alpha, with at least the original reproduction half-band reduction. Not a null-level claim or confidence interval.","reference_band":[0.13,0.23],"repetitions":200}

@@ -1,0 +1,17 @@
+{
+  "repetitions": 200,
+  "rejections": 36,
+  "power_author": 0.17999999225139618,
+  "power_count_ratio": 0.18,
+  "elapsed_seconds": 573.7374945227057,
+  "jax_version": "0.4.6",
+  "devices": [
+    "TFRT_CPU_0"
+  ],
+  "source_hashes": {
+    "LICENSE.md": "0357f8dbcafa3b13ff64d571113b751207cd1189ac313c27517766b7dae0837e",
+    "mmdfuse.py": "7fbdcdee4466ff036973b6026c7cb74dd742cb722980f373039042ce9505a964",
+    "kernel.py": "304a93d2a27d4785bb5f9d72d0221f93553cad374a69821548587ab7ba9c257e",
+    "sampler_mixture.py": "caf6733cc2e4b6974c6d6fade99c9c4a5bab9550e1064ae1efbfe3c2fc8d6b34"
+  }
+}

@@ -1,0 +1,49 @@
+{
+  "status": "aborted_ineligible",
+  "reason": "protected control threshold in unused workload protocol resource",
+  "controllers_stopped": [
+    3670462,
+    3672721
+  ],
+  "containers": [
+    {
+      "container_id": "a0633900755239303b05bda4a4f36cbdf880c28f5a8811545ee1427b84a79a99",
+      "image": "sha256:93be80c8414492d143960ac82f5b318cb21c9e9497accc77075cccb572c4fafe",
+      "state": {
+        "Status": "exited",
+        "Running": false,
+        "Paused": false,
+        "Restarting": false,
+        "OOMKilled": false,
+        "Dead": false,
+        "Pid": 0,
+        "ExitCode": 137,
+        "Error": "",
+        "StartedAt": "2026-09-13T19:30:07.030087232Z",
+        "FinishedAt": "2026-09-13T19:36:33.103024257Z"
+      },
+      "restart_count": 0
+    },
+    {
+      "container_id": "740d6b9070362897d3e151a555ccb71039a3687bee2883a9f93af02e8977ea00",
+      "image": "sha256:93be80c8414492d143960ac82f5b318cb21c9e9497accc77075cccb572c4fafe",
+      "state": {
+        "Status": "exited",
+        "Running": false,
+        "Paused": false,
+        "Restarting": false,
+        "OOMKilled": false,
+        "Dead": false,
+        "Pid": 0,
+        "ExitCode": 137,
+        "Error": "",
+        "StartedAt": "2026-09-13T19:30:22.976044636Z",
+        "FinishedAt": "2026-09-13T19:36:33.101969478Z"
+      },
+      "restart_count": 0
+    }
+  ],
+  "unchanged_original_baseline": true,
+  "frozen_science_rule_unchanged": true,
+  "numerical_result_published": false
+}

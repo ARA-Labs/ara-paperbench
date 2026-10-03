@@ -1,0 +1,6 @@
+{
+  "original_sha256": "dd214c5b58a001545853fb27f366aadc4d4b8b1b9a79d14e5d41c2dba39a03ee",
+  "added_first_line": "# Grounding: transcribed from supplied prepared/driver/run.py; only this comment and the source-citing module docstring are added.\n",
+  "original_docstring": "\"\"\"Run the first published mixture sample-size cell using unchanged author code.\"\"\"",
+  "transcribed_docstring": "\"\"\"Run the first published mixture sample-size cell using unchanged author code.\n\nSource: supplied prepared/driver/run.py, full file; original identity in evidence/results/preregistered-protocol.json.\n\"\"\""
+}

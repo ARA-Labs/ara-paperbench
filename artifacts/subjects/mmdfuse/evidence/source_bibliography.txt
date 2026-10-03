@@ -1,0 +1,405 @@
+
+Mélisande Albert, Béatrice Laurent, Amandine Marrel, and Anouar Meynaoui. Adaptive test of
+independence based on HSIC measures. The Annals of Statistics, 50(2):858–879, 2022. (Cited on
+pages 4 and 10.)
+Pierre Alquier. User-friendly introduction to PAC-Bayes bounds. CoRR, abs/2110.11216, 2021. URL
+https://arxiv.org/abs/2110.11216. (Cited on page 4.)
+Nachman Aronszajn. Theory of reproducing kernels. Transactions of the American Mathematical
+Society, 68(3):337–404, 1950. (Cited on page 3.)
+Gregory Benton, Wesley J Maddox, Jayson Salkey, Julio Albinati, and Andrew Gordon Wilson.
+Function-space distributions over kernels. In H. Wallach, H. Larochelle, A. Beygelzimer, F. Alché-
+Buc, E. Fox, and R. Garnett, editors, Advances in Neural Information Processing Systems, vol-
+ume 32. Curran Associates, Inc., 2019. URL https://proceedings.neurips.cc/paper_
+files/paper/2019/file/39d929972619274cc9066307f707d002-Paper.pdf.
+(Cited on
+page 3.)
+Felix Biggs and Benjamin Guedj. Differentiable PAC-Bayes objectives with partially aggregated
+neural networks. Entropy, 23(10):1280, 2021. doi: 10.3390/e23101280. URL https://doi.
+org/10.3390/e23101280. (Cited on page 4.)
+Felix Biggs and Benjamin Guedj. Non-vacuous generalisation bounds for shallow neural networks.
+In Kamalika Chaudhuri, Stefanie Jegelka, Le Song, Csaba Szepesvári, Gang Niu, and Sivan Sabato,
+editors, International Conference on Machine Learning, ICML 2022, 17-23 July 2022, Baltimore,
+Maryland, USA, volume 162 of Proceedings of Machine Learning Research, pages 1963–1981.
+PMLR, 2022a. URL https://proceedings.mlr.press/v162/biggs22a.html. (Cited on
+page 4.)
+Felix Biggs and Benjamin Guedj. On margins and derandomisation in PAC-Bayes. In Gustau Camps-
+Valls, Francisco J. R. Ruiz, and Isabel Valera, editors, Proceedings of The 25th International
+Conference on Artificial Intelligence and Statistics, volume 151 of Proceedings of Machine
+Learning Research, pages 3709–3731. PMLR, 28–30 Mar 2022b. URL https://proceedings.
+mlr.press/v151/biggs22a.html. (Cited on page 4.)
+Felix Biggs and Benjamin Guedj. Tighter pac-bayes generalisation bounds by leveraging example
+difficulty. In Francisco Ruiz, Jennifer Dy, and Jan-Willem van de Meent, editors, Proceedings
+of The 26th International Conference on Artificial Intelligence and Statistics, volume 206 of
+Proceedings of Machine Learning Research, pages 8165–8182. PMLR, 25–27 Apr 2023. URL
+https://proceedings.mlr.press/v206/biggs23a.html. (Cited on page 4.)
+Felix Biggs, Valentina Zantedeschi, and Benjamin Guedj. On margins and generalisation for voting
+classifiers. In NeurIPS, 2022. doi: 10.48550/arXiv.2206.04607. URL https://doi.org/10.
+48550/arXiv.2206.04607. (Cited on page 4.)
+Stéphane Boucheron, Gábor Lugosi, and Pascal Massart. Concentration inequalities: A nonasymptotic
+theory of independence. Oxford university press, 2013. (Cited on page 31.)
+James Bradbury, Roy Frostig, Peter Hawkins, Matthew James Johnson, Chris Leary, Dougal
+Maclaurin, George Necula, Adam Paszke, Jake VanderPlas, Skye Wanderman-Milne, and
+Qiao Zhang.
+JAX: composable transformations of Python+NumPy programs, 2018.
+URL
+http://github.com/google/jax. (Cited on page 18.)
+Javier Cárcamo, Antonio Cuevas, and Luis-Alberto Rodríguez. A uniform kernel trick for high-
+dimensional two-sample problems. arXiv preprint arXiv:2210.02171, 2022. (Cited on page 6.)
+Mathilde Caron, Ishan Misra, Julien Mairal, Priya Goyal, Piotr Bojanowski, and Armand Joulin.
+Unsupervised learning of visual features by contrasting cluster assignments. In Hugo Larochelle,
+11
+
+
+Marc’Aurelio Ranzato, Raia Hadsell, Maria-Florina Balcan, and Hsuan-Tien Lin, editors, Ad-
+vances in Neural Information Processing Systems 33: Annual Conference on Neural Information
+Processing Systems 2020, NeurIPS 2020, December 6-12, 2020, virtual, 2020. (Cited on page 2.)
+Olivier Catoni. PAC-Bayesian Supervised Classification: The Thermodynamics of Statistical Learn-
+ing. Institute of Mathematical Statistics lecture notes-monograph series. Institute of Mathemat-
+ical Statistics, 2007. ISBN 9780940600720. URL https://books.google.fr/books?id=
+acnaAAAAMAAJ. (Cited on page 4.)
+Anirban Chatterjee and Bhaswar B. Bhattacharya. Boosting the power of kernel two-sample tests.
+arXiv preprint arXiv:2302.10687, 2023. (Cited on pages 2, 5, and 9.)
+Ting Chen, Simon Kornblith, Mohammad Norouzi, and Geoffrey E. Hinton. A simple framework for
+contrastive learning of visual representations. In Proceedings of the 37th International Conference
+on Machine Learning, ICML 2020, 13-18 July 2020, Virtual Event, volume 119 of Proceedings of
+Machine Learning Research, pages 1597–1607. PMLR, 2020a. (Cited on page 2.)
+Ting Chen, Simon Kornblith, Kevin Swersky, Mohammad Norouzi, and Geoffrey E. Hinton. Big
+self-supervised models are strong semi-supervised learners. In Hugo Larochelle, Marc’Aurelio
+Ranzato, Raia Hadsell, Maria-Florina Balcan, and Hsuan-Tien Lin, editors, Advances in Neural
+Information Processing Systems 33: Annual Conference on Neural Information Processing Systems
+2020, NeurIPS 2020, December 6-12, 2020, virtual, 2020b. (Cited on page 2.)
+Xinlei Chen and Kaiming He. Exploring simple siamese representation learning. In IEEE Conference
+on Computer Vision and Pattern Recognition, CVPR 2021, virtual, June 19-25, 2021, pages
+15750–15758. Computer Vision Foundation / IEEE, 2021. (Cited on page 2.)
+Xinlei Chen, Haoqi Fan, Ross B. Girshick, and Kaiming He. Improved baselines with momentum
+contrastive learning. CoRR, abs/2003.04297, 2020c. URL https://arxiv.org/abs/2003.
+04297. (Cited on page 2.)
+Farah Cherfaoui, Hachem Kadri, Sandrine Anthoine, and Liva Ralaivola. A discrete RKHS standpoint
+for Nyström MMD. HAL preprint hal-03651849, 2022. (Cited on page 5.)
+Ben Chugg, Hongjian Wang, and Aaditya Ramdas. A unified recipe for deriving (time-uniform)
+pac-bayes bounds. CoRR, abs/2302.03421, 2023. doi: 10.48550/arXiv.2302.03421. URL https:
+//doi.org/10.48550/arXiv.2302.03421. (Cited on page 4.)
+Kacper Chwialkowski, Dino Sejdinovic, and Arthur Gretton. A wild bootstrap for degenerate kernel
+tests. In Advances in neural information processing systems, pages 3608–3616, 2014. (Cited on
+page 4.)
+Kacper Chwialkowski, Heiko Strathmann, and Arthur Gretton. A kernel test of goodness of fit. In
+International Conference on Machine Learning, pages 2606–2615. PMLR, 2016. (Cited on page 10.)
+Kacper P Chwialkowski, Aaditya Ramdas, Dino Sejdinovic, and Arthur Gretton. Fast two-sample
+testing with analytic representations of probability measures. In Advances in Neural Information
+Processing Systems, volume 28, pages 1981–1989, 2015. (Cited on pages 2 and 5.)
+Namrata Deka and Danica J. Sutherland. Mmd-b-fair: Learning fair representations with statistical
+testing. CoRR, abs/2211.07907, 2022. doi: 10.48550/arXiv.2211.07907. URL https://doi.
+org/10.48550/arXiv.2211.07907. (Cited on page 5.)
+Carles Domingo-Enrich, Raaz Dwivedi, and Lester Mackey. Compress then test: Powerful kernel
+testing in near-linear time. The 26th International Conference on Artificial Intelligence and
+Statistics, AISTATS 2023, 2023. (Cited on pages 2, 5, 8, 10, and 18.)
+M. D. Donsker and S. R. S. Varadhan. Asymptotic evaluation of certain markov process expectations
+for large time, i. Communications on Pure and Applied Mathematics, 28(1):1–47, 1975. doi: https:
+//doi.org/10.1002/cpa.3160280102. URL https://onlinelibrary.wiley.com/doi/abs/10.
+1002/cpa.3160280102. (Cited on page 3.)
+A. Dvoretzky, J. Kiefer, and J. Wolfowitz. Asymptotic Minimax Character of the Sample Distribution
+Function and of the Classical Multinomial Estimator. The Annals of Mathematical Statistics, 27
+(3):642 – 669, 1956. doi: 10.1214/aoms/1177728174. URL https://doi.org/10.1214/aoms/
+1177728174. (Cited on page 34.)
+Raaz Dwivedi and Lester Mackey. Kernel thinning. In Mikhail Belkin and Samory Kpotufe,
+editors, Conference on Learning Theory, COLT 2021, 15-19 August 2021, Boulder, Colorado,
+12
+
+
+USA, volume 134 of Proceedings of Machine Learning Research, page 1753. PMLR, 2021. URL
+http://proceedings.mlr.press/v134/dwivedi21a.html. (Cited on page 5.)
+Gintare Karolina Dziugaite and Daniel M Roy. Computing nonvacuous generalization bounds for
+deep (stochastic) neural networks with many more parameters than training data. Conference on
+Uncertainty in Artificial Intelligence 33., 2017. (Cited on page 4.)
+Gintare Karolina Dziugaite and Daniel M. Roy. Data-dependent PAC-Bayes priors via differential
+privacy. In Samy Bengio, Hanna M. Wallach, Hugo Larochelle, Kristen Grauman, Nicolò Cesa-
+Bianchi, and Roman Garnett, editors, Advances in Neural Information Processing Systems 31:
+Annual Conference on Neural Information Processing Systems 2018, NeurIPS 2018, December
+3-8, 2018, Montréal, Canada, pages 8440–8450, 2018. URL https://proceedings.neurips.
+cc/paper/2018/hash/9a0ee0a9e7a42d2d69b8f86b3a0756b1-Abstract.html.
+(Cited on
+page 4.)
+Gintare Karolina Dziugaite, Kyle Hsu, Waseem Gharbieh, Gabriel Arpino, and Daniel Roy. On
+the role of data in PAC-Bayes. In Arindam Banerjee and Kenji Fukumizu, editors, The 24th
+International Conference on Artificial Intelligence and Statistics, AISTATS 2021, April 13-15,
+2021, Virtual Event, volume 130 of Proceedings of Machine Learning Research, pages 604–
+612. PMLR, 2021. URL http://proceedings.mlr.press/v130/karolina-dziugaite21a.
+html. (Cited on page 4.)
+Brück Florian, Jean-David Fermanian, and Aleksey Min. Distribution free mmd tests for model
+selection with estimated parameters. arXiv preprint arXiv:2305.07549, 2023. (Cited on page 5.)
+Magalie Fromont, Béatrice Laurent, Matthieu Lerasle, and Patricia Reynaud-Bouret. Kernels based
+tests with non-asymptotic bootstrap approaches for two-sample problems. In Conference on
+Learning Theory, volume 23 of Journal of Machine Learning Research Proceedings, 2012. (Cited
+on page 4.)
+Magalie Fromont, Béatrice Laurent, and Patricia Reynaud-Bouret. The two-sample problem for
+Poisson processes: Adaptive tests with a nonasymptotic wild bootstrap approach. The Annals of
+Statistics, 41(3):1431–1461, 2013. (Cited on pages 4 and 5.)
+Hanjia Gao and Xiaofeng Shao. Two sample testing in high dimension via maximum mean discrep-
+ancy. arXiv preprint arXiv:2109.14913, 2022. (Cited on page 5.)
+Arthur Gretton, Olivier Bousquet, Alex Smola, and Bernhard Schölkopf. Measuring statistical
+dependence with Hilbert-Schmidt norms. In International Conference on Algorithmic Learning
+Theory. Springer, 2005. (Cited on page 10.)
+Arthur Gretton, Kenji Fukumizu, Choon H Teo, Le Song, Bernhard Schölkopf, and Alex J Smola. A
+kernel statistical test of independence. In Advances in Neural Information Processing Systems,
+volume 1, pages 585–592, 2008. (Cited on page 10.)
+Arthur Gretton, Kenji Fukumizu, Zaid Harchaoui, and Bharath K Sriperumbudur. A fast, consistent
+kernel two-sample test. Advances in Neural Information Processing Systems, 22, 2009. (Cited on
+page 5.)
+Arthur Gretton, Karsten M. Borgwardt, Malte J. Rasch, Bernhard Schölkopf, and Alexander J. Smola.
+A kernel two-sample test. J. Mach. Learn. Res., 13:723–773, 2012a. doi: 10.5555/2503308.
+2188410. URL https://dl.acm.org/doi/10.5555/2503308.2188410. (Cited on pages 1, 5,
+8, and 18.)
+Arthur Gretton, Dino Sejdinovic, Heiko Strathmann, Sivaraman Balakrishnan, Massimiliano Pontil,
+Kenji Fukumizu, and Bharath K Sriperumbudur. Optimal kernel choice for large-scale two-sample
+tests. In Advances in Neural Information Processing Systems, volume 1, pages 1205–1213, 2012b.
+(Cited on pages 1, 2, and 5.)
+Jean-Bastien Grill, Florian Strub, Florent Altché, Corentin Tallec, Pierre H. Richemond, Elena
+Buchatskaya, Carl Doersch, Bernardo Ávila Pires, Zhaohan Guo, Mohammad Gheshlaghi Azar,
+Bilal Piot, Koray Kavukcuoglu, Rémi Munos, and Michal Valko. Bootstrap your own latent -
+A new approach to self-supervised learning. In Hugo Larochelle, Marc’Aurelio Ranzato, Raia
+Hadsell, Maria-Florina Balcan, and Hsuan-Tien Lin, editors, Advances in Neural Information
+Processing Systems 33: Annual Conference on Neural Information Processing Systems 2020,
+NeurIPS 2020, December 6-12, 2020, virtual, 2020. (Cited on page 2.)
+13
+
+
+Benjamin Guedj. A primer on PAC-Bayesian learning. In Proceedings of the second congress of the
+French Mathematical Society, volume 33, 2019. URL https://arxiv.org/abs/1901.05353.
+(Cited on page 4.)
+Maxime
+Haddouche
+and
+Benjamin
+Guedj.
+Online
+pac-bayes
+learning.
+In
+NeurIPS,
+2022.
+URL
+http://papers.nips.cc/paper_files/paper/2022/hash/
+a4d991d581accd2955a1e1928f4e6965-Abstract-Conference.html. (Cited on page 4.)
+Maxime Haddouche and Benjamin Guedj. Pac-bayes generalisation bounds for heavy-tailed losses
+through supermartingales. Trans. Mach. Learn. Res., 2023, 2023. URL https://openreview.
+net/forum?id=qxrwt6F3sf. (Cited on page 4.)
+Omar Hagrass, Bharath K. Sriperumbudur, and Bing Li. Spectral regularized kernel two-sample tests.
+arXiv preprint arXiv:2212.09201, 2022. (Cited on pages 2 and 9.)
+Kaiming He, Haoqi Fan, Yuxin Wu, Saining Xie, and Ross B. Girshick. Momentum contrast for
+unsupervised visual representation learning. In 2020 IEEE/CVF Conference on Computer Vision
+and Pattern Recognition, CVPR 2020, Seattle, WA, USA, June 13-19, 2020, pages 9726–9735.
+Computer Vision Foundation / IEEE, 2020. (Cited on page 2.)
+Jesse Hemerik and Jelle Goeman. Exact testing with random permutations. TEST, 27(4):811–825,
+Dec 2018. ISSN 1863-8260. doi: 10.1007/s11749-017-0571-1. URL https://doi.org/10.
+1007/s11749-017-0571-1. (Cited on page 4.)
+Geoffrey E Hinton and Ruslan R Salakhutdinov. Reducing the dimensionality of data with neural
+networks. science, 313(5786):504–507, 2006. (Cited on page 2.)
+Wittawat Jitkrittum, Zoltán Szabó, Kacper P Chwialkowski, and Arthur Gretton. Interpretable
+distribution features with maximum testing power. In Advances in Neural Information Processing
+Systems, volume 29, pages 181–189, 2016. (Cited on pages 2, 5, 8, and 18.)
+Ilmun Kim and Aaditya Ramdas. Dimension-agnostic inference using cross u-statistics. 2023. (Cited
+on page 5.)
+Ilmun Kim, Sivaraman Balakrishnan, and Larry Wasserman. Minimax optimality of permutation tests.
+Annals of Statistics, 50(1):225–251, February 2022. ISSN 0090-5364. doi: 10.1214/21-AOS2103.
+Funding Information: Funding. This work was partially supported by the NSF Grant DMS-
+17130003 and EP-SRC Grant EP/N031938/1. Publisher Copyright: © Institute of Mathematical
+Statistics, 2022. (Cited on pages 3, 5, 27, 34, and 35.)
+Matthias Kirchler, Shahryar Khorasani, Marius Kloft, and Christoph Lippert. Two-sample testing us-
+ing deep learning. In Silvia Chiappa and Roberto Calandra, editors, The 23rd International Confer-
+ence on Artificial Intelligence and Statistics, AISTATS 2020, 26-28 August 2020, Online [Palermo,
+Sicily, Italy], volume 108 of Proceedings of Machine Learning Research, pages 1387–1398. PMLR,
+2020. URL http://proceedings.mlr.press/v108/kirchler20a.html. (Cited on page 5.)
+Alex Krizhevsky. Learning multiple layers of features from tiny images. Technical report, 2009.
+(Cited on pages 9 and 21.)
+J. M. Kübler, W. Jitkrittum, B. Schölkopf, and K. Muandet. Learning kernel tests without data
+splitting. In Advances in Neural Information Processing Systems 33, pages 6245–6255. Curran
+Associates, Inc., 2020. (Cited on pages 2 and 5.)
+Jonas M Kübler, Wittawat Jitkrittum, Bernhard Schölkopf, and Krikamol Muandet. A witness two-
+sample test. In International Conference on Artificial Intelligence and Statistics, pages 1403–1419.
+PMLR, 2022a. (Cited on page 2.)
+Jonas M Kübler, Vincent Stimper, Simon Buchholz, Krikamol Muandet, and Bernhard Schölkopf.
+AutoML two-sample test. In Alice H. Oh, Alekh Agarwal, Danielle Belgrave, and Kyunghyun Cho,
+editors, Advances in Neural Information Processing Systems 35: Annual Conference on Neural
+Information Processing Systems 2022, NeurIPS 2022, 2022b. (Cited on pages 2, 8, and 18.)
+Alexandre Lacasse, François Laviolette, Mario Marchand, Pascal Germain, and Nicolas Usunier.
+PAC-Bayes bounds for the risk of the majority vote and the variance of the Gibbs classifier. In
+Bernhard Schölkopf, John C. Platt, and Thomas Hofmann, editors, Advances in Neural Information
+Processing Systems 19, Proceedings of the Twentieth Annual Conference on Neural Informa-
+tion Processing Systems, Vancouver, British Columbia, Canada, December 4-7, 2006, pages
+769–776. MIT Press, 2006. URL https://proceedings.neurips.cc/paper/2006/hash/
+779efbd24d5a7e37ce8dc93e7c04d572-Abstract.html. (Cited on page 4.)
+14
+
+
+Alexandre Lacasse, François Laviolette, Mario Marchand, and Francis Turgeon-Boutin. Learning
+with randomized majority votes. In José L. Balcázar, Francesco Bonchi, Aristides Gionis, and
+Michèle Sebag, editors, Machine Learning and Knowledge Discovery in Databases, European
+Conference, ECML PKDD 2010, Barcelona, Spain, September 20-24, 2010, Proceedings, Part II,
+volume 6322 of Lecture Notes in Computer Science, pages 162–177. Springer, 2010. doi: 10.1007/
+978-3-642-15883-4\_11. URL https://doi.org/10.1007/978-3-642-15883-4_11. (Cited
+on page 4.)
+Justin Lee. U-statistics: Theory and Practice. Citeseer, 1990. (Cited on page 35.)
+Guy Lever, François Laviolette, and John Shawe-Taylor.
+Tighter PAC-Bayes bounds through
+distribution-dependent priors. Theoretical Computer Science, 473:4–28, February 2013. ISSN
+0304-3975.
+doi: 10.1016/j.tcs.2012.10.013.
+URL https://linkinghub.elsevier.com/
+retrieve/pii/S0304397512009346. (Cited on page 4.)
+Tong Li and Ming Yuan. On the optimality of gaussian kernel based nonparametric tests against
+smooth alternatives. arXiv preprint arXiv:1909.03302, 2019. (Cited on page 5.)
+Yazhe Li, Roman Pogodin, Danica J. Sutherland, and Arthur Gretton.
+Self-supervised
+learning with kernel dependence maximization.
+In Marc’Aurelio Ranzato, Alina Beygelz-
+imer, Yann N. Dauphin, Percy Liang, and Jennifer Wortman Vaughan, editors, Ad-
+vances in Neural Information Processing Systems 34:
+Annual Conference on Neural
+Information Processing Systems 2021, NeurIPS 2021, December 6-14, 2021, virtual,
+pages 15543–15556, 2021. URL https://proceedings.neurips.cc/paper/2021/hash/
+83004190b1793d7aa15f8d0d49a13eba-Abstract.html. (Cited on page 2.)
+Jen Ning Lim, Makoto Yamada, Wittawat Jitkrittum, Yoshikazu Terada, Shigeyuki Matsui, and
+Hidetoshi Shimodaira. More powerful selective kernel tests for feature selection. In International
+Conference on Artificial Intelligence and Statistics, pages 820–830. PMLR, 2020. (Cited on page 5.)
+Feng Liu, Wenkai Xu, Jie Lu, Guangquan Zhang, Arthur Gretton, and Dougal J Sutherland. Learning
+deep kernels for non-parametric two-sample tests. In International Conference on Machine
+Learning, 2020. (Cited on pages 2, 5, 8, 9, 18, and 21.)
+Feng Liu, Wenkai Xu, Jie Lu, and Danica J. Sutherland. Meta two-sample testing: Learning kernels
+for testing with limited data. In Marc’Aurelio Ranzato, Alina Beygelzimer, Yann N. Dauphin,
+Percy Liang, and Jennifer Wortman Vaughan, editors, Advances in Neural Information Processing
+Systems 34: Annual Conference on Neural Information Processing Systems 2021, NeurIPS 2021,
+December 6-14, 2021, virtual, pages 5848–5860, 2021. URL https://proceedings.neurips.
+cc/paper/2021/hash/2e6d9c6052e99fcdfa61d9b9da273ca2-Abstract.html.
+(Cited on
+page 2.)
+Qiang Liu, Jason Lee, and Michael Jordan. A kernelized Stein discrepancy for goodness-of-fit tests.
+In International Conference on Machine Learning, pages 276–284. PMLR, 2016. (Cited on page 10.)
+David Lopez-Paz and Maxime Oquab. Revisiting classifier two-sample tests. In 5th International
+Conference on Learning Representations, ICLR 2017, Toulon, France, April 24-26, 2017, Confer-
+ence Track Proceedings. OpenReview.net, 2017. URL https://openreview.net/forum?id=
+SJkXfE5xx. (Cited on page 9.)
+Andrés R. Masegosa, Stephan Sloth Lorenzen, Christian Igel, and Yevgeny Seldin. Second order
+PAC-Bayesian bounds for the weighted majority vote. In Hugo Larochelle, Marc’Aurelio Ranzato,
+Raia Hadsell, Maria-Florina Balcan, and Hsuan-Tien Lin, editors, Advances in Neural Information
+Processing Systems 33: Annual Conference on Neural Information Processing Systems 2020,
+NeurIPS 2020, December 6-12, 2020, virtual, 2020. URL https://proceedings.neurips.
+cc/paper/2020/hash/386854131f58a556343e056f03626e00-Abstract.html.
+(Cited on
+page 4.)
+P. Massart. The Tight Constant in the Dvoretzky-Kiefer-Wolfowitz Inequality. The Annals of
+Probability, 18(3):1269 – 1283, 1990. doi: 10.1214/aop/1176990746. URL https://doi.org/
+10.1214/aop/1176990746. (Cited on page 34.)
+Andreas Maurer. A note on the PAC-Bayesian theorem. CoRR, cs.LG/0411099, 2004. URL
+http://arxiv.org/abs/cs.LG/0411099. (Cited on page 4.)
+David A McAllester. Some PAC-Bayesian theorems. In Proceedings of the eleventh annual conference
+on Computational Learning Theory, pages 230–234. ACM, 1998. (Cited on page 4.)
+15
+
+
+Alfred Müller. Integral probability metrics and their generating classes of functions. Advances in
+Applied Probability, 1:429–443, 1997. (Cited on page 6.)
+Maria Perez-Ortiz, Omar Rivasplata, John Shawe-Taylor, and Csaba Szepesvari. Tighter risk cer-
+tificates for neural networks. Journal of Machine Learning Research, 22(227):1–40, 2021. URL
+http://jmlr.org/papers/v22/20-879.html. (Cited on page 4.)
+Aaditya Ramdas, Sashank Jakkam Reddi, Barnabás Póczos, Aarti Singh, and Larry Wasserman.
+On the decreasing power of kernel and distance based nonparametric hypothesis tests in high
+dimensions. In Proceedings of the AAAI Conference on Artificial Intelligence, volume 29, 2015.
+(Cited on page 2.)
+Benjamin Recht, Rebecca Roelofs, Ludwig Schmidt, and Vaishaal Shankar. Do ImageNet classifiers
+generalize to ImageNet? In Kamalika Chaudhuri and Ruslan Salakhutdinov, editors, Proceedings
+of the 36th International Conference on Machine Learning, volume 97 of Proceedings of Machine
+Learning Research, pages 5389–5400. PMLR, 09–15 Jun 2019. URL https://proceedings.
+mlr.press/v97/recht19a.html. (Cited on pages 9 and 21.)
+Sashank Reddi, Aaditya Ramdas, Barnabás Póczos, Aarti Singh, and Larry Wasserman. On the high
+dimensional power of a linear-time two sample test under mean-shift alternatives. In Artificial
+Intelligence and Statistics, pages 772–780. PMLR, 2015. (Cited on page 2.)
+David Rindt, Dino Sejdinovic, and David Steinsaltz. Consistency of permutation tests of independence
+using distance covariance, hsic and dhsic. Stat, 10(1):e364, 2021. doi: https://doi.org/10.1002/
+sta4.364. URL https://onlinelibrary.wiley.com/doi/abs/10.1002/sta4.364. e364
+sta4.364. (Cited on pages 4 and 19.)
+Joseph P Romano and Michael Wolf. Exact and approximate stepdown methods for multiple
+hypothesis testing. Journal of the American Statistical Association, 100(469):94–108, 2005. (Cited
+on page 4.)
+Mark Rudelson and Roman Vershynin. Hanson-Wright inequality and sub-gaussian concentration.
+Electronic Communications in Probability, 18(none):1 – 9, 2013. doi: 10.1214/ECP.v18-2865.
+URL https://doi.org/10.1214/ECP.v18-2865. (Cited on page 25.)
+Antonin Schrab, Benjamin Guedj, and Arthur Gretton. KSD aggregated goodness-of-fit test. In
+Alice H. Oh, Alekh Agarwal, Danielle Belgrave, and Kyunghyun Cho, editors, Advances in Neural
+Information Processing Systems 35: Annual Conference on Neural Information Processing Systems
+2022, NeurIPS 2022, 2022a. (Cited on page 10.)
+Antonin Schrab, Ilmun Kim, Benjamin Guedj, and Arthur Gretton. Efficient aggregated kernel tests
+using incomplete U-statistics. In Alice H. Oh, Alekh Agarwal, Danielle Belgrave, and Kyunghyun
+Cho, editors, Advances in Neural Information Processing Systems 35: Annual Conference on
+Neural Information Processing Systems 2022, NeurIPS 2022, 2022b. (Cited on pages 2, 5, 8, 9, 10,
+and 18.)
+Antonin Schrab, Ilmun Kim, Mélisande Albert, Béatrice Laurent, Benjamin Guedj, and Arthur
+Gretton. MMD aggregated two-sample test. Journal of Machine Learning Research, 24(194):1–81,
+2023. URL http://jmlr.org/papers/v24/21-1289.html. (Cited on pages 2, 4, 5, 8, 9, 10, 18,
+22, and 35.)
+Matthias Seeger, John Langford, and Nimrod Megiddo. An improved predictive accuracy bound for
+averaging classifiers. In Proceedings of the 18th International Conference on Machine Learning,
+number CONF, pages 290–297, 2001. (Cited on page 4.)
+Yevgeny Seldin, François Laviolette, Nicolò Cesa-Bianchi, John Shawe-Taylor, and Peter
+Auer.
+PAC-Bayesian inequalities for martingales.
+In Nando de Freitas and Kevin P.
+Murphy, editors, Proceedings of the Twenty-Eighth Conference on Uncertainty in Artifi-
+cial Intelligence, Catalina Island, CA, USA, August 14-18, 2012, page 12. AUAI Press,
+2012. URL https://dslpitt.org/uai/displayArticleDetails.jsp?mmnu=1&smnu=2&
+article_id=2341&proceeding_id=28. (Cited on page 4.)
+Shubhanshu Shekhar, Ilmun Kim, and Aaditya Ramdas. A permutation-free kernel two-sample test.
+In Alice H. Oh, Alekh Agarwal, Danielle Belgrave, and Kyunghyun Cho, editors, Advances in
+Neural Information Processing Systems 35: Annual Conference on Neural Information Processing
+Systems 2022, NeurIPS 2022, 2022. (Cited on pages 5 and 10.)
+16
+
+
+Bharath K Sriperumbudur, Kenji Fukumizu, and Gert RG Lanckriet. Universality, characteristic
+kernels and RKHS embedding of measures. Journal of Machine Learning Research, 12(7), 2011.
+(Cited on page 3.)
+Danica J Sutherland, Hsiao-Yu Tung, Heiko Strathmann, Soumyajit De, Aaditya Ramdas, Alex
+Smola, and Arthur Gretton. Generative models and model criticism via optimized maximum mean
+discrepancy. In International Conference on Learning Representations, 2017. (Cited on pages 1, 2,
+8, and 18.)
+Martin J. Wainwright. High-Dimensional Statistics: A Non-Asymptotic Viewpoint. Cambridge Series
+in Statistical and Probabilistic Mathematics. Cambridge University Press, Cambridge, 2019. doi:
+10.1017/9781108627771. (Cited on page 32.)
+Mike Walmsley, Chris J. Lintott, Tobias Géron, Sandor Kruk, Coleman Krawczyk, Kyle W. Willett,
+Steven Bamford, William Keel, Lee S. Kelvin, Lucy Fortson, Karen L. Masters, Vihang Mehta,
+Brooke D. Simmons, Rebecca J. Smethurst, Elisabeth M. Baeten, and Christine Macmillan. Galaxy
+zoo decals: Detailed visual morphology measurements from volunteers and deep learning for 314,
+000 galaxies. Monthly Notices of the Royal Astronomical Society, 509:3966–3988, 2022. (Cited on
+pages 9 and 20.)
+Yi-Shan Wu, Andrés R. Masegosa, Stephan Sloth Lorenzen, Christian Igel, and Yevgeny Seldin.
+Chebyshev-Cantelli PAC-Bayes-Bennett inequality for the weighted majority vote. In Marc’Aurelio
+Ranzato, Alina Beygelzimer, Yann N. Dauphin, Percy Liang, and Jennifer Wortman Vaughan,
+editors, Advances in Neural Information Processing Systems 34: Annual Conference on Neu-
+ral Information Processing Systems 2021, NeurIPS 2021, December 6-14, 2021, virtual,
+pages 12625–12636, 2021. URL https://proceedings.neurips.cc/paper/2021/hash/
+69386f6bb1dfed68692a24c8686939b9-Abstract.html. (Cited on page 4.)
+Makoto Yamada, Denny Wu, Yao-Hung Hubert Tsai, Hirofumi Ohta, Ruslan Salakhutdinov, Ichiro
+Takeuchi, and Kenji Fukumizu. Post selection inference with incomplete maximum mean dis-
+crepancy estimator. In International Conference on Learning Representations, 2019. (Cited on
+page 5.)
+Valentina Zantedeschi, Paul Viallard, Emilie Morvant, Rémi Emonet, Amaury Habrard, Pascal
+Germain, and Benjamin Guedj. Learning stochastic majority votes by minimizing a PAC-Bayes
+generalization bound. In Marc’Aurelio Ranzato, Alina Beygelzimer, Yann N. Dauphin, Percy Liang,
+and Jennifer Wortman Vaughan, editors, Advances in Neural Information Processing Systems 34:
+Annual Conference on Neural Information Processing Systems 2021, NeurIPS 2021, December
+6-14, 2021, virtual, pages 455–467, 2021. URL https://proceedings.neurips.cc/paper/
+2021/hash/0415740eaa4d9decbc8da001d3fd805f-Abstract.html. (Cited on page 4.)
+Wojciech Zaremba, Arthur Gretton, and Matthew Blaschko. B-test: A non-parametric, low variance
+kernel two-sample test. Advances in neural information processing systems, 26, 2013. (Cited on
+page 5.)
+Jure Zbontar, Li Jing, Ishan Misra, Yann LeCun, and Stéphane Deny. Barlow twins: Self-supervised
+learning via redundancy reduction. In Marina Meila and Tong Zhang, editors, Proceedings of the
+38th International Conference on Machine Learning, ICML 2021, 18-24 July 2021, Virtual Event,
+volume 139 of Proceedings of Machine Learning Research, pages 12310–12320. PMLR, 2021.
+URL http://proceedings.mlr.press/v139/zbontar21a.html. (Cited on page 2.)
+Ji Zhao and Deyu Meng. FastMMD: Ensemble of circular discrepancy for efficient two-sample test.
+Neural computation, 27(6):1345–1372, 2015. (Cited on page 5.)
+Wenda Zhou, Victor Veitch, Morgane Austern, Ryan P. Adams, and Peter Orbanz. Non-vacuous gen-
+eralization bounds at the ImageNet scale: A PAC-Bayesian compression approach. In International
+Conference on Learning Representations, 2019. URL https://openreview.net/forum?id=
+BJgqqsAct7. (Cited on page 4.)
+17

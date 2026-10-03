@@ -1,0 +1,307 @@
+tree:
+- id: N01
+  type: question
+  support_level: inferred
+  source_refs:
+  - paper sections 1–2
+  title: Choose scales without losing calibration or observations
+  description: Reconstruct the paper’s organizing question; no original laboratory
+    chronology is supplied.
+  evidence:
+  - C01
+  - C02
+- id: N02
+  type: decision
+  support_level: explicit
+  source_refs:
+  - paper section 3
+  title: Use pooled permutation-invariant selection
+  evidence:
+  - C01
+  - C03
+  also_depends_on:
+  - N01
+  choice: Select parameters from the unordered pool rather than original sample labels.
+  alternatives:
+  - Data splitting or per-permutation selection, discussed by the paper as alternatives;
+    no failed run is invented.
+  rationale: 'Source-attributed tradeoff: splitting reduces observations available
+    to the final test; repeating expensive parameter selection for each permutation
+    adds computation. Pooled invariant selection retains observations while reusing
+    the selection. This reconstructed rationale is not original laboratory chronology.'
+- id: N03
+  type: experiment
+  support_level: explicit
+  source_refs:
+  - paper Theorem 1
+  title: Establish the calibration argument
+  evidence:
+  - C01
+  also_depends_on:
+  - N02
+  result: The paper supplies a conditional permutation argument; no local null experiment
+    was run.
+  dependency_provenance: ai-suggested conceptual dependency, not a claim about original
+    execution chronology
+- id: N04
+  type: decision
+  support_level: inferred
+  source_refs:
+  - paper section 4 and normalization discussion
+  - logic/solution/coverage.md
+  title: Fuse normalized discrepancies through a soft maximum
+  evidence:
+  - C02
+  - C03
+  also_depends_on:
+  - N02
+  choice: Combine kernel discrepancies through prior-weighted soft fusion.
+  alternatives:
+  - 'Hard maximum: retains only the largest discrepancy; soft fusion instead allows
+    several kernels to contribute through prior-weighted exponential averaging.'
+  - 'Separate test aggregation: calibrates multiple tests and their aggregation; fusion
+    builds one statistic for a single permutation calibration.'
+  - 'Unnormalized soft fusion: avoids pooled scaling, but discrepancies can have different
+    scales; the paper leaves the general power advantage of normalization open.'
+  rationale: 'Reconstructed conceptual rationale from the cited source discussion:
+    soft fusion admits a divergence-regularized weight interpretation while retaining
+    single-statistic calibration. These alternatives are not a recovered laboratory
+    chronology or invented failed experiments.'
+  dependency_provenance: ai-suggested conceptual dependency, not a claim about original
+    execution chronology
+- id: N05
+  type: experiment
+  support_level: explicit
+  source_refs:
+  - paper sections 5 and appendices C–E
+  title: Derive conditional power bounds
+  evidence:
+  - C04
+  - C05
+  also_depends_on:
+  - N03
+  - N04
+  result: The paper states sufficient-power results under its complete assumptions;
+    proof certification remains separate.
+  dependency_provenance: ai-suggested conceptual dependency, not a claim about original
+    execution chronology
+- id: N06
+  type: experiment
+  support_level: explicit
+  source_refs:
+  - paper Figure 1 and author mixture notebook
+  title: Compare mixture test power
+  evidence:
+  - C07
+  - C08
+  also_depends_on:
+  - N04
+  result: Author-reported mixture comparisons; exact released arrays retained.
+  dependency_provenance: ai-suggested conceptual dependency, not a claim about original
+    execution chronology
+- id: N07
+  type: experiment
+  support_level: explicit
+  source_refs:
+  - paper Figure 1 and author perturbation notebook
+  title: Compare perturbed-uniform test power
+  evidence:
+  - C08
+  also_depends_on:
+  - N04
+  result: Author-reported perturbation comparisons, not a local rerun.
+  dependency_provenance: ai-suggested conceptual dependency, not a claim about original
+    execution chronology
+- id: N08
+  type: experiment
+  support_level: explicit
+  source_refs:
+  - paper Figure 1 and author galaxy notebook
+  title: Compare galaxy test power
+  evidence:
+  - C08
+  also_depends_on:
+  - N04
+  result: Author-reported image comparisons with the longer AutoML setting explicitly
+    identified.
+  dependency_provenance: ai-suggested conceptual dependency, not a claim about original
+    execution chronology
+- id: N09
+  type: experiment
+  support_level: explicit
+  source_refs:
+  - paper Table 1 and author CIFAR notebook
+  title: Compare CIFAR image collections
+  evidence:
+  - C08
+  - C10
+  also_depends_on:
+  - N04
+  result: Printed values and released aggregates retained separately; raw outcome
+    provenance unresolved.
+  dependency_provenance: ai-suggested conceptual dependency, not a claim about original
+    execution chronology
+- id: N10
+  type: experiment
+  support_level: explicit
+  source_refs:
+  - paper Figure 7 and author kernel-sweep notebook
+  title: Vary the bandwidth collection
+  evidence:
+  - C05
+  - C09
+  also_depends_on:
+  - N04
+  - N05
+  result: Released count convention and aggregates retained; current plotting syntax
+    remains invalid.
+  dependency_provenance: ai-suggested conceptual dependency, not a claim about original
+    execution chronology
+- id: N11
+  type: experiment
+  support_level: explicit
+  source_refs:
+  - paper Figure 8 and runtime notebooks
+  title: Inspect runtime scaling
+  evidence:
+  - C06
+  also_depends_on:
+  - N04
+  result: Original plot and source arrays retained; duplicated RHS provenance blocks
+    its intended dimension interpretation.
+  dependency_provenance: ai-suggested conceptual dependency, not a claim about original
+    execution chronology
+- id: N12
+  type: question
+  support_level: explicit
+  source_refs:
+  - paper section 7
+  title: Investigate efficient extensions and unexplained normalization behavior
+  evidence:
+  - C03
+  - C04
+  also_depends_on:
+  - N04
+  - N05
+  description: The paper proposes future work; these are not completed experiments.
+  dependency_provenance: ai-suggested conceptual dependency, not a claim about original
+    execution chronology
+- id: N13
+  type: experiment
+  support_level: explicit
+  source_refs:
+  - evidence/results/local_run.md
+  title: Reproduce one released implementation point
+  evidence:
+  - C11
+  also_depends_on:
+  - N06
+  result: The single registered local run matched the released aggregate under its
+    fixed protocol; no paper-wide reproduction is claimed.
+  dependency_provenance: ai-suggested conceptual dependency, not a claim about original
+    execution chronology
+- id: N14
+  type: experiment
+  support_level: explicit
+  source_refs:
+  - evidence/source_conflicts.md
+  title: Audit executable and mathematical correspondence
+  evidence:
+  - C11
+  also_depends_on:
+  - N04
+  - N13
+  result: Equal-size algebra exposes the temperature discrepancy; no source correction
+    was executed.
+  dependency_provenance: ai-suggested conceptual dependency, not a claim about original
+    execution chronology
+- id: N15
+  type: question
+  support_level: explicit
+  source_refs:
+  - https://github.com/ARA-Labs/DissClaimer/issues/281
+  title: Choose explicit future protocol authority
+  evidence:
+  - C11
+  also_depends_on:
+  - N13
+  - N14
+  description: Both sources remain attributed while the future protocol choice and
+    project admission remain unresolved.
+- id: N16
+  type: decision
+  support_level: explicit
+  provenance: ai-executed
+  title: Attribute the released-code experimental target separately
+  evidence:
+  - C12
+  choice: Keep released lambda_multiplier=1 and distinguish the paper-defined temperature.
+  alternatives:
+  - A separately frozen paper-defined implementation comparison, outside this admission.
+  source_refs:
+  - evidence/admission/frozen-protocol.json
+  also_depends_on:
+  - N15
+- id: N17
+  type: dead_end
+  support_level: explicit
+  provenance: ai-executed
+  title: Abort threshold-exposing preparation before admission
+  evidence:
+  - C12
+  hypothesis: A full protocol blob could serve as a harmless workload input.
+  failure_mode: The blob exposed protected diagnostic thresholds; two new attempts
+    were stopped as ineligible.
+  lesson: Inventory actual mounted resource bytes; keep protected comparison policy
+    exclusively on the evaluator side.
+  source_refs:
+  - evidence/admission/aborted-exposure-attempts.json
+  also_depends_on:
+  - N16
+- id: N18
+  type: experiment
+  support_level: explicit
+  provenance: ai-executed
+  title: Execute the registered seed family and label control
+  evidence:
+  - C12
+  result: Complete method-bound cells, satisfied diagnostic control, treatment reduction
+    and copied public replay are retained.
+  source_refs:
+  - evidence/admission/report.json
+  - evidence/admission/public-runs.zip
+  also_depends_on:
+  - N17
+  - N20
+- id: N19
+  type: experiment
+  support_level: explicit
+  provenance: ai-executed
+  title: Execute within-group row-order family and label control
+  evidence:
+  - C12
+  result: The registered per-repetition identity and shuffled row mappings executed
+    end to end with their diagnostic control.
+  source_refs:
+  - evidence/admission/report.json
+  - evidence/admission/public-runs.zip
+  also_depends_on:
+  - N17
+  - N20
+- id: N20
+  type: pivot
+  support_level: explicit
+  provenance: ai-executed
+  title: Recover completed later cells without repeating scientific work
+  evidence:
+  - C12
+  from: A global pending check prevented importing the completed second cells.
+  to: The request-specific terminal check lets recovery import the existing authenticated
+    receipts and advance.
+  trigger: Both second-cell containers were idle with complete authenticated outputs
+    while the ledger stayed pending.
+  source_refs:
+  - evidence/admission/second-cell-awaiting-recovery.json
+  - evidence/admission/public-runs.zip
+  also_depends_on:
+  - N17

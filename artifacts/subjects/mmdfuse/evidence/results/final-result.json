@@ -1,0 +1,32 @@
+{
+  "trial_id": "mmdfuse-mixture-n500-seed42-558e399",
+  "container_id": "e41b2d3cac9e587060a788514934526aeed9eac7913533ff8cac213ece5434d2",
+  "protocol_sha256": "de2df94b0a885da2931f6c003162c7134aa8b4cea75f6e5dd6af38c8186c88c2",
+  "status": "completed",
+  "exit_code": 0,
+  "oom_killed": false,
+  "restart_count": 0,
+  "started_at": "2026-09-11T04:18:23.579291111Z",
+  "finished_at": "2026-09-11T04:27:58.089747118Z",
+  "whole_container_seconds": "574.510456007",
+  "in_process_seconds": 573.7374945227057,
+  "metric": "power_author",
+  "value": 0.17999999225139618,
+  "exact_count_ratio": 0.18,
+  "rejections": 36,
+  "repetitions": 200,
+  "all_repetition_records_verified": true,
+  "numerical_pass": true,
+  "runtime_pass": true,
+  "source_and_runner_unchanged": true,
+  "hardware_cpu_model": "Intel(R) Xeon(R) Gold 6230 CPU @ 2.10GHz",
+  "allocated_logical_cpus": 8,
+  "image": "sha256:93be80c8414492d143960ac82f5b318cb21c9e9497accc77075cccb572c4fafe",
+  "admitted": false,
+  "remaining": [
+    "Compile candidate ARA",
+    "Verify complete masking and generator fit",
+    "Complete two-artifact admission decision"
+  ],
+  "limits": "One author MMD-FUSE Gaussian-mixture point; no baseline-method comparison, live-provider gate or D1 control gate is established."
+}

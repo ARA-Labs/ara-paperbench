@@ -1,0 +1,30 @@
+[
+  {
+    "generator": 1,
+    "status": "completed_authenticated_pending_core_import",
+    "cell": {
+      "jax_seed": 42,
+      "label_permutation": 1
+    },
+    "rejections": 15,
+    "proportion": 0.075,
+    "duration_seconds": 744.5954920398071,
+    "exit_status": 0,
+    "original_operation_retained": true,
+    "no_reexecution": true
+  },
+  {
+    "generator": 2,
+    "status": "completed_authenticated_pending_core_import",
+    "cell": {
+      "label_permutation": 0,
+      "row_permutation": "550010f0df53a77c4ee697c1aaf3e8991ea91c91443212b5c49424dbfa2ccb22"
+    },
+    "rejections": 38,
+    "proportion": 0.19,
+    "duration_seconds": 752.1058863876387,
+    "exit_status": 0,
+    "original_operation_retained": true,
+    "no_reexecution": true
+  }
+]

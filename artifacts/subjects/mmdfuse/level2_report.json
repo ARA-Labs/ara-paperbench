@@ -1,0 +1,157 @@
+{
+  "artifact": "MMD-FUSE released-code T-MF1 derived admission",
+  "artifact_dir": "derived-admitted-candidate",
+  "review_version": "3.1.0",
+  "review_scope": "Artifact-only advisory semantic review. C01-C11 remain attributed source claims/hypotheses; C12 is an explicitly requested experimental-target registry wrapper, not a new general mechanism claim. This rating neither grants nor replaces operational admission.",
+  "prerequisite": "Local structural validation passed",
+  "prerequisite_scope": "Required files/fields, claim-experiment links, trace structure, 264 local links and runtime reader checked separately. No claim of a separately installed official Seal validator run.",
+  "overall": {
+    "tier": "Sound",
+    "mean_score": 4.166666666666667,
+    "one_line_summary": "A carefully scoped released-code admission with executed controls and replay evidence, while finite-mean success is explicitly separated from the seed-43 per-cell miss and broader scientific claims.",
+    "strengths_summary": [
+      "Original author source, archived reproduction, paper formula and derived released-code target remain distinct; numerical agreement is never used to certify paper temperature.",
+      "Complete registered families include actual label controls, treatment-only reduction and copied public evidence; aborted exposure attempts and exact-operation recovery are documented.",
+      "The seed-43 value 0.235 is preserved above the original 0.23 band; the G1 holds verdict is explicitly only about the preregistered two-treatment mean 0.2075."
+    ],
+    "weaknesses_summary": [
+      "Two treatment cells per family establish only the registered finite mean; neither population seed robustness nor a statistical null-level guarantee follows.",
+      "Original mechanism and retention hypotheses still lack their own isolating or inferential tests; unrelated image-result provenance gaps remain.",
+      "Historical wording in the inherited introduction and evidence index was explicitly labelled during review; original source pages remain historical evidence."
+    ]
+  },
+  "dimensions": {
+    "D1_evidence_relevance": {
+      "score": 4,
+      "strengths": [
+        "E12 addresses T-MF1 directly through the released method, registered seed/row-order treatments and matched label controls.",
+        "C07-C10 retain hypothesis/descriptive status where the original evidence lacks identifying contrasts or raw denominators."
+      ],
+      "weaknesses": [
+        "The new admission does not supply the mechanism ablation or inferential retention evidence needed for the original C07/C09 hypotheses."
+      ],
+      "suggestions": [
+        "Keep those original hypotheses separate from T-MF1 operational admission; no additional claim support should be inferred from this revision."
+      ]
+    },
+    "D2_falsifiability": {
+      "score": 4,
+      "strengths": [
+        "T-MF1 names the finite treatment mean, original engineering band and failed-control inconclusive outcome.",
+        "Original source-equivalence and conditional mathematical claims state concrete conditions for challenge."
+      ],
+      "weaknesses": [
+        "C09 explicitly remains nonexecutable until a noninferiority margin, valid outcome pairing and uncertainty procedure are specified."
+      ],
+      "suggestions": [
+        "Preserve the existing nonexecutable/hypothesis status; do not reinterpret the T-MF1 engineering band as the missing C09 uncertainty procedure."
+      ]
+    },
+    "D3_scope_calibration": {
+      "score": 5,
+      "strengths": [
+        "The individual seed-43 miss is disclosed rather than concealed by the successful mean.",
+        "Paper temperature, baseline-method comparisons, null-level claims, bootstrap and generator3 remain excluded.",
+        "C12 is explicitly an experimental target wrapper and does not impersonate a transferable theoretical claim."
+      ],
+      "weaknesses": [],
+      "suggestions": [
+        "Carry the finite-mean and per-cell distinction into every external pin summary and PR description."
+      ]
+    },
+    "D4_argument_coherence": {
+      "score": 4,
+      "strengths": [
+        "The source mismatch motivates an explicit released-code authority choice; the target, intervention table and actual measurements follow that choice.",
+        "Historical source constraints and the derived T-MF1 boundary are separated in the constraints page."
+      ],
+      "weaknesses": [],
+      "suggestions": [
+        "Keep historical source pages and the derived admission boundary distinguishable when reused."
+      ]
+    },
+    "D5_exploration_integrity": {
+      "score": 4,
+      "strengths": [
+        "The threshold-exposure abort and recovery defect are actual retained events with specific causes, not invented laboratory history.",
+        "Completed operations were recovered from their retained receipts rather than rerun; original conceptual dependencies remain identified as reconstructed."
+      ],
+      "weaknesses": [
+        "Original author laboratory chronology remains unavailable, as the artifact already discloses."
+      ],
+      "suggestions": [
+        "Retain the distinction between reconstructed author rationale and observed local execution history."
+      ]
+    },
+    "D6_methodological_rigor": {
+      "score": 4,
+      "strengths": [
+        "All cells retain the complete 200-repetition/2000-permutation schedule and bounded process durations.",
+        "Reference executions reproduce all archived keys, sample hashes and binary outcomes; controls and row transformations are separately executed.",
+        "Frozen comparison policy and protected evaluation prevent a failed control from becoming a supporting treatment verdict."
+      ],
+      "weaknesses": [
+        "Finite-mean engineering acceptance is not an uncertainty-calibrated population robustness analysis.",
+        "The diagnostic label-control threshold does not establish rejection probability at most alpha under the null."
+      ],
+      "suggestions": [
+        "Keep the existing engineering/diagnostic labels and do not relabel the control as a C01 treatment or population calibration study."
+      ]
+    }
+  },
+  "findings": [
+    {
+      "finding_id": "F01",
+      "dimension": "D6_methodological_rigor",
+      "severity": "minor",
+      "target_file": "PAPER.md",
+      "target_entity": "C12",
+      "evidence_span": "The G1 `holds` verdict refers only to the preregistered finite two-treatment mean 0.2075.",
+      "observation": "The mean passes although the retained seed-43 cell lies above the original upper band.",
+      "reasoning": "This supports the finite registered estimand but cannot support every-seed or unrestricted robustness; the artifact correctly states that limitation.",
+      "suggestion": "Preserve this explicit limitation in downstream summaries. This is a disclosed boundary, not a request to change the band or reducer."
+    },
+    {
+      "finding_id": "F02",
+      "dimension": "D2_falsifiability",
+      "severity": "minor",
+      "target_file": "logic/claims.md",
+      "target_entity": "C09",
+      "evidence_span": "Without those prospective choices this hypothesis is not an executable acceptance criterion.",
+      "observation": "The original retention hypothesis still has pending inferential choices.",
+      "reasoning": "Neither new T-MF1 family tests that hypothesis or resolves its missing uncertainty specification.",
+      "suggestion": "Keep the existing hypothesis and nonexecutable labels; do not count this operational admission as C09 support."
+    },
+    {
+      "finding_id": "F03",
+      "dimension": "D4_argument_coherence",
+      "severity": "minor",
+      "target_file": "evidence/README.md",
+      "evidence_span": "This compilation is not artifact admission, a new scientific run, full-paper reproduction or independent formal proof certification.",
+      "observation": "This preserved original-compilation sentence precedes the new admission evidence links.",
+      "reasoning": "The main derived boundary resolves the meaning, but an isolated reading of this page can obscure which revision is being described.",
+      "suggestion": "Present it explicitly as historical source-compilation status when this page is reused independently.",
+      "resolution": "Resolved in the reviewed derived artifact: evidence index now says Historical source compilation status, and PAPER.md identifies the original pending choice as historical."
+    }
+  ],
+  "questions_for_authors": [],
+  "read_order": [
+    "PAPER.md",
+    "logic/claims.md",
+    "logic/experiments.md",
+    "logic/problem.md",
+    "logic/concepts.md",
+    "logic/solution/algorithm.md",
+    "logic/solution/constraints.md",
+    "logic/related_work.md",
+    "trace/exploration_tree.yaml",
+    "evidence/README.md",
+    "evidence/figures/figure7.md",
+    "evidence/tables/table1.md"
+  ],
+  "optional_files_absent": [
+    "logic/solution/architecture.md",
+    "logic/solution/heuristics.md"
+  ],
+  "reviewer_provenance": "ai-executed advisory review using the rigor-reviewer skill; no external source lookup, numerical rerun or admission-gate substitution"
+}

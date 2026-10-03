@@ -1,0 +1,176 @@
+{
+  "artifact": "MMD-FUSE: Learning and Combining Kernels for Two-Sample Testing Without Data Splitting",
+  "artifact_dir": "/tmp/track2-mmdfuse-candidate/compiled-ara",
+  "review_version": "3.1.0",
+  "review_scope": "Final scoped semantic follow-up on C08 evidence roles, the motivating observation and N02 rationale; unchanged evidence retains the preceding artifact-only assessment.",
+  "prerequisite": "Level 1 passed",
+  "prerequisite_scope": "Accepted the supplied passing local Level 1/source-integrity result. No structural validation was repeated.",
+  "overall": {
+    "tier": "Sound",
+    "mean_score": 4.0,
+    "one_line_summary": "A well-scoped source compilation with coherent evidence roles and an honest reconstructed research narrative, while empirical precision and historical source correspondence remain unresolved.",
+    "strengths_summary": [
+      "Paper mathematics, released implementation, historical aggregates and the single local reproduction remain separately attributed, including the unresolved temperature mismatch.",
+      "Claims distinguish observed proportions, mechanistic hypotheses and inferential noninferiority; experiment records identify actual metrics, comparators and contextual evidence.",
+      "Selection and fusion decisions explain relevant alternatives and mark reconstructed reasoning as conceptual rather than original laboratory chronology."
+    ],
+    "weaknesses_summary": [
+      "Some prospective criteria remain incomplete pending an independently justified margin, interval procedure, valid denominators and pairing information.",
+      "No new evidence resolves inferential retention, the proposed bandwidth mechanism, original CIFAR averaging or historical Galaxy generator correspondence.",
+      "Exact theorem statements remain image/PDF evidence rather than checked mathematical transcriptions; original failed-run chronology is unavailable."
+    ]
+  },
+  "dimensions": {
+    "D1_evidence_relevance": {
+      "score": 4,
+      "strengths": [
+        "The claim set has relevant mathematical, benchmark, structural and correspondence evidence; C07 explicitly says whole-method comparisons do not identify its mechanism.",
+        "C08 now reserves direct proof for the Galaxy experiment E06; other dataset comparisons are contextual rather than independent support for that contrast.",
+        "C11 combines aggregate and algebraic evidence. C05 identifies the bandwidth sweep as qualitative context, and C09 does not promote observed proportions into demonstrated population-power retention."
+      ],
+      "weaknesses": ["The C07 mechanism and C09 population-power interpretation remain hypotheses without isolating or inferential evidence."],
+      "suggestions": ["Keep C07 and C09 provisional until appropriate controlled and inferential evidence becomes available; an honestly labeled hypothesis does not require an immediate new experiment."]
+    },
+    "D2_falsifiability": {
+      "score": 4,
+      "strengths": [
+        "C03 separates the conditional reuse implication from a concrete normalizer's applicability and specifies admissible matrices and the permutation action.",
+        "C07 identifies a same-statistic bandwidth comparison; C08 identifies learned-minus-fused Galaxy contrasts; C10 distinguishes excess rejection from attribution invalidation.",
+        "C09 uses the correct noninferiority direction and explicitly states that improvement does not refute retention.",
+        "The mathematical, operation-count and source-equivalence claims retain meaningful conditional challenges."
+      ],
+      "weaknesses": [
+        "C09 remains explicitly nonexecutable until a margin and analysis choices are fixed; C10 also awaits source reconciliation.",
+        "The prospective C07-C10 uncertainty procedures have coherent direction but do not yet constitute complete interval methods with specified coverage."
+      ],
+      "suggestions": [
+        "Complete the missing inputs and analysis specifications before observing outcomes in a future authorized experiment, and keep their pending status explicit until then.",
+        "Do not interpret inability to refute a hypothesis as positive evidence of noninferiority or a mechanism."
+      ]
+    },
+    "D3_scope_calibration": {
+      "score": 5,
+      "strengths": [
+        "Claims separate conditional source support from scientific hypotheses and bound local reproduction to one released-code point.",
+        "Fixed-prior theory, pooled-data selection, unrestricted versus restricted posteriors, normalization moments and finite-precision limits are not conflated.",
+        "Unfavorable image comparisons, missing raw counts, invalid plotting provenance and pending source authority remain explicit.",
+        "The claims describe transferable relationships rather than rankings of named system components, and revisions narrow interpretation without inventing evidence."
+      ],
+      "weaknesses": [],
+      "suggestions": ["Preserve these boundaries in future protocol, masking and admission work; this review makes none of those decisions."]
+    },
+    "D4_argument_coherence": {
+      "score": 4,
+      "strengths": [
+        "All three motivating gaps are addressed by calibration/reuse, fusion/calibration structure and source-correspondence claims.",
+        "The problem observation now consistently treats scale mismatch as a hypothesis motivated, rather than identified, by whole-method comparisons.",
+        "The soft-fusion rationale connects divergence-regularized weighting to single-statistic calibration, without treating normalization's power advantage as established.",
+        "Driver grounding, environment and transcription records consistently describe the added comment and module docstring; future methods and admission remain deferred."
+      ],
+      "weaknesses": ["The mathematical roadmap provides limited intermediate reasoning for the distributed-signal divergence implication."],
+      "suggestions": ["Consider a checked finite-kernel illustration of C05, distinguishing a smaller divergence term from improvement of a full sufficient bound or actual power."]
+    },
+    "D5_exploration_integrity": {
+      "score": 4,
+      "strengths": [
+        "N04 compares hard maximum, separately calibrated aggregation and unnormalized fusion with relevant tradeoffs.",
+        "N02 now explains the sample loss from splitting and computational burden of repeated selection, while identifying the rationale as reconstructed.",
+        "Conceptual dependencies are marked inferred; no invented failed runs or original chronology are claimed.",
+        "Negative empirical regimes, source defects, local reproduction and later source questions remain distinct."
+      ],
+      "weaknesses": ["Original laboratory chronology and genuine failed-run records remain unavailable; the graph is a useful conceptual reconstruction rather than a complete historical record."],
+      "suggestions": ["Add original decision records if they become available, with provenance; do not manufacture dead ends to improve apparent exploration breadth."]
+    },
+    "D6_methodological_rigor": {
+      "score": 3,
+      "strengths": [
+        "Experiment-specific metrics distinguish mathematical obligations, rejection proportions, within-method retention, warmed runtime, local completion and symbolic correspondence.",
+        "Comparator records retain relevant methods and differences in image representation, training time and calibration settings.",
+        "The evidence spans heterogeneous datasets and many baselines, with reported repetitions and runtime variability; the local run has a fixed detailed protocol and complete outcomes.",
+        "Figure 7 now explicitly rejects inferential retention and reconstruction of binary outcomes from floating aggregates."
+      ],
+      "weaknesses": [
+        "No new raw outcomes, pairing information or uncertainty analysis resolves empirical contrast limitations.",
+        "A same-statistic bandwidth mechanism ablation is proposed but unperformed.",
+        "CIFAR denominator reconciliation, historical Galaxy generator correspondence and several baseline dependency versions remain incomplete."
+      ],
+      "suggestions": [
+        "Retain the descriptive and hypothesis scope; stronger empirical inference requires original outcome recovery or separately authorized prospective studies.",
+        "Resolve denominator, pairing, environment and interval specifications before making stronger quantitative or comparative claims."
+      ]
+    }
+  },
+  "findings": [
+    {
+      "finding_id": "F01",
+      "dimension": "D2_falsifiability",
+      "severity": "minor",
+      "target_file": "logic/claims.md",
+      "target_entity": "C09",
+      "evidence_span": "Without those prospective choices this hypothesis is not an executable acceptance criterion.",
+      "observation": "The criterion has the correct noninferiority direction but intentionally leaves the acceptable loss margin and uncertainty procedure unspecified. C10 likewise awaits source reconciliation.",
+      "reasoning": "This is honest and logically coherent, yet an independent researcher cannot execute a complete falsification protocol from the current record alone.",
+      "suggestion": "Keep the explicit pending status. At the future protocol stage, specify a scientifically justified margin, contrast set, denominator/pairing treatment, interval procedure and coverage before new outcomes; do not select them merely to make the retained curve pass."
+    },
+    {
+      "finding_id": "F02",
+      "dimension": "D6_methodological_rigor",
+      "severity": "minor",
+      "target_file": "evidence/figures/figure7.md",
+      "target_entity": "E08",
+      "evidence_span": "They are descriptive evidence only: no noninferiority margin, verified cross-count outcome pairing or simultaneous uncertainty analysis is available.",
+      "observation": "The wording accurately limits existing proportions, but the evidence needed for inferential retention remains absent; no new data or analysis was supplied.",
+      "reasoning": "Retention can stand as a provisional hypothesis, but methodological strength cannot increase as though missing uncertainty or joint outcomes had been recovered.",
+      "suggestion": "Preserve the descriptive interpretation and hypothesis status. Recover outcome/denominator metadata or undertake a separately authorized prospective analysis before claiming demonstrated population-power retention."
+    }
+  ],
+  "followup_disposition": [
+    {"second_review_finding": "F03", "status": "Resolved", "basis": "C08 Proof is E06 only; E04 verifies C07, E05 explicitly supplies contextual background, and E07 verifies C10. C08's evidence basis agrees with these roles."},
+    {"second_review_finding": "F04", "status": "Resolved", "basis": "The first problem observation now says the plots motivate a hypothesis and explicitly denies mechanism isolation by whole-method comparisons."},
+    {"second_review_finding": "F05", "status": "Resolved", "basis": "N02 supplies the source-attributed sample-loss and repeated-computation tradeoffs without claiming original laboratory chronology."},
+    {"second_review_finding": "F01", "status": "Retained", "basis": "Prospective criterion completeness is unchanged."},
+    {"second_review_finding": "F02", "status": "Retained", "basis": "No scientific evidence or uncertainty analysis changed."}
+  ],
+  "initial_findings_disposition": [
+    {"initial_finding": "F01", "status": "Logical error resolved; prospective incompleteness retained as F01."},
+    {"initial_finding": "F02", "status": "Overinterpretation resolved; empirical limitation retained as F02."},
+    {"initial_finding": "F03", "status": "Resolved by relevant fusion alternatives and reconstructed rationale."},
+    {"initial_finding": "F04", "status": "Resolved at claim and motivating-observation levels; the mechanism remains untested."},
+    {"initial_finding": "F05", "status": "Resolved by separating conditional implication from concrete-construction applicability."},
+    {"initial_finding": "F06", "status": "Resolved by experiment-specific metrics and comparators."},
+    {"initial_finding": "F07", "status": "Substantially resolved through named contrasts and attribution distinctions; prospective procedures remain pending."}
+  ],
+  "questions_for_authors": [
+    "What independently justified loss margin and uncertainty procedure should a future retention experiment use?",
+    "Can valid outcome denominators and cross-method/cross-count pairing information be recovered for historical power comparisons?",
+    "Can original CIFAR averaging records and historical Galaxy generation metadata resolve the disclosed source uncertainties?"
+  ],
+  "working_maps": {
+    "claim_proof_map": {"C01": ["E01"], "C02": ["E02"], "C03": ["E01", "E02"], "C04": ["E03"], "C05": ["E03", "E08"], "C06": ["E02", "E09"], "C07": ["E04"], "C08": ["E06"], "C09": ["E08"], "C10": ["E07"], "C11": ["E10", "E11"]},
+    "experiment_verifies_map": {"E01": ["C01", "C03"], "E02": ["C02", "C03", "C06"], "E03": ["C04", "C05"], "E04": ["C07"], "E05": [], "E06": ["C08"], "E07": ["C10"], "E08": ["C05", "C09"], "E09": ["C06"], "E10": ["C11"], "E11": ["C11"]},
+    "claim_dependency_edges": [["C03", "C01"], ["C05", "C04"], ["C06", "C02"]],
+    "gap_set": ["Select useful kernels while retaining valid permutation calibration.", "Combine several useful scales without a separate multiple-testing calibration stage.", "Keep reported empirical behavior, proof assumptions and executable source identity distinct."],
+    "gap_coverage": [{"gap_ordinal": 1, "claims": ["C01", "C03"]}, {"gap_ordinal": 2, "claims": ["C02", "C06"]}, {"gap_ordinal": 3, "claims": ["C11"]}],
+    "rejected_nodes": [],
+    "decision_nodes": ["N02", "N04"]
+  },
+  "review_limitations": [
+    "The initial full read, semantic rereview and final narrow follow-up form one review process. Unchanged evidence is assessed from those earlier reads rather than reread on every follow-up.",
+    "Native source-image viewing failed during the initial review because the filesystem sandbox helper could not initialize. No follow-up resolved that tool limitation or independently certified image-only theorem statements.",
+    "No external access, scientific execution, new experiments, structural validation, historical generation reconstruction or source-authority selection occurred.",
+    "Reported values and source-audit statements are accepted as artifact evidence. Driver transcription was assessed semantically against its record; hashes were not recomputed.",
+    "The initial procedure found architecture.md and heuristics.md absent; algorithm.md supplies the method narrative. Their absence is not a semantic finding or a repeated structural check.",
+    "The Sound tier assesses this source compilation's epistemic quality. It does not admit the candidate, select paper versus code authority, establish masked readiness, pass a control gate or certify all paper results."
+  ],
+  "score_change_basis": {
+    "initial_scores_D1_to_D6": [4, 3, 5, 4, 3, 3],
+    "second_review_scores_D1_to_D6": [4, 4, 5, 4, 4, 3],
+    "final_scores_D1_to_D6": [4, 4, 5, 4, 4, 3],
+    "explanation": "The first revision improved falsification logic and exploration rationale. The final edits resolve residual semantic wording and role distinctions within the same scoring bands. D6 remains 3 because no empirical uncertainty, outcome provenance or ablation evidence was added."
+  },
+  "read_order": [
+    "Initial review: PAPER.md, claims, experiments, problem, concepts, attempted architecture, algorithm, constraints, attempted heuristics, related work, exploration tree, evidence index, then numerical/proof/source evidence, in the prescribed order; detailed initial record is preserved by the parent reviewer.",
+    "Second review: PAPER.md; logic/claims.md; logic/experiments.md; logic/problem.md; logic/concepts.md; logic/solution/algorithm.md; logic/solution/constraints.md; logic/related_work.md; trace/exploration_tree.yaml; evidence/README.md; evidence/figures/figure7.md; evidence/tables/table1.md; src/environment.md; src/execution/transcription.json; src/execution/grounding.md; evidence/proofs/power.md; evidence/results/local_run.md; targeted source-conflict passages and Figure 1 Galaxy rows.",
+    "Final follow-up: targeted trace/exploration_tree.yaml N02; logic/problem.md observations; logic/experiments.md E04-E07; logic/claims.md C08; complete N02 rationale reread."
+  ]
+}
