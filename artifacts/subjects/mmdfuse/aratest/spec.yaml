@@ -1,0 +1,33 @@
+format_version: 7
+evidence: {}
+claims:
+  - claim_id: C12
+    provenance:
+      author: "track2 joint admission 2026-09-13, record T-MF1 (mmdfuse.T-MF1-engineering-band.v1)"
+      model: claude-opus-5-5
+    properties:
+      - kind: invariant
+        metric: rejection_proportion
+        statistic: mean
+        include_reference: true
+        band: {lower: 0.13, upper: 0.23}
+        controls:
+          - rule: paired_shift
+            control_id: labels
+            direction: decrease
+            min_shift: 0.05
+            reference_within: {lower: 0.13, upper: 0.23}
+            control_within: {lower: 0.0, upper: 0.10}
+    families:
+      - family_id: seed_resampling
+        version: "1"
+        params:
+          metric: rejection_proportion
+          n_seeds: 2
+          repetitions: 1
+          negative_controls:
+            - control_id: labels
+              change: >-
+                At the reference seed, randomly permute the pooled sample labels once
+                (label_permutation=1) so that both samples come from one distribution;
+                the rejection proportion should then fall to about alpha.
