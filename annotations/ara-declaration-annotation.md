@@ -1,29 +1,29 @@
 # Annotating ARAs with declarations
 
-**Date:** 2026-09-30
+**Date:** 2026-10-07
 
-Status: draft instructions, nothing annotated yet. Companion to [the refactor plan](package-design-review.md) (decisions 19 and 20, D7, Phase 3) and [the package and API plan](refactored-packages-and-api.md). A copy of this file is committed to the `ara-paperbench` fork with the first annotation batch, next to the data it produces.
+Status: maintained annotation guidance. [Batch 1](batch-1-track1-reviewed.md) added specs for `paperbench/self-expansion` C01 and `paperbench/stay-on-topic-with-classifier-free-guidance` C04. [Batch 2](batch-2-subjects.md) added `subjects/mmdfuse` C12. These are exposed historical/development outputs, not new RQ1 extraction successes or independently adjudicated source-fidelity labels.
 
 ## TL;DR
 
-`aratest` reads an ARA's reported numbers by parsing the evidence files the ARA already has. It does not ask for a second copy. What parsing cannot recover is meaning: which header is the metric, what an unnamed column axis is, and which spellings name the same method. Each annotated ARA therefore gains one file, `aratest/spec.yaml` (format version 7). It holds a short map that gives parsed evidence that meaning, plus the properties each claim asserts. No ARA in the `ara-paperbench` fork has one yet. This plan fixes what an offline agent writes into the fork, in which order, and how each commit is checked. Nothing is committed to the fork except by following it.
+`aratest` reads reported numbers from an ARA's existing evidence files. Its `aratest/spec.yaml` format version 7 supplies metric and axis meaning, canonical labels, and the properties each claim asserts, without copying evidence values. Specs already exist in the three artifacts listed above. New authoring must preserve the full assertion before selecting relations, keep unsupported claims in the selected-claim ledger, and separate executable checks from independent fidelity review. Collection, corpus regeneration, and fresh experiment families require separate authorization and resource caps.
 
 ## What `aratest` parses from the ARA
 
 The ARA schema (`skills/compiler/references/ara-schema.md` in `ARA-Labs/Agent-Native-Research-Artifact`) records reported numbers in four places. `aratest` reads them where they are.
 
-| Source | ARA location | State in the pinned corpus (32 ARAs) |
+| Source | ARA location | Historical parser census, not a current acceptance gate |
 |---|---|---|
 | Tables | `evidence/tables/*.md` | 291 of 311 files parse with `aratest.evidence.parse_table_md`; 10,629 numeric cells |
 | Figures | `evidence/figures/*.md` data tables | 145 of 183 data tables parse; 2,627 numeric cells, 1,828 of them approximate |
 | Text | each claim's `Sources` field in `logic/claims.md` | Absent: the corpus predates the field |
 | Runs | `evidence/results/*.md` run tables | Absent |
 
-Parser gaps to close in `aratest`, not in the ARAs: 1,299 table cells and 402 figure cells contain digits but do not parse (for example `~0.05`, because `~` is not yet an approximate marker), and 20 tables are rejected, half of them for sub-tables with different axes.
+The historical census recorded 1,299 table cells and 402 figure cells with digits that did not parse, plus 20 rejected tables. Those counts describe the earlier parser and input snapshot; do not present them as the current runtime's behavior. Parse the actual pinned inputs before authoring, retaining any current failures.
 
 Parsed cells carry table-local coordinates. 84% of table cells sit on an axis the parser can only name `column`, valued by header text. The metric may be a header, a caption, a `measure` axis, or a section heading. Axis names vary across files (`Method`, `Model`, `model`). The map in `spec.yaml` supplies this meaning. It never repeats a number.
 
-Results stated only in prose cannot be checked on this corpus, because no file records them. ARAs written to the current schema record them in `Sources`. Their map format is settled when the first such ARA is annotated.
+Prose-only results need a source record that the installed parser can read. Preserve their exact quotation, units, scope, and source anchor in ordinary claim/evidence records. If the installed runtime cannot read or faithfully express them, retain the obligation with its reason rather than inventing evidence.
 
 ## What gets written
 
@@ -75,46 +75,47 @@ claims:
 - **`families`** lists experiments that can generate fresh cases. A claim without `families` is checked on reported numbers only.
 - The file holds no numbers copied from evidence, no orderings, results, verdicts, or execution settings. `aratest` computes any ordering it needs from the parsed numbers, and takes precision from the decimals shown and from approximate markers.
 
-Format versions 1–6 (one `property`, old kind names, label addressing) stay readable only so retained records replay. New files are written at version 7, which `aratest` defines in refactor plan Phase 3, so annotation batches wait for that reader.
+Write new files at format version 7. Legacy format support is a runtime compatibility detail, not permission to reuse a historical declaration under a different claim or source version.
 
 ## Inputs
 
 | Input | Where | Use |
 |---|---|---|
-| The ARAs | `ara-paperbench` fork, branch `feat/aratest-dev`, `artifacts/{paperbench,rebench,speedrun,extra}/<id>/` (32 ARAs) | Annotation targets |
-| Reviewed Track 1 authority | `ara/src/eval3-track1-authority/` in this repository: reviewed `consistency` bindings for `paperbench/self-expansion` C01 (6 baselines, `table1_main_results`) and `paperbench/stay-on-topic-with-classifier-free-guidance` C04 (8 baselines, `table2_codegen_humaneval_temp02`), pinned to corpus commit `62e9b54b` | Batch 1, converted without a model |
-| MMD-FUSE and Simformer ARAs | Zip archives under `ara/evidence/track2_joint_admission_2026-09-13/` in this repository; not in the fork | Batch 2 |
-| MMD-FUSE shared-property spec | `ara/evidence/shared_property_328/contract/spec.yaml` (format version 5, MMD-FUSE C01) | Batch 2 |
-| Relation and family catalogs | `aratest.catalog` (refactor plan §6.3) | The allowed `kind` and `family_id` values and their schemas |
+| The ARAs | Pinned `ARA-Labs/ara-paperbench` revision; `artifacts/{paperbench,rebench,speedrun,extra,subjects}/<id>/` | Annotation inputs, with exact included files and exposure recorded |
+| Batch 1 authority | [Batch 1 report](batch-1-track1-reviewed.md), including original authority and corpus pin | Historical conversion, not automatic extraction or independent source review |
+| MMD-FUSE spec | [Batch 2 report](batch-2-subjects.md), `artifacts/subjects/mmdfuse/aratest/spec.yaml` | Historical engineering target C12; C01 was not substituted for a different assertion |
+| Shared authoring contract | [Pinned maintained contract](https://github.com/ARA-Labs/Agent-Native-Research-Artifact/blob/ebae6b6c5ddd0424e3e9c2ba80db357b4bda415f/skills/shared/property-authoring.md), loaded by all four compiler/research-manager variants | Source preservation, staged obligations, semantic revisions, and isolated ARA-only inputs |
+| Relation and family catalogs | Installed `aratest.catalog` and its schemas | Allowed relations, domains, and separately authorized fresh-case families |
 
 ## Batches
 
 Each batch is one set of commits on `feat/aratest-dev`, with a batch report.
 
-1. **Port the reviewed Track 1 claims.** The reviewed bindings already use the parser's coordinates (`[["Method", "SEMA"], ["measure", "AN"]]`). For each of the two ARAs, write the `evidence` entry for the one table its bindings use, and write each binding as one `consistency` property. No model is involved. Check that `audit_scope` and the new relation give the same verdicts on the same table; this is the Phase 3 parity gate.
-2. **Add the research subjects.** Unpack the MMD-FUSE and Simformer ARAs from their retained archives into the fork under `artifacts/subjects/<id>/`. Declare MMD-FUSE C01 (from the shared-property spec) and C12 with a `seed_resampling` binding matching retained record T-MF1, which Phase 5 demonstrates. Simformer C07 gets the same binding, matching T-SF1. Other subject claims follow batch 3.
-3. **Annotate everything else**, following the instructions below.
+1. **Retain the completed conversions.** Batch 1 ported the two reviewed binding sets without a model. Their historical authority and checks remain in the batch report; they are not independently reviewed source-fidelity results.
+2. **Retain the research subject's identity.** Batch 2 added MMD-FUSE C12. It explicitly rejected applying a different source claim under C01 and did not add Simformer. Do not mark the original broader batch proposal complete.
+3. **Enroll later authoring before outcomes.** Record source/ARA identities, claim IDs, exposure, ordering and selection rules, screening and effort limits, attempt/repair allowance, and stopping rule. Unsupported, missing, ambiguous, and failed claims remain in that fixed denominator.
 
 ## Instructions for the annotation agent
 
 For each ARA:
 
-1. Read `PAPER.md`, `logic/claims.md`, and `logic/experiments.md`.
-2. For each claim, decide whether catalog relations express it over numbers the ARA's evidence files contain.
-   - If not, because no relation fits or the numbers are only in prose, write nothing for that claim and record the reason in the batch report. Do not stretch a relation to fit.
-   - If so, write the `evidence` entries for the files those numbers come from, using the parsed axes `aratest` reports for each file. Add `labels` only where the same value is spelled differently across those files. Then write the claim's `properties`.
-3. Add `families` only when a catalog family would produce cases that a declared relation can check, and the ARA's code and data make that experiment plausible. Choose parameters from the family's schema; do not invent parameters.
-4. Fill `provenance` for every claim.
-5. Do not edit any file outside `aratest/`, and do not copy numbers into `spec.yaml`.
+1. Pin the workflow, model, catalog, tools, attempts, and allowed input view. For ARA-only extraction, use a materialized allowlisted view and a fresh context: retain preserved assertions, conditions, source quotations, raw evidence and neutral axis/label meaning; exclude the original source packet, generated specs, relation choices, executable operand mappings, check/repair feedback, reviewer answers, and exclusions reachable through linked records. Source-informed compiler authoring is a different output, not an independent extraction arm.
+2. Read `PAPER.md`, `logic/claims.md`, and neutral linked evidence/experiments within that allowed view. Capture each exact assertion and every conjunct before relation selection. Resolve metric, units, direction, exact variant and baseline, scope, quantifier, aggregation, statistical unit, uncertainty commitment, and evidence headers. Do not merge fixed and adaptive methods or swap average and final accuracy.
+3. Compare the whole assertion with the pinned relation schemas. If no faithful relation or evidence is available, keep the claim in the batch ledger with separate reasons for unsupported relation, missing evidence, unresolved meaning, approximation, or absent variance. Missing variance is never zero. A useful narrowed subclaim gets its own identity and does not discharge the full assertion.
+4. For executable candidates, write evidence maps from actual parsed axes and canonical labels only for equivalent spellings. Include every supported required conjunct as a property. Compare the candidate's meaning with the captured assertion before execution; a holding check cannot justify omitted conjuncts or changed meaning.
+5. Add fresh-case `families` only with separate authorization and resource caps. Reported-evidence authoring does not launch them automatically.
+6. Fill supported `provenance`; retain richer source, workflow, initial-output, feedback, repair, and human-help history in linked authoring/batch records. Do not invent spec fields or copy evidence numbers into it.
+7. Preserve original ARAs. Existing-artifact annotation changes only `aratest/spec.yaml`, with the selected-claim ledger and attempt history in the batch report. Compiler regeneration and live recording create separately versioned artifacts under the shared contract; they do not edit historical evidence to make checks hold.
+8. Save every candidate and semantic revision under immutable identities. Link checks to the exact obligation, declaration, evidence, relation, and decision-policy versions. A revised method or scope must not inherit the old check.
 
 ## Checks before each commit
 
-- `spec.yaml` loads with `aratest`'s model at format version 7.
-- Every `evidence` path exists and parses, and every axis it renames exists in the parsed file.
-- Every `claim_id` exists in the ARA's `logic/claims.md`.
-- Every `kind` routes to a catalog relation, every property's operands resolve to at least one parsed number, and every `family_id` names a catalog family with valid parameters.
-- The ARA's own checks still pass: `ara check` and the fork's `_seal_tests.py`, if present, accept the added `aratest/` directory.
-- The diff touches only the ARA's `aratest/spec.yaml`.
+- `spec.yaml` loads with `aratest`'s format version 7 model; keep schema acceptance separate from semantic fidelity.
+- Every evidence path exists and parses, renamed axes exist, and operand references resolve using the pinned public APIs.
+- Claim identities map back to the selected source obligations; splitting claims does not inflate coverage.
+- Supported relations and separately authorized family schemas validate. Load, bind, check, save, and replay executable reported-evidence candidates, retaining holds, violations, inconclusive outcomes, and operational failures.
+- Run `ara check` and the artifact's own checks when available; otherwise record exactly what was not run. These are engineering checks, not independent source review.
+- Retain initial and repaired outputs separately. Report semantic mismatch even when execution holds; keep unsupported obligations visible.
 
 ## Commits and reports
 
@@ -122,9 +123,16 @@ For each ARA:
 - Each batch adds `annotations/<batch>.md` at the fork root: ARAs touched, claims declared, claims skipped with reasons, evidence files that failed to parse, the model and prompt used, and the check results.
 - Commits are pushed only after the owner approves the batch.
 
-## Open questions
+## Independent review before reporting fidelity
 
-1. **Review of agent annotations.** Provenance records the agent. Decide whether a researcher reviews batch 3 before its results are reported, and if so, record it as `provenance.reviewed_by`.
-2. **Corpus pin.** This repository reads the corpus as the submodule `corpus/ara-paperbench`, which points at `github.com/AmberLJC/ara-paperbench` at commit `62e9b54b`. That is also the fork's current `main`. After batch 1, the submodule should point at the `ARA-Labs` fork's `feat/aratest-dev`, and the authority file's `corpus_commit` should be updated with it.
-3. **Subject placement.** `artifacts/subjects/` is a new category in the fork. The alternative is `artifacts/extra/`.
-4. **`research-manager` integration.** New ARAs should get `spec.yaml` while the research happens. The `research-manager` skill needs an instruction to write it; that change lives with the skill, not here.
+RQ1 requires two qualified human source reviewers working independently and a separate independent adjudicator. They must not be the system developer or protocol author. AI review, historical authority conversions, and the production checker cannot replace them. Record expertise, independence, permitted source access, and active review time.
+
+Hide candidates, checker outcomes, and repair answers while reviewers annotate source assertions. Lock source annotations before reviewing neutral compiled assertions and evidence, then lock those annotations before candidate review. Review source-to-ARA, ARA-to-declaration, and source-to-final fidelity separately, preserving both reviewers' judgments before adjudication. Record wrong variants, headers, omitted conjuncts, changed scope/aggregation/uncertainty, and unresolved cases.
+
+No independent reviewers or no recoverable historical input means the corresponding fidelity result is unperformed. Do not reconstruct missing accepted outputs from corrected diagnostics. Release only independently reviewed, eligible declarations to downstream tests, preserving initial scores and correction history.
+
+## Live recording and regenerated artifacts
+
+The compiler and research-manager workflows load one shared authoring contract in their maintained upstream skill sources. The research manager stages obligations at its first recording opportunity without forcing crystallization; an obligation written after evidence is not preregistered. Semantic and decision-policy changes preserve immutable before/after identities and require a new check of the new version.
+
+Keep regenerated artifacts, sources, claim/evidence correspondence, and compiler configuration separate from the original unmodified-ARA cohort. Live integration receives engineering smoke validation only; compiler regeneration is not evidence of live research-manager effectiveness. New collection and effectiveness studies still require their own prospective enrollment, authorization, reviewers, and caps.
