@@ -1,0 +1,46 @@
+{
+  "claims": [
+    {
+      "claim_id": "C01",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "parse failure",
+      "explanation": "E01, evidence/tables/table1_jct_improvement.md contains the five Venn speedups 1.87×,1.78×,1.72×,1.88×,1.63× for Even/Small/Large/Low/High under 50-job Poisson simulation. Production evidence parsing yields zero numeric cells because the multiplication-suffixed cells are not parsed. Figure 11 supplies only Low/High and cannot replace the full five-workload assertion."
+    },
+    {
+      "claim_id": "C02",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "unclear",
+      "explanation": "Semantic-review revision: E02, evidence/figures/fig11_ablation_breakdown.md distinguishes FIFO (Low 1.55) from Venn w/o sched (Low 1.62), while C02 uses the wording Venn w/o sched / FIFO. The slash may describe FIFO as the residual scheduler inside the matching-only variant, rather than equate that variant with standalone FIFO. The wording does not unambiguously identify the intended baseline condition, so neither interpretation is silently selected or encoded through a label alias. Figure 11 reports IRS-only 1.79 in Low and 1.63 in High with no further High gain; the falsifier additionally specifies a 5% component-removal threshold not stated in the main assertion."
+    },
+    {
+      "claim_id": "C03",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "E02, evidence/figures/fig11_ablation_breakdown.md supplies matching-only/FIFO speedups 1.62/1.55 in Low and 1.42/1.42 in High. Deterministic ratio comparisons could represent these reported means, but the claim falsifier explicitly requires statistically significant High-workload improvement; no variance, repetitions, significance margin, or compatible reported significance relation is available. Numerical equality of rounded means does not establish absence of statistical benefit."
+    },
+    {
+      "claim_id": "C04",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "E03, evidence/figures/fig10_overhead.md parses approximate 0.2–1.0 ms latency across 100–1000 jobs and 10–100 groups. These observations cannot establish the asserted max(O(m log m),O(n²)) algorithmic complexity; the catalog also lacks a reported-evidence absolute ~1 ms ceiling. A trend-only comparison would omit both requirements."
+    },
+    {
+      "claim_id": "C05",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "prose-only",
+      "explanation": "E04 cites Figure 9 for FIFO/SRSF/Venn wall-clock accuracy trajectories on ResNet-18+MobileNet-V2/FEMNIST with 20 jobs, but no Figure 9 evidence file or trajectory table is supplied. evidence/figures/fig4_contention_impact.md instead compares job counts under random matching and cannot ground common ~0.75 final accuracy or faster Venn convergence. The one-percentage-point falsifier also has no uncertainty support."
+    },
+    {
+      "claim_id": "C06",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "E05, evidence/figures/fig14_fairness_knob.md parses approximate speedup/fairness sweeps and exact 69% at ε=2. Comparisons can express ordering but cannot enforce the absolute 69% fair-share fraction at Ti=M×sdi. A directional sweep alone would omit that substantive condition; approximation markers cannot be erased to make strict monotonic claims."
+    }
+  ]
+}

@@ -1,0 +1,62 @@
+format_version: 7
+evidence:
+  evidence/tables/table1_resnet_main_results.md:
+    metric: {name: test_accuracy_percent}
+    axes: {Dataset: dataset, column: method, section: backbone}
+    at: {experiment: main_resnet}
+  evidence/tables/table3_ablation_masking.md:
+    metric: {name: test_accuracy_percent}
+    axes: {Dataset: dataset, column: method}
+    at: {experiment: ablation, backbone: 'ResNet-18 (ImageNet-1K)'}
+claims:
+  - claim_id: C03
+    provenance: {author: direct-annotation, model: openai-codex/gpt-6-astra}
+    properties:
+      - kind: best_baseline_consistency
+        metric: test_accuracy_percent
+        over: dataset
+        in_scope: [CIFAR10, CIFAR100, SVHN, GTSRB, FLOWERS102, DTD, UCF101, FOOD101, SUN397, EUROSAT, OXFORDPETS, AVERAGE]
+        where: {experiment: main_resnet}
+        treatment: {method: 'OURS (SMM)'}
+        baseline_axis: method
+        group: backbone
+        groups: ['ResNet-18 (ImageNet-1K)', 'ResNet-50 (ImageNet-1K)']
+        comparator: gt
+        group_overrides:
+          'ResNet-18 (ImageNet-1K)':
+            in_scope: [CIFAR10, CIFAR100, SVHN, GTSRB, FLOWERS102, UCF101, FOOD101, SUN397, EUROSAT, OXFORDPETS, AVERAGE]
+  - claim_id: C05
+    provenance: {author: direct-annotation, model: openai-codex/gpt-6-astra}
+    properties:
+      - kind: consistency
+        metric: test_accuracy_percent
+        over: dataset
+        in_scope: [CIFAR10, FLOWERS102, UCF101]
+        where: {experiment: ablation, backbone: 'ResNet-18 (ImageNet-1K)'}
+        treatment: {method: 'OURS (SMM)'}
+        baseline: {method: 'ONLY δ'}
+        comparator: gt
+      - kind: consistency
+        metric: test_accuracy_percent
+        over: dataset
+        in_scope: [CIFAR10, SVHN, GTSRB, SUN397]
+        where: {experiment: ablation, backbone: 'ResNet-18 (ImageNet-1K)'}
+        treatment: {method: 'OURS (SMM)'}
+        baseline: {method: 'ONLY fmask'}
+        comparator: gt
+      - kind: consistency
+        metric: test_accuracy_percent
+        over: dataset
+        in_scope: [GTSRB, FLOWERS102]
+        where: {experiment: ablation, backbone: 'ResNet-18 (ImageNet-1K)'}
+        treatment: {method: 'OURS (SMM)'}
+        baseline: {method: 'SINGLE-CHANNEL f^s_mask'}
+        comparator: gt
+      - kind: best_baseline_consistency
+        metric: test_accuracy_percent
+        over: dataset
+        in_scope: [AVERAGE]
+        where: {experiment: ablation, backbone: 'ResNet-18 (ImageNet-1K)'}
+        treatment: {method: 'OURS (SMM)'}
+        baseline_axis: method
+        comparator: gt

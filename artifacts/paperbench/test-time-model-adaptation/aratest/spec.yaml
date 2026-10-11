@@ -1,0 +1,97 @@
+format_version: 7
+evidence:
+  evidence/tables/table2_imagenetc_accuracy.md:
+    metric:
+      axis: column
+    at:
+      benchmark: ImageNet-C severity 5; ViT-Base; batch 64
+      precision: 32-bit ViT-Base
+  evidence/tables/table4_quantized_accuracy.md:
+    metric:
+      axis: column
+    axes:
+      section: precision
+    at:
+      benchmark: ImageNet-C severity 5; ViT-Base; batch 64
+  evidence/tables/table7_memory_usage.md:
+    metric:
+      name: memory_MB
+    axes:
+      column: batch
+    at:
+      benchmark: ImageNet-C Gaussian severity 5; ViT-Base; RTX3090
+  evidence/tables/table11_noniid.md:
+    metric:
+      axis: column
+    at:
+      benchmark: ImageNet-C severity 5; ViT-Base; batch 64
+claims:
+- claim_id: C02
+  provenance: &id001
+    author: direct-session-annotation
+    model: openai-codex/gpt-6-astra
+  properties:
+  - kind: comparative
+    metric: Avg Acc.
+    over: benchmark
+    in_scope:
+    - ImageNet-C severity 5; ViT-Base; batch 64
+    subject:
+      Method: FOA (ours)
+      precision: 8-bit ViT-Base
+    reference:
+      Method: TENT
+      precision: 32-bit ViT-Base
+    comparator: gt
+  - kind: comparative
+    metric: memory_MB
+    over: batch
+    in_scope:
+    - BS=64
+    subject:
+      Method: FOA (8-bit)
+    reference:
+      Method: TENT
+    comparator: lt
+    where:
+      section: Standard Methods (Various Batch Sizes)
+      benchmark: ImageNet-C Gaussian severity 5; ViT-Base; RTX3090
+- claim_id: C07
+  provenance: *id001
+  properties:
+  - kind: best_baseline_consistency
+    metric: Online Label Shifts Acc.
+    over: benchmark
+    in_scope:
+    - ImageNet-C severity 5; ViT-Base; batch 64
+    treatment:
+      Method: FOA (ours)
+    baseline_axis: Method
+    comparator: gt
+  - kind: best_baseline_consistency
+    metric: Online Label Shifts ECE
+    over: benchmark
+    in_scope:
+    - ImageNet-C severity 5; ViT-Base; batch 64
+    treatment:
+      Method: FOA (ours)
+    baseline_axis: Method
+    comparator: lt
+  - kind: best_baseline_consistency
+    metric: Mixed Shifts Acc.
+    over: benchmark
+    in_scope:
+    - ImageNet-C severity 5; ViT-Base; batch 64
+    treatment:
+      Method: FOA (ours)
+    baseline_axis: Method
+    comparator: gt
+  - kind: best_baseline_consistency
+    metric: Mixed Shifts ECE
+    over: benchmark
+    in_scope:
+    - ImageNet-C severity 5; ViT-Base; batch 64
+    treatment:
+      Method: FOA (ours)
+    baseline_axis: Method
+    comparator: lt

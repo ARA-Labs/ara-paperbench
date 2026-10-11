@@ -1,0 +1,99 @@
+format_version: 7
+evidence:
+  evidence/tables/table1_intra_lpips.md:
+    metric:
+      name: table1_reported_value
+    axes:
+      Methods: method
+      column: measure
+    at:
+      regime: 10-shot
+  evidence/figures/figure4_ablation.md:
+    metric:
+      axis: column
+    axes:
+      Model Variant: variant
+    at:
+      task: FFHQ→10-shot Sunglasses
+      iterations: '300'
+claims:
+- claim_id: C01
+  provenance: &id002
+    author: direct-session annotation author
+    model: openai-codex/gpt-6-astra
+  properties:
+  - kind: best_baseline_consistency
+    metric: table1_reported_value
+    over: measure
+    in_scope: &id001
+    - FFHQ → Babies
+    - FFHQ → Sunglasses
+    - FFHQ → Raphael's paintings
+    - LSUN Church → Haunted houses
+    - LSUN Church → Landscape drawings
+    treatment:
+      method: DDPM-TAN
+    baseline_axis: method
+    exclude:
+    - LDM-TAN
+    comparator: gt
+    min_pass: 3
+  - kind: best_baseline_consistency
+    metric: table1_reported_value
+    over: measure
+    in_scope: *id001
+    treatment:
+      method: LDM-TAN
+    baseline_axis: method
+    exclude:
+    - DDPM-TAN
+    comparator: gt
+    min_pass: 3
+- claim_id: C05
+  provenance: *id002
+  properties:
+  - kind: comparative
+    metric: fid
+    over: task
+    in_scope:
+    - FFHQ→10-shot Sunglasses
+    where:
+      iterations: '300'
+      section: Extracted Data Points
+    subject:
+      variant: Adaptor only
+    reference:
+      variant: Baseline (direct fine-tuning)
+    comparator: gt
+  - kind: comparative
+    metric: fid
+    over: task
+    in_scope:
+    - FFHQ→10-shot Sunglasses
+    where:
+      iterations: '300'
+      section: Extracted Data Points
+    subject:
+      variant: DPMs-TAN w/o A (w/o adversarial noise)
+    reference:
+      variant: Adaptor only
+    comparator: lt
+  - kind: comparative
+    metric: fid
+    over: task
+    in_scope:
+    - FFHQ→10-shot Sunglasses
+    where:
+      iterations: '300'
+      section: Extracted Data Points
+    subject:
+      variant: DPMs-TAN (full method)
+    reference:
+      variant: DPMs-TAN w/o A (w/o adversarial noise)
+    comparator: lt
+labels:
+  method:
+    LMD-TAN (Ours): LDM-TAN
+    DDPM-TAN (Ours): DDPM-TAN
+  metric:
+    FID (↓): fid

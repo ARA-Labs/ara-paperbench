@@ -1,0 +1,41 @@
+{
+  "reviewer": "fresh-context same-system AI review",
+  "claims": [
+    {
+      "claim_id": "C01",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Current skip is justified by a concrete evidence-structure failure and missing scope, not scientific nonexpressibility. Table 1 repeats model column headers, rejected by evidence.py duplicate-data-header handling; its dataset/tuning header rows identify only seven configurations (2 BART0, 3 FLAN-T5Large, 2 FLAN-T53B), with Representation best in six, not an identifiable eight-setting universe. The inspected BestBaselineConsistencyDomain supports min_pass and group_overrides, so a genuine 7-of-8 best-method claim is scientifically expressible, but no faithful declaration can invent the eighth setting or substitute 6-of-7. Preserve C01 in the denominator and recommend evidence/header repair separately."
+    },
+    {
+      "claim_id": "C02",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Table 1 Representation exceeds w/o Prior in each of the seven visible configurations, but the statement and falsifier demand all eight. Repeated model data headers are a genuine parser blocker, and the eighth model/dataset/tuning identity and operands are absent. Consistency/comparative can express an all-eight prior ablation once the complete evidence exists; neither lack of a relation nor changing all eight to all seven is justified. Current full-claim skip is correct, with evidence repair and the missing eighth setting as separate recommendations."
+    },
+    {
+      "claim_id": "C03",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "This is scientifically expressible: three comparative properties can preserve BART0Large/P3-Test Full FT Trainable Logit > Threshold (57.15/55.75), and FLAN-T5Large/MMLU LoRA and Full FT Trainable Logit <= Threshold (36.54/43.93 and 40.91/48.43). NTK approximation identifies the forecasting variant; it does not turn these directional configuration claims into an unmeasured causal conjunct. However, the required Table 1 has rejected repeated model data headers, so the present parse-failure skip is justified rather than a missed currently bindable claim. Figure 2(a) logit-transfer observations on one pair cannot supply these F1 operands. Recommend normalized unique configuration headers separately, without modifying author evidence."
+    },
+    {
+      "claim_id": "C04",
+      "judgment": "faithful",
+      "field": null,
+      "explanation": "The comparative property covers all four Table 3 sequential-error-fixing settings, comparing Replay w/ Representation with Replay w/ Random on EM Drop (%): BART0Large Full FT/P3-Test, FLAN-T5Large LoRA/MMLU, FLAN-T5Large Full FT/MMLU, and FLAN-T53B LoRA/MMLU. The 1.634/5.769 and 0.301/3.267 numbers ground examples, not independent exact-value thresholds. All-settings scope and strict lower EM Drop preserve the statement and its any-primary-configuration falsifier. Table 4 single-error fixing and success rates are correctly not substituted or added as conjuncts."
+    },
+    {
+      "claim_id": "C05",
+      "judgment": "faithful",
+      "field": null,
+      "explanation": "Both aspects of only are preserved at BART0Large Full FT/P3-TestOOD: Representation > Threshold and Threshold > every other available method except Representation. Table 2 contains exactly Trainable Logit and w/o Prior in that second cohort, with 30.61/34.85 below 46.24; Representation is 50.12. This is stronger and more faithful than merely Representation ranking first. P3-TestID and a nonexistent OOD Fixed Logit row are not invented."
+    },
+    {
+      "claim_id": "C06",
+      "judgment": "unclear",
+      "field": "properties",
+      "explanation": "Whole declaration fidelity is unclear on two independent grounds. Ratio semantics: C06 Statement literally says requires 1/6700 without an approximation qualifier, but E05 Expected outcome explicitly says expected ~1/6700 ratio, and Table 8 reports rounded scientific-notation operands 1.35e10 and 9.04e14. The source therefore does not unambiguously authorize exact equality rather than a rounded magnitude; the weaker 1%-cost falsifier does not authorize either an equality tolerance or replacing the 1/6700 claim with merely cheaper. The two declared ratio_ge/ratio_le properties at the identical target 6700 encode exact mathematical equality, not rounded-ratio equivalence. Inspection of _gate.py shows both have the same margin and positive printed-precision gate: at exact equality they are inconclusive, while outside the gate one inequality fails, so the conjunction cannot recognize equality as holding. This is semantic inspection, not an executed verdict. No source-defined ratio band or rounding tolerance is supplied, and the printed operands imply roughly 66963 rather than 6700; that numerical discrepancy is a source inconsistency, not a source-confirmed falsification of a tolerance the source never defines. Replay scope: the two-sided factor-two bound is grounded in within-2x, but properties 2-3 restrict EM Drop to FLAN-T5Large Full FT, whereas the statement only expressly scopes the FLOP example to that setting and its C04 dependency/Table 3 spans four replay settings; FLAN-T53B LoRA has 0.138 versus 0.030 (4.6-fold). Recommendation separately: conservatively leave the whole claim undeclared while clarifying exact-versus-rounded ratio semantics, any authorized tolerance, and replay-comparability scope; do not manufacture a band, repair the numerical claim, shrink the original denominator, or describe an unrun result as a source-confirmed violation."
+    }
+  ]
+}

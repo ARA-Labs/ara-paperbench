@@ -1,0 +1,66 @@
+{
+  "claims": [
+    {
+      "claim_id": "C01",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "unclear",
+      "explanation": "E01, evidence/tables/table2_roberta_t5_main.md reports MNLI/SST2 and T5 CNN/DM ROUGE-1/2/L at 60% sparsity, but the claim does not resolve whether up to 98% is a maximum, an approximate retention floor, or an aggregation across tasks; its falsifier instead introduces a 96% floor. CNN/DM is a slash-separated triple not parsed into numeric metric operands. No single GLUE-only retention comparison discharges the stated CNN/DM scope."
+    },
+    {
+      "claim_id": "C02",
+      "disposition": "declared",
+      "declaration_ids": [
+        "C02"
+      ],
+      "reason": null,
+      "explanation": "E01 and evidence/tables/table11_raw_efficiency_roberta_t5.md identify APT and LoRA+Prune 97%-accuracy TTA in seconds on SST2 at 60% sparsity. Four properties jointly preserve the stated 8.4× RoBERTa and 8.2× T5 ratios with lower and upper ratio comparisons; the weaker 6× falsifier is not substituted. Model-specific ratios prevent a single aggregation. Raw table notes explicitly give approximately 8.7×/8.13× rather than the Statement values; the claim is not repaired to those evidence ratios."
+    },
+    {
+      "claim_id": "C03",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "E01 evidence/tables/table2_roberta_t5_main.md supplies RoBERTa APT/Prune+Distill MNLI 86.4/87.3, SST2 94.5/94.5, training memory 70.1/168.5 and time 592.1/1495.3, normalized to FT. The full claim requires an additive within-0.9-point MNLI margin, SST2 equality, 41.6% memory ratio and 2.5× speed. The reported catalog has no general additive-margin relation for this heterogeneous conjunction; Table 10 self-distillation variants are not interchangeable with CoFi."
+    },
+    {
+      "claim_id": "C04",
+      "disposition": "declared",
+      "declaration_ids": [
+        "C04"
+      ],
+      "reason": null,
+      "explanation": "E03 evidence/tables/table5_ablation_llama.md gives LLaMA2-7B APT and w/o kurtosis Avg. at 30% sparsity (50.0 and 38.1 identify the measured operands). The conjunction of ratio_le and ratio_ge at 0.762 encodes the explicitly asserted 23.8% relative performance reduction without substituting the weaker 5% falsifier. Other sparsities and w/o AT are excluded as distinct conditions."
+    },
+    {
+      "claim_id": "C05",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "E03, evidence/tables/table4_ablation_roberta.md reports APT versus static-rank w/o AT SST2 94.5→93.2, MNLI 86.4→84.5 and TTA 592.1→684.9. A 16% slowdown ratio can be expressed, but merely comparing accuracy directions would omit the explicitly stated task-specific endpoint changes and the additive 0.5-point falsifier. No reported-evidence scalar/additive difference relation expresses this complete conjunction."
+    },
+    {
+      "claim_id": "C06",
+      "disposition": "declared",
+      "declaration_ids": [
+        "C06"
+      ],
+      "reason": null,
+      "explanation": "E02, evidence/tables/table3_llama2_7b_main.md supplies APT and LoRA Avg. across ARC/HellaSwag/MMLU/TruthfulQA plus training memory normalized to LoRA, under 30% sparsity (70% parameters remaining). Parenthetical 50.0 vs 57.9 identifies the average-performance operands. Four ratio properties preserve both 86.4% performance retention and 75.8% memory, rather than replacing them with the weaker 80%/90% falsifier thresholds. No per-task dominance is inferred from the four-task average."
+    },
+    {
+      "claim_id": "C07",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "unclear",
+      "explanation": "E02 evidence/tables/table3_llama2_7b_main.md reports APT/LLMPruner Avg. 50.0/42.9 and normalized training memory 75.8%/253.6%, consistent with approximately 30% memory. However evidence/tables/table12_raw_efficiency_llama.md lists APT 24,408 MB and LLMPruner 23,425 MB and explicitly says the latter conflicts with the ~80 GB prose figure and may reflect different phases. The <24 GB/~80 GB absolute-memory condition cannot be bound to an unambiguous same-phase measurement pair without resolving unavailable conditions."
+    },
+    {
+      "claim_id": "C08",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "parse failure",
+      "explanation": "E05, evidence/figures/figure3_pareto_curves.md reports the RoBERTa same-accuracy advantages 21.8% speed and 7% memory and T5 at 97%-dense-accuracy advantages 62.7% and 24.8% in textual table cells, with zero parsed numeric measurements. The available Table 2 fixed-sparsity points are not matched-accuracy pairs and cannot substitute for the claimed Pareto comparisons; significance information in the falsifier is also absent."
+    }
+  ]
+}

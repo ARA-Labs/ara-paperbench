@@ -1,0 +1,39 @@
+{
+  "claims": [
+    {
+      "claim_id": "C01",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "unclear",
+      "explanation": "C01 names NPSE-VE AND NPSE-VP versus NPE on eight tasks at 1k, 10k and 100k simulations, with comparable or lower C2ST. E01 repeats those budgets, but evidence/figures/fig2_nonseq_c2st.md and evidence/tables/benchmark_nonseq.md / benchmark_nonsequential.md explicitly provide only approximate 10k and 100k values. No equivalence margin defines comparable; ≤ would replace comparability with non-inferiority. The figure/table extractions also disagree numerically (e.g. Lotka Volterra, NPSE-VE, 10k is approximately 0.75, 0.68 and 0.80 respectively). Missing 1k coverage and unresolved comparability preclude the full declaration; no extraction or method variant is selected to obtain a favorable comparison."
+    },
+    {
+      "claim_id": "C02",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "E02 and evidence/figures/fig3_seq_c2st.md supply separate TSNPSE-VE and TSNPSE-VP, SNPE (=SNPE-C), and TSNPE C2ST for SLCP and Lotka Volterra at 10k/100k, all approximate. C02 permits VE and/or VP to beat BOTH baselines; its falsifier also quantifies over both variants and tested budgets. Reported relations compare a fixed treatment against a baseline/cohort, and a claim is a conjunction. They cannot encode the existential alternative between VE and VP without picking a fixed variant or strengthening and/or to both. E02 also names 1k, absent from these extractions. No narrower fixed-variant declaration is substituted for the full claim."
+    },
+    {
+      "claim_id": "C03",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "prose-only",
+      "explanation": "evidence/figures/fig6_seq_comparison.md tabulates TSNPSE versus SNPSE-A/B on SLCP and Gaussian Linear Uniform at 10k/100k, but SNPSE-C is explicitly omitted (lines 6–7, 27–28) and its approximately-one C2ST failure is prose only. fig6_sequential_comparison.md likewise omits C. C03 requires BOTH dominance over A/B and the C failure condition; comparisons with the tabulated baselines alone would omit the latter. The TSNPSE SDE variant is also unspecified in the figure, so it is not aliased to a particular VE/VP variant."
+    },
+    {
+      "claim_id": "C04",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "evidence/figures/fig4c_pyloric_valid.md reports approximate per-budget valid-summary percentages for SNPSE (ours, VP; the E04 TSNPSE method), TSNPE and SNVI at nine rounds from 30k to 190k simulations. The claim asserts 81% at the final round and comparisons at matched budgets; its falsifier additionally uses the fixed ≥81% baseline threshold and all budgets ≤200k. Pairwise best-baseline consistency could represent only the directional budget comparisons, not the fixed final-round percentage and threshold conditions. Those are not discarded. The alternate table pyloric_rounds.md contains different approximate baseline percentages; no alias or averaging reconciles conflicting extraction values."
+    },
+    {
+      "claim_id": "C05",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "unclear",
+      "explanation": "E01/E02 and evidence/figures/fig2_nonseq_c2st.md / fig3_seq_c2st.md distinguish VE from VP for nonsequential NPSE and sequential TSNPSE at 10k/100k. C05 requires VE better on SIR, Two Moons, Gaussian Mixture, but VP comparably or better on SLCP, Lotka Volterra, Bernoulli GLM and Gaussian Linear Uniform. No tolerance or test defines comparably, and the falsifier changes to correlation with dimensionality rather than a budget-by-budget dominance rule. Alternate numeric extractions disagree, including which variant is lower on some high-dimensional tasks. A strict/non-strict directional conjunction or an invented dimension correlation would settle unresolved meaning rather than faithfully encode it."
+    }
+  ]
+}

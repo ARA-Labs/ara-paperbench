@@ -1,0 +1,14 @@
+{
+  "command": [
+    "aratest",
+    "test",
+    "artifacts/extra/venn",
+    "--format",
+    "json",
+    "--no-records"
+  ],
+  "exit_code": 5,
+  "stdout": "{\n  \"format_version\": \"1\",\n  \"ara\": \"/home/yfhe/ara/DissClaimer/.runs/rq1-direct-20261010/artifacts/extra/venn\",\n  \"results\": null,\n  \"claims\": [],\n  \"undeclared\": [\n    \"C01\",\n    \"C02\",\n    \"C03\",\n    \"C04\",\n    \"C05\",\n    \"C06\"\n  ],\n  \"record_errors\": [],\n  \"exit_code\": 5\n}\n",
+  "stderr": "",
+  "spec_sha256": "5b1e3ece5a60baac9559920d78f7ea429efb66f3095e096b16a8f4e1a222d0c6"
+}

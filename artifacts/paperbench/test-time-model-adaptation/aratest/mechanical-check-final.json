@@ -1,0 +1,120 @@
+{
+  "format_version": "1",
+  "ara": "/home/yfhe/ara/DissClaimer/.runs/rq1-direct-20261010/artifacts/paperbench/test-time-model-adaptation",
+  "results": null,
+  "claims": [
+    {
+      "claim_id": "C02",
+      "standing": "holds",
+      "properties": [
+        {
+          "kind": "comparative",
+          "version": "1",
+          "outcome": {
+            "tag": "holds"
+          },
+          "note": "the relation holds on all 1 in-scope values",
+          "refinement": {
+            "label": "holds",
+            "note": ""
+          },
+          "statistic": null,
+          "checked": true,
+          "witnesses": []
+        },
+        {
+          "kind": "comparative",
+          "version": "1",
+          "outcome": {
+            "tag": "holds"
+          },
+          "note": "the relation holds on all 1 in-scope values",
+          "refinement": {
+            "label": "holds",
+            "note": ""
+          },
+          "statistic": null,
+          "checked": true,
+          "witnesses": []
+        }
+      ],
+      "record": null
+    },
+    {
+      "claim_id": "C07",
+      "standing": "holds",
+      "properties": [
+        {
+          "kind": "best_baseline_consistency",
+          "version": "1",
+          "outcome": {
+            "tag": "holds"
+          },
+          "note": "the treatment is the best of 2 baselines [SAR, TENT] across all 1 groups",
+          "refinement": {
+            "label": "holds",
+            "note": ""
+          },
+          "statistic": null,
+          "checked": true,
+          "witnesses": []
+        },
+        {
+          "kind": "best_baseline_consistency",
+          "version": "1",
+          "outcome": {
+            "tag": "holds"
+          },
+          "note": "the treatment is the best of 2 baselines [SAR, TENT] across all 1 groups",
+          "refinement": {
+            "label": "holds",
+            "note": ""
+          },
+          "statistic": null,
+          "checked": true,
+          "witnesses": []
+        },
+        {
+          "kind": "best_baseline_consistency",
+          "version": "1",
+          "outcome": {
+            "tag": "holds"
+          },
+          "note": "the treatment is the best of 2 baselines [SAR, TENT] across all 1 groups",
+          "refinement": {
+            "label": "holds",
+            "note": ""
+          },
+          "statistic": null,
+          "checked": true,
+          "witnesses": []
+        },
+        {
+          "kind": "best_baseline_consistency",
+          "version": "1",
+          "outcome": {
+            "tag": "holds"
+          },
+          "note": "the treatment is the best of 2 baselines [SAR, TENT] across all 1 groups",
+          "refinement": {
+            "label": "holds",
+            "note": ""
+          },
+          "statistic": null,
+          "checked": true,
+          "witnesses": []
+        }
+      ],
+      "record": null
+    }
+  ],
+  "undeclared": [
+    "C01",
+    "C03",
+    "C04",
+    "C05",
+    "C06"
+  ],
+  "record_errors": [],
+  "exit_code": 0
+}

@@ -1,0 +1,1617 @@
+{
+  "artifacts/extra/andes": {
+    "format_version": "1",
+    "ara": "/home/yfhe/ara/DissClaimer/.runs/rq1-direct-20261010/artifacts/extra/andes",
+    "results": null,
+    "claims": [],
+    "undeclared": [
+      "C01",
+      "C02",
+      "C03",
+      "C04",
+      "C05",
+      "C06",
+      "C07",
+      "C08"
+    ],
+    "record_errors": [],
+    "exit_code": 5
+  },
+  "artifacts/extra/expbench": {
+    "format_version": "1",
+    "ara": "/home/yfhe/ara/DissClaimer/.runs/rq1-direct-20261010/artifacts/extra/expbench",
+    "results": null,
+    "claims": [],
+    "undeclared": [
+      "C01",
+      "C02",
+      "C03",
+      "C04",
+      "C05",
+      "C06"
+    ],
+    "record_errors": [],
+    "exit_code": 5
+  },
+  "artifacts/extra/venn": {
+    "format_version": "1",
+    "ara": "/home/yfhe/ara/DissClaimer/.runs/rq1-direct-20261010/artifacts/extra/venn",
+    "results": null,
+    "claims": [],
+    "undeclared": [
+      "C01",
+      "C02",
+      "C03",
+      "C04",
+      "C05",
+      "C06"
+    ],
+    "record_errors": [],
+    "exit_code": 5
+  },
+  "artifacts/paperbench/adaptive-pruning": {
+    "format_version": "1",
+    "ara": "/home/yfhe/ara/DissClaimer/.runs/rq1-direct-20261010/artifacts/paperbench/adaptive-pruning",
+    "results": null,
+    "claims": [
+      {
+        "claim_id": "C02",
+        "standing": "violated",
+        "properties": [
+          {
+            "kind": "comparative",
+            "version": "1",
+            "outcome": {
+              "tag": "holds"
+            },
+            "note": "the relation holds on all 1 in-scope values",
+            "refinement": {
+              "label": "holds",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          },
+          {
+            "kind": "comparative",
+            "version": "1",
+            "outcome": {
+              "tag": "violated",
+              "witnesses": [
+                {
+                  "case_id": "[[\"model\",\"RoBERTabase\"]]",
+                  "detail": "6513.0 ratio_le 8.4 * 752.0"
+                }
+              ]
+            },
+            "note": "the relation fails inside the declared scope at model in [RoBERTabase]",
+            "refinement": {
+              "label": "scope_flip",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": [
+              "[[\"model\",\"RoBERTabase\"]]"
+            ]
+          },
+          {
+            "kind": "comparative",
+            "version": "1",
+            "outcome": {
+              "tag": "violated",
+              "witnesses": [
+                {
+                  "case_id": "[[\"model\",\"T5base\"]]",
+                  "detail": "14417.0 ratio_ge 8.2 * 1774.0"
+                }
+              ]
+            },
+            "note": "the relation fails inside the declared scope at model in [T5base]",
+            "refinement": {
+              "label": "scope_flip",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": [
+              "[[\"model\",\"T5base\"]]"
+            ]
+          },
+          {
+            "kind": "comparative",
+            "version": "1",
+            "outcome": {
+              "tag": "holds"
+            },
+            "note": "the relation holds on all 1 in-scope values",
+            "refinement": {
+              "label": "holds",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          }
+        ],
+        "record": null
+      },
+      {
+        "claim_id": "C04",
+        "standing": "undecided",
+        "properties": [
+          {
+            "kind": "comparative",
+            "version": "1",
+            "outcome": {
+              "tag": "inconclusive"
+            },
+            "note": "in-scope comparison within noise, approximate, or unobserved at sparsity in [30%]",
+            "refinement": {
+              "label": "inconclusive",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          },
+          {
+            "kind": "comparative",
+            "version": "1",
+            "outcome": {
+              "tag": "inconclusive"
+            },
+            "note": "in-scope comparison within noise, approximate, or unobserved at sparsity in [30%]",
+            "refinement": {
+              "label": "inconclusive",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          }
+        ],
+        "record": null
+      },
+      {
+        "claim_id": "C06",
+        "standing": "undecided",
+        "properties": [
+          {
+            "kind": "comparative",
+            "version": "1",
+            "outcome": {
+              "tag": "inconclusive"
+            },
+            "note": "in-scope comparison within noise, approximate, or unobserved at sparsity in [30%]",
+            "refinement": {
+              "label": "inconclusive",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          },
+          {
+            "kind": "comparative",
+            "version": "1",
+            "outcome": {
+              "tag": "inconclusive"
+            },
+            "note": "in-scope comparison within noise, approximate, or unobserved at sparsity in [30%]",
+            "refinement": {
+              "label": "inconclusive",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          },
+          {
+            "kind": "comparative",
+            "version": "1",
+            "outcome": {
+              "tag": "inconclusive"
+            },
+            "note": "in-scope comparison within noise, approximate, or unobserved at sparsity in [30%]",
+            "refinement": {
+              "label": "inconclusive",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          },
+          {
+            "kind": "comparative",
+            "version": "1",
+            "outcome": {
+              "tag": "inconclusive"
+            },
+            "note": "in-scope comparison within noise, approximate, or unobserved at sparsity in [30%]",
+            "refinement": {
+              "label": "inconclusive",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          }
+        ],
+        "record": null
+      }
+    ],
+    "undeclared": [
+      "C01",
+      "C03",
+      "C05",
+      "C07",
+      "C08"
+    ],
+    "record_errors": [],
+    "exit_code": 1
+  },
+  "artifacts/paperbench/all-in-one": {
+    "format_version": "1",
+    "ara": "/home/yfhe/ara/DissClaimer/.runs/rq1-direct-20261010/artifacts/paperbench/all-in-one",
+    "results": null,
+    "claims": [],
+    "undeclared": [
+      "C01",
+      "C02",
+      "C03",
+      "C04",
+      "C05",
+      "C06"
+    ],
+    "record_errors": [],
+    "exit_code": 5
+  },
+  "artifacts/paperbench/bam": {
+    "format_version": "1",
+    "ara": "/home/yfhe/ara/DissClaimer/.runs/rq1-direct-20261010/artifacts/paperbench/bam",
+    "results": null,
+    "claims": [],
+    "undeclared": [
+      "C01",
+      "C02",
+      "C03",
+      "C04",
+      "C05",
+      "C06"
+    ],
+    "record_errors": [],
+    "exit_code": 5
+  },
+  "artifacts/paperbench/bbox": {
+    "format_version": "1",
+    "ara": "/home/yfhe/ara/DissClaimer/.runs/rq1-direct-20261010/artifacts/paperbench/bbox",
+    "results": null,
+    "claims": [
+      {
+        "claim_id": "C08",
+        "standing": "undecided",
+        "properties": [
+          {
+            "kind": "comparative",
+            "version": "1",
+            "outcome": {
+              "tag": "inconclusive"
+            },
+            "note": "in-scope comparison within noise, approximate, or unobserved at iteration in [0]",
+            "refinement": {
+              "label": "inconclusive",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          },
+          {
+            "kind": "comparative",
+            "version": "1",
+            "outcome": {
+              "tag": "inconclusive"
+            },
+            "note": "in-scope comparison within noise, approximate, or unobserved at iteration in [1]",
+            "refinement": {
+              "label": "inconclusive",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          },
+          {
+            "kind": "comparative",
+            "version": "1",
+            "outcome": {
+              "tag": "inconclusive"
+            },
+            "note": "in-scope comparison within noise, approximate, or unobserved at iteration in [0]",
+            "refinement": {
+              "label": "inconclusive",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          },
+          {
+            "kind": "comparative",
+            "version": "1",
+            "outcome": {
+              "tag": "inconclusive"
+            },
+            "note": "in-scope comparison within noise, approximate, or unobserved at iteration in [1]",
+            "refinement": {
+              "label": "inconclusive",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          },
+          {
+            "kind": "consistency",
+            "version": "1",
+            "outcome": {
+              "tag": "inconclusive"
+            },
+            "note": "0 of 2 in-scope values pass (min_pass=all); within noise, approximate, or unobserved at method in [adapter_0.1B, adapter_0.3B]",
+            "refinement": {
+              "label": "inconclusive",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          },
+          {
+            "kind": "consistency",
+            "version": "1",
+            "outcome": {
+              "tag": "inconclusive"
+            },
+            "note": "0 of 2 in-scope values pass (min_pass=all); within noise, approximate, or unobserved at method in [adapter_0.1B, adapter_0.3B]",
+            "refinement": {
+              "label": "inconclusive",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          }
+        ],
+        "record": null
+      }
+    ],
+    "undeclared": [
+      "C01",
+      "C02",
+      "C03",
+      "C04",
+      "C05",
+      "C06",
+      "C07"
+    ],
+    "record_errors": [],
+    "exit_code": 4
+  },
+  "artifacts/paperbench/bridging-data-gaps": {
+    "format_version": "1",
+    "ara": "/home/yfhe/ara/DissClaimer/.runs/rq1-direct-20261010/artifacts/paperbench/bridging-data-gaps",
+    "results": null,
+    "claims": [
+      {
+        "claim_id": "C01",
+        "standing": "holds",
+        "properties": [
+          {
+            "kind": "best_baseline_consistency",
+            "version": "1",
+            "outcome": {
+              "tag": "holds"
+            },
+            "note": "the treatment is the best of 6 baselines [CDC, DCL, DDPM-PA, EWC, TGAN, TGAN+ADA] across all 1 groups",
+            "refinement": {
+              "label": "holds",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          },
+          {
+            "kind": "best_baseline_consistency",
+            "version": "1",
+            "outcome": {
+              "tag": "holds"
+            },
+            "note": "the treatment is the best of 6 baselines [CDC, DCL, DDPM-PA, EWC, TGAN, TGAN+ADA] across all 1 groups",
+            "refinement": {
+              "label": "holds",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          }
+        ],
+        "record": null
+      },
+      {
+        "claim_id": "C05",
+        "standing": "holds",
+        "properties": [
+          {
+            "kind": "comparative",
+            "version": "1",
+            "outcome": {
+              "tag": "holds"
+            },
+            "note": "the relation holds on all 1 in-scope values",
+            "refinement": {
+              "label": "holds",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          },
+          {
+            "kind": "comparative",
+            "version": "1",
+            "outcome": {
+              "tag": "holds"
+            },
+            "note": "the relation holds on all 1 in-scope values",
+            "refinement": {
+              "label": "holds",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          },
+          {
+            "kind": "comparative",
+            "version": "1",
+            "outcome": {
+              "tag": "holds"
+            },
+            "note": "the relation holds on all 1 in-scope values",
+            "refinement": {
+              "label": "holds",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          }
+        ],
+        "record": null
+      }
+    ],
+    "undeclared": [
+      "C02",
+      "C03",
+      "C04"
+    ],
+    "record_errors": [],
+    "exit_code": 0
+  },
+  "artifacts/paperbench/fre": {
+    "format_version": "1",
+    "ara": "/home/yfhe/ara/DissClaimer/.runs/rq1-direct-20261010/artifacts/paperbench/fre",
+    "results": null,
+    "claims": [],
+    "undeclared": [
+      "C01",
+      "C02",
+      "C03",
+      "C04",
+      "C05"
+    ],
+    "record_errors": [],
+    "exit_code": 5
+  },
+  "artifacts/paperbench/ftrl": {
+    "format_version": "1",
+    "ara": "/home/yfhe/ara/DissClaimer/.runs/rq1-direct-20261010/artifacts/paperbench/ftrl",
+    "results": null,
+    "claims": [],
+    "undeclared": [
+      "C01",
+      "C02",
+      "C03",
+      "C04",
+      "C05",
+      "C06"
+    ],
+    "record_errors": [],
+    "exit_code": 5
+  },
+  "artifacts/paperbench/lbcs": {
+    "format_version": "1",
+    "ara": "/home/yfhe/ara/DissClaimer/.runs/rq1-direct-20261010/artifacts/paperbench/lbcs",
+    "results": null,
+    "claims": [
+      {
+        "claim_id": "C02",
+        "standing": "undecided",
+        "properties": [
+          {
+            "kind": "best_baseline_consistency",
+            "version": "1",
+            "outcome": {
+              "tag": "inconclusive"
+            },
+            "note": "the treatment ties, reads approximate, or is unobserved against a baseline of [CCS, EL2N, GraNd, Influential, Moderate, Probabilistic, Uniform] for dataset in [CIFAR-10 (LBCS coreset sizes: \u2248970, 1955, 2914, 3736)]",
+            "refinement": {
+              "label": "inconclusive",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          }
+        ],
+        "record": null
+      }
+    ],
+    "undeclared": [
+      "C01",
+      "C03",
+      "C04",
+      "C05"
+    ],
+    "record_errors": [],
+    "exit_code": 4
+  },
+  "artifacts/paperbench/lca-on-the-line": {
+    "format_version": "1",
+    "ara": "/home/yfhe/ara/DissClaimer/.runs/rq1-direct-20261010/artifacts/paperbench/lca-on-the-line",
+    "results": null,
+    "claims": [
+      {
+        "claim_id": "C03",
+        "standing": "holds",
+        "properties": [
+          {
+            "kind": "compound_consistency",
+            "version": "1",
+            "outcome": {
+              "tag": "holds"
+            },
+            "note": "all 6 groups hold in scope and at dataset=ImgNet within id_tolerance=0.0",
+            "refinement": {
+              "label": "holds",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          }
+        ],
+        "record": null
+      },
+      {
+        "claim_id": "C04",
+        "standing": "holds",
+        "properties": [
+          {
+            "kind": "comparative",
+            "version": "1",
+            "outcome": {
+              "tag": "holds"
+            },
+            "note": "the relation holds on all 1 in-scope values",
+            "refinement": {
+              "label": "holds",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          },
+          {
+            "kind": "comparative",
+            "version": "1",
+            "outcome": {
+              "tag": "holds"
+            },
+            "note": "the relation holds on all 1 in-scope values",
+            "refinement": {
+              "label": "holds",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          },
+          {
+            "kind": "comparative",
+            "version": "1",
+            "outcome": {
+              "tag": "holds"
+            },
+            "note": "the relation holds on all 1 in-scope values",
+            "refinement": {
+              "label": "holds",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          }
+        ],
+        "record": null
+      }
+    ],
+    "undeclared": [
+      "C01",
+      "C02",
+      "C05"
+    ],
+    "record_errors": [],
+    "exit_code": 0
+  },
+  "artifacts/paperbench/mechanistic-understanding": {
+    "format_version": "1",
+    "ara": "/home/yfhe/ara/DissClaimer/.runs/rq1-direct-20261010/artifacts/paperbench/mechanistic-understanding",
+    "results": null,
+    "claims": [],
+    "undeclared": [
+      "C01",
+      "C02",
+      "C03",
+      "C04",
+      "C05",
+      "C06"
+    ],
+    "record_errors": [],
+    "exit_code": 5
+  },
+  "artifacts/paperbench/pinn": {
+    "format_version": "1",
+    "ara": "/home/yfhe/ara/DissClaimer/.runs/rq1-direct-20261010/artifacts/paperbench/pinn",
+    "results": null,
+    "claims": [],
+    "undeclared": [
+      "C01",
+      "C02",
+      "C03",
+      "C04",
+      "C05",
+      "C06",
+      "C07"
+    ],
+    "record_errors": [],
+    "exit_code": 5
+  },
+  "artifacts/paperbench/rice": {
+    "format_version": "1",
+    "ara": "/home/yfhe/ara/DissClaimer/.runs/rq1-direct-20261010/artifacts/paperbench/rice",
+    "results": null,
+    "claims": [
+      {
+        "claim_id": "C02",
+        "standing": "holds",
+        "properties": [
+          {
+            "kind": "best_baseline_consistency",
+            "version": "1",
+            "outcome": {
+              "tag": "holds"
+            },
+            "note": "the treatment is the best of 3 baselines [JSRL, PPO, StateMask-R] across all 1 groups",
+            "refinement": {
+              "label": "holds",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          }
+        ],
+        "record": null
+      },
+      {
+        "claim_id": "C06",
+        "standing": "undecided",
+        "properties": [
+          {
+            "kind": "best_baseline_consistency",
+            "version": "1",
+            "outcome": {
+              "tag": "inconclusive"
+            },
+            "note": "the treatment ties, reads approximate, or is unobserved against a baseline of [JSRL, PPO fine-tuning, SAC fine-tuning, StateMask-R] for group in [(all)]",
+            "refinement": {
+              "label": "inconclusive",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          }
+        ],
+        "record": null
+      }
+    ],
+    "undeclared": [
+      "C01",
+      "C03",
+      "C04",
+      "C05"
+    ],
+    "record_errors": [],
+    "exit_code": 4
+  },
+  "artifacts/paperbench/robust-clip": {
+    "format_version": "1",
+    "ara": "/home/yfhe/ara/DissClaimer/.runs/rq1-direct-20261010/artifacts/paperbench/robust-clip",
+    "results": null,
+    "claims": [
+      {
+        "claim_id": "C01",
+        "standing": "violated",
+        "properties": [
+          {
+            "kind": "best_baseline_consistency",
+            "version": "1",
+            "outcome": {
+              "tag": "violated",
+              "witnesses": [
+                {
+                  "case_id": "[[\"encoder\",\"TeCoA2\"],[\"evaluation\",\"4/255\"],[\"vlm\",\"OF-9B\"]]",
+                  "detail": "11.9 gt 13.3"
+                }
+              ]
+            },
+            "note": "a baseline in [TeCoA2] beats the treatment for vlm in [OF-9B]",
+            "refinement": {
+              "label": "inconsistency",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": [
+              "[[\"encoder\",\"TeCoA2\"],[\"evaluation\",\"4/255\"],[\"vlm\",\"OF-9B\"]]"
+            ]
+          },
+          {
+            "kind": "best_baseline_consistency",
+            "version": "1",
+            "outcome": {
+              "tag": "holds"
+            },
+            "note": "the treatment is the best of 1 baselines [TeCoA4] across all 2 groups",
+            "refinement": {
+              "label": "holds",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          }
+        ],
+        "record": null
+      }
+    ],
+    "undeclared": [
+      "C02",
+      "C03",
+      "C04",
+      "C05",
+      "C06",
+      "C07"
+    ],
+    "record_errors": [],
+    "exit_code": 1
+  },
+  "artifacts/paperbench/sample-specific-masks": {
+    "format_version": "1",
+    "ara": "/home/yfhe/ara/DissClaimer/.runs/rq1-direct-20261010/artifacts/paperbench/sample-specific-masks",
+    "results": null,
+    "claims": [
+      {
+        "claim_id": "C03",
+        "standing": "holds",
+        "properties": [
+          {
+            "kind": "best_baseline_consistency",
+            "version": "1",
+            "outcome": {
+              "tag": "holds"
+            },
+            "note": "the treatment is the best of 4 baselines [FULL, MEDIUM, NARROW, PAD] across all 2 groups",
+            "refinement": {
+              "label": "holds",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          }
+        ],
+        "record": null
+      },
+      {
+        "claim_id": "C05",
+        "standing": "holds",
+        "properties": [
+          {
+            "kind": "consistency",
+            "version": "1",
+            "outcome": {
+              "tag": "holds"
+            },
+            "note": "3 of 3 in-scope values pass (min_pass=all)",
+            "refinement": {
+              "label": "holds",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          },
+          {
+            "kind": "consistency",
+            "version": "1",
+            "outcome": {
+              "tag": "holds"
+            },
+            "note": "4 of 4 in-scope values pass (min_pass=all)",
+            "refinement": {
+              "label": "holds",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          },
+          {
+            "kind": "consistency",
+            "version": "1",
+            "outcome": {
+              "tag": "holds"
+            },
+            "note": "2 of 2 in-scope values pass (min_pass=all)",
+            "refinement": {
+              "label": "holds",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          },
+          {
+            "kind": "best_baseline_consistency",
+            "version": "1",
+            "outcome": {
+              "tag": "holds"
+            },
+            "note": "the treatment is the best of 3 baselines [ONLY fmask, ONLY \u03b4, SINGLE-CHANNEL f^s_mask] across all 1 groups",
+            "refinement": {
+              "label": "holds",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          }
+        ],
+        "record": null
+      }
+    ],
+    "undeclared": [
+      "C01",
+      "C02",
+      "C04",
+      "C06"
+    ],
+    "record_errors": [],
+    "exit_code": 0
+  },
+  "artifacts/paperbench/sapg": {
+    "format_version": "1",
+    "ara": "/home/yfhe/ara/DissClaimer/.runs/rq1-direct-20261010/artifacts/paperbench/sapg",
+    "results": null,
+    "claims": [],
+    "undeclared": [
+      "C01",
+      "C02",
+      "C03",
+      "C04",
+      "C05",
+      "C06"
+    ],
+    "record_errors": [],
+    "exit_code": 5
+  },
+  "artifacts/paperbench/self-composing-policies": {
+    "format_version": "1",
+    "ara": "/home/yfhe/ara/DissClaimer/.runs/rq1-direct-20261010/artifacts/paperbench/self-composing-policies",
+    "results": null,
+    "claims": [
+      {
+        "claim_id": "C02",
+        "standing": "undecided",
+        "properties": [
+          {
+            "kind": "best_baseline_consistency",
+            "version": "1",
+            "outcome": {
+              "tag": "holds"
+            },
+            "note": "the treatment is the best of 5 baselines [BASELINE, FT-1, FT-N, PACKNET, PROGNET] across all 1 groups",
+            "refinement": {
+              "label": "holds",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          },
+          {
+            "kind": "best_baseline_consistency",
+            "version": "1",
+            "outcome": {
+              "tag": "holds"
+            },
+            "note": "the treatment is the best of 5 baselines [BASELINE, FT-1, FT-N, PACKNET, PROGNET] across all 1 groups",
+            "refinement": {
+              "label": "holds",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          },
+          {
+            "kind": "best_baseline_consistency",
+            "version": "1",
+            "outcome": {
+              "tag": "inconclusive"
+            },
+            "note": "the treatment ties, reads approximate, or is unobserved against a baseline of [BASELINE, FT-1, FT-N, PACKNET, PROGNET] for group in [(all)]",
+            "refinement": {
+              "label": "inconclusive",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          },
+          {
+            "kind": "best_baseline_consistency",
+            "version": "1",
+            "outcome": {
+              "tag": "holds"
+            },
+            "note": "the treatment is the best of 5 baselines [BASELINE, FT-1, FT-N, PACKNET, PROGNET] across all 1 groups",
+            "refinement": {
+              "label": "holds",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          },
+          {
+            "kind": "best_baseline_consistency",
+            "version": "1",
+            "outcome": {
+              "tag": "holds"
+            },
+            "note": "the treatment is the best of 5 baselines [BASELINE, FT-1, FT-N, PACKNET, PROGNET] across all 1 groups",
+            "refinement": {
+              "label": "holds",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          },
+          {
+            "kind": "best_baseline_consistency",
+            "version": "1",
+            "outcome": {
+              "tag": "holds"
+            },
+            "note": "the treatment is the best of 5 baselines [BASELINE, FT-1, FT-N, PACKNET, PROGNET] across all 1 groups",
+            "refinement": {
+              "label": "holds",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          }
+        ],
+        "record": null
+      },
+      {
+        "claim_id": "C05",
+        "standing": "holds",
+        "properties": [
+          {
+            "kind": "consistency",
+            "version": "1",
+            "outcome": {
+              "tag": "holds"
+            },
+            "note": "1 of 1 in-scope values pass (min_pass=all)",
+            "refinement": {
+              "label": "holds",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          },
+          {
+            "kind": "consistency",
+            "version": "1",
+            "outcome": {
+              "tag": "holds"
+            },
+            "note": "1 of 1 in-scope values pass (min_pass=all)",
+            "refinement": {
+              "label": "holds",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          },
+          {
+            "kind": "consistency",
+            "version": "1",
+            "outcome": {
+              "tag": "holds"
+            },
+            "note": "1 of 1 in-scope values pass (min_pass=all)",
+            "refinement": {
+              "label": "holds",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          }
+        ],
+        "record": null
+      }
+    ],
+    "undeclared": [
+      "C01",
+      "C03",
+      "C04"
+    ],
+    "record_errors": [],
+    "exit_code": 4
+  },
+  "artifacts/paperbench/self-expansion": {
+    "format_version": "1",
+    "ara": "/home/yfhe/ara/DissClaimer/.runs/rq1-direct-20261010/artifacts/paperbench/self-expansion",
+    "results": null,
+    "claims": [
+      {
+        "claim_id": "C01",
+        "standing": "violated",
+        "properties": [
+          {
+            "kind": "best_baseline_consistency",
+            "version": "1",
+            "outcome": {
+              "tag": "violated",
+              "witnesses": [
+                {
+                  "case_id": "[[\"dataset\",\"CIFAR-100\"],[\"method\",\"CODA-P\"]]",
+                  "detail": "91.37 ge 91.55"
+                }
+              ]
+            },
+            "note": "a baseline in [CODA-P] beats the treatment for group in [(all)]",
+            "refinement": {
+              "label": "inconsistency",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": [
+              "[[\"dataset\",\"CIFAR-100\"],[\"method\",\"CODA-P\"]]"
+            ]
+          }
+        ],
+        "record": null
+      },
+      {
+        "claim_id": "C03",
+        "standing": "holds",
+        "properties": [
+          {
+            "kind": "best_baseline_consistency",
+            "version": "1",
+            "outcome": {
+              "tag": "holds"
+            },
+            "note": "the treatment is the best of 5 baselines [Avg. W., No Exp., Rand. Sel., Rand. W., Top-1 Sel.] across all 1 groups",
+            "refinement": {
+              "label": "holds",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          },
+          {
+            "kind": "best_baseline_consistency",
+            "version": "1",
+            "outcome": {
+              "tag": "holds"
+            },
+            "note": "the treatment is the best of 5 baselines [Avg. W., No Exp., Rand. Sel., Rand. W., Top-1 Sel.] across all 1 groups",
+            "refinement": {
+              "label": "holds",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          }
+        ],
+        "record": null
+      }
+    ],
+    "undeclared": [
+      "C02",
+      "C04"
+    ],
+    "record_errors": [],
+    "exit_code": 1
+  },
+  "artifacts/paperbench/semantic-self-consistency": {
+    "format_version": "1",
+    "ara": "/home/yfhe/ara/DissClaimer/.runs/rq1-direct-20261010/artifacts/paperbench/semantic-self-consistency",
+    "results": null,
+    "claims": [],
+    "undeclared": [
+      "C01",
+      "C02",
+      "C03",
+      "C04",
+      "C05",
+      "C06"
+    ],
+    "record_errors": [],
+    "exit_code": 5
+  },
+  "artifacts/paperbench/sequential-neural-score-estimation": {
+    "format_version": "1",
+    "ara": "/home/yfhe/ara/DissClaimer/.runs/rq1-direct-20261010/artifacts/paperbench/sequential-neural-score-estimation",
+    "results": null,
+    "claims": [],
+    "undeclared": [
+      "C01",
+      "C02",
+      "C03",
+      "C04",
+      "C05"
+    ],
+    "record_errors": [],
+    "exit_code": 5
+  },
+  "artifacts/paperbench/stay-on-topic-with-classifier-free-guidance": {
+    "format_version": "1",
+    "ara": "/home/yfhe/ara/DissClaimer/.runs/rq1-direct-20261010/artifacts/paperbench/stay-on-topic-with-classifier-free-guidance",
+    "results": null,
+    "claims": [],
+    "undeclared": [
+      "C01",
+      "C02",
+      "C03",
+      "C04",
+      "C05",
+      "C06"
+    ],
+    "record_errors": [],
+    "exit_code": 5
+  },
+  "artifacts/paperbench/stochastic-interpolants": {
+    "format_version": "1",
+    "ara": "/home/yfhe/ara/DissClaimer/.runs/rq1-direct-20261010/artifacts/paperbench/stochastic-interpolants",
+    "results": null,
+    "claims": [],
+    "undeclared": [
+      "C01",
+      "C02",
+      "C03",
+      "C04",
+      "C05"
+    ],
+    "record_errors": [],
+    "exit_code": 5
+  },
+  "artifacts/paperbench/test-time-model-adaptation": {
+    "format_version": "1",
+    "ara": "/home/yfhe/ara/DissClaimer/.runs/rq1-direct-20261010/artifacts/paperbench/test-time-model-adaptation",
+    "results": null,
+    "claims": [
+      {
+        "claim_id": "C02",
+        "standing": "holds",
+        "properties": [
+          {
+            "kind": "comparative",
+            "version": "1",
+            "outcome": {
+              "tag": "holds"
+            },
+            "note": "the relation holds on all 1 in-scope values",
+            "refinement": {
+              "label": "holds",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          },
+          {
+            "kind": "comparative",
+            "version": "1",
+            "outcome": {
+              "tag": "holds"
+            },
+            "note": "the relation holds on all 1 in-scope values",
+            "refinement": {
+              "label": "holds",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          }
+        ],
+        "record": null
+      },
+      {
+        "claim_id": "C07",
+        "standing": "holds",
+        "properties": [
+          {
+            "kind": "best_baseline_consistency",
+            "version": "1",
+            "outcome": {
+              "tag": "holds"
+            },
+            "note": "the treatment is the best of 2 baselines [SAR, TENT] across all 1 groups",
+            "refinement": {
+              "label": "holds",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          },
+          {
+            "kind": "best_baseline_consistency",
+            "version": "1",
+            "outcome": {
+              "tag": "holds"
+            },
+            "note": "the treatment is the best of 2 baselines [SAR, TENT] across all 1 groups",
+            "refinement": {
+              "label": "holds",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          },
+          {
+            "kind": "best_baseline_consistency",
+            "version": "1",
+            "outcome": {
+              "tag": "holds"
+            },
+            "note": "the treatment is the best of 2 baselines [SAR, TENT] across all 1 groups",
+            "refinement": {
+              "label": "holds",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          },
+          {
+            "kind": "best_baseline_consistency",
+            "version": "1",
+            "outcome": {
+              "tag": "holds"
+            },
+            "note": "the treatment is the best of 2 baselines [SAR, TENT] across all 1 groups",
+            "refinement": {
+              "label": "holds",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          }
+        ],
+        "record": null
+      }
+    ],
+    "undeclared": [
+      "C01",
+      "C03",
+      "C04",
+      "C05",
+      "C06"
+    ],
+    "record_errors": [],
+    "exit_code": 0
+  },
+  "artifacts/paperbench/what-will-my-model-forget": {
+    "format_version": "1",
+    "ara": "/home/yfhe/ara/DissClaimer/.runs/rq1-direct-20261010/artifacts/paperbench/what-will-my-model-forget",
+    "results": null,
+    "claims": [
+      {
+        "claim_id": "C04",
+        "standing": "holds",
+        "properties": [
+          {
+            "kind": "comparative",
+            "version": "1",
+            "outcome": {
+              "tag": "holds"
+            },
+            "note": "the relation holds on all 4 in-scope values",
+            "refinement": {
+              "label": "holds",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          }
+        ],
+        "record": null
+      },
+      {
+        "claim_id": "C05",
+        "standing": "holds",
+        "properties": [
+          {
+            "kind": "comparative",
+            "version": "1",
+            "outcome": {
+              "tag": "holds"
+            },
+            "note": "the relation holds on all 1 in-scope values",
+            "refinement": {
+              "label": "holds",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          },
+          {
+            "kind": "best_baseline_consistency",
+            "version": "1",
+            "outcome": {
+              "tag": "holds"
+            },
+            "note": "the treatment is the best of 2 baselines [Trainable Logit, w/o Prior] across all 1 groups",
+            "refinement": {
+              "label": "holds",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          }
+        ],
+        "record": null
+      },
+      {
+        "claim_id": "C06",
+        "standing": "violated",
+        "properties": [
+          {
+            "kind": "comparative",
+            "version": "1",
+            "outcome": {
+              "tag": "holds"
+            },
+            "note": "the relation holds on all 1 in-scope values",
+            "refinement": {
+              "label": "holds",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          },
+          {
+            "kind": "comparative",
+            "version": "1",
+            "outcome": {
+              "tag": "violated",
+              "witnesses": [
+                {
+                  "case_id": "[[\"setting\",\"FLAN-T5Large Full FT; 3600 upstream examples\"]]",
+                  "detail": "904000000000000.0 ratio_le 6700.0 * 13500000000.0"
+                }
+              ]
+            },
+            "note": "the relation fails inside the declared scope at setting in [FLAN-T5Large Full FT; 3600 upstream examples]",
+            "refinement": {
+              "label": "scope_flip",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": [
+              "[[\"setting\",\"FLAN-T5Large Full FT; 3600 upstream examples\"]]"
+            ]
+          },
+          {
+            "kind": "comparative",
+            "version": "1",
+            "outcome": {
+              "tag": "holds"
+            },
+            "note": "the relation holds on all 1 in-scope values",
+            "refinement": {
+              "label": "holds",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          },
+          {
+            "kind": "comparative",
+            "version": "1",
+            "outcome": {
+              "tag": "holds"
+            },
+            "note": "the relation holds on all 1 in-scope values",
+            "refinement": {
+              "label": "holds",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          }
+        ],
+        "record": null
+      }
+    ],
+    "undeclared": [
+      "C01",
+      "C02",
+      "C03"
+    ],
+    "record_errors": [],
+    "exit_code": 1
+  },
+  "artifacts/rebench/rebench-fix_embedding": {
+    "claims": [],
+    "exit_code": 2,
+    "load_error": "error: 1 spec problem(s):\n- claims_unreadable: logic/claims.md: C06: unindented prose inside claim block (not a bullet, not a continuation): '---'"
+  },
+  "artifacts/rebench/rebench-nanogpt_chat_rl": {
+    "claims": [],
+    "exit_code": 2,
+    "load_error": "error: 1 spec problem(s):\n- claims_unreadable: logic/claims.md: 1 validation error for Claim\nstatus\n  Input should be 'hypothesis', 'testing', 'supported' or 'refuted' [type=literal_error, input_value='hypothesis (untested iso... than a hyperparameter)', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.13/v/literal_error"
+  },
+  "artifacts/rebench/rebench-restricted_mlm": {
+    "claims": [],
+    "exit_code": 2,
+    "load_error": "error: 1 spec problem(s):\n- claims_unreadable: logic/claims.md: C01: unknown field 'Evidence'"
+  },
+  "artifacts/rebench/rebench-rust_codecontests": {
+    "claims": [],
+    "exit_code": 2,
+    "load_error": "error: 1 spec problem(s):\n- claims_unreadable: logic/claims.md: 1 validation error for Claim\nstatus\n  Input should be 'hypothesis', 'testing', 'supported' or 'refuted' [type=literal_error, input_value='supported (code-grounded)', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.13/v/literal_error"
+  },
+  "artifacts/rebench/rebench-triton_cumsum": {
+    "claims": [],
+    "exit_code": 2,
+    "load_error": "error: 1 spec problem(s):\n- claims_unreadable: logic/claims.md: 1 validation error for Claim\nstatus\n  Input should be 'hypothesis', 'testing', 'supported' or 'refuted' [type=literal_error, input_value='untested', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.13/v/literal_error"
+  },
+  "artifacts/speedrun/nanogpt-speedrun": {
+    "format_version": "1",
+    "ara": "/home/yfhe/ara/DissClaimer/.runs/rq1-direct-20261010/artifacts/speedrun/nanogpt-speedrun",
+    "results": null,
+    "claims": [],
+    "undeclared": [
+      "C01",
+      "C02",
+      "C03",
+      "C04",
+      "C05",
+      "C06",
+      "C07",
+      "C08",
+      "C09",
+      "C10"
+    ],
+    "record_errors": [],
+    "exit_code": 5
+  },
+  "artifacts/subjects/mmdfuse": {
+    "format_version": "1",
+    "ara": "/home/yfhe/ara/DissClaimer/.runs/rq1-direct-20261010/artifacts/subjects/mmdfuse",
+    "results": null,
+    "claims": [
+      {
+        "claim_id": "C08",
+        "standing": "holds",
+        "properties": [
+          {
+            "kind": "consistency",
+            "version": "1",
+            "outcome": {
+              "tag": "holds"
+            },
+            "note": "4 of 5 in-scope values pass (min_pass=1)",
+            "refinement": {
+              "label": "holds",
+              "note": ""
+            },
+            "statistic": null,
+            "checked": true,
+            "witnesses": []
+          }
+        ],
+        "record": null
+      },
+      {
+        "claim_id": "C12",
+        "standing": "undecided",
+        "properties": [
+          {
+            "kind": "invariant",
+            "version": "1",
+            "outcome": {
+              "tag": "no_verdict",
+              "reason": "missing_evidence",
+              "detail": "not checked on reported evidence: kind 'invariant' needs aratest.run-batch@1 cases from an experiment"
+            },
+            "note": "",
+            "refinement": null,
+            "statistic": null,
+            "checked": false,
+            "witnesses": []
+          }
+        ],
+        "record": null
+      }
+    ],
+    "undeclared": [
+      "C01",
+      "C02",
+      "C03",
+      "C04",
+      "C05",
+      "C06",
+      "C07",
+      "C09",
+      "C10",
+      "C11"
+    ],
+    "record_errors": [],
+    "exit_code": 4
+  }
+}

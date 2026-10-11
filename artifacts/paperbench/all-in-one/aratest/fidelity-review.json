@@ -1,0 +1,41 @@
+{
+  "reviewer": "fresh-context same-system AI review",
+  "claims": [
+    {
+      "claim_id": "C01",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "The empty declaration is appropriate for the complete claim. Lower posterior C2ST for dense Simformer on Mixture Gaussian, Two Moons and SLCP at all three budgets is expressible, but the Gaussian Linear similar-performance conjunct has no equivalence margin. E01, benchmark_c2st_posterior.md and fig4a_benchmark_posterior.md also disagree numerically, notably at 1k Gaussian Linear. Declaring only the three directional task comparisons would omit part of C01; the majority-task falsifier does not replace the stronger statement."
+    },
+    {
+      "claim_id": "C02",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "C02 asserts approximately an order-of-magnitude average reduction in simulations to reach a given C2ST level for structured versus dense masks on Linear Gaussian and SLCP. E01 and fig4a_benchmark_posterior.md provide budget-indexed C2ST cells, not matched-level crossing budgets or their average. Their explicit 10-times finding instead compares Simformer with NPE. The installed pairwise reported relations do not compute this level-crossing aggregate; substituting structured-mask C2ST superiority or the NPE comparison would narrow or change the claim."
+    },
+    {
+      "claim_id": "C03",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "E02, benchmark_c2st_all_cond.md and fig4b_benchmark_all_cond.md provide mean C2ST over 100 random conditionals on Tree, HMM, Two Moons and SLCP, plus prose referring to calibration figures without numerical coverage outcomes. This does not supply the universal any-conditional, well-calibrated assertion or an installed relation expressing it. A mean below 0.7 at 100k would cover only a weaker empirical subclaim and would omit calibration. The skip is faithful to the full scope."
+    },
+    {
+      "claim_id": "C04",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "The claim joins irregular and varying-count Lotka-Volterra observations with function-valued SIRD contact-rate inference and calibrated posteriors and predictives in both. E03/E04 and fig5c_lotka_volterra.md give qualitative coverage descriptions and Lotka-Volterra C2ST threshold prose, but no numerical SIRD calibration or 99-percent interval outcomes. A Lotka-Volterra-only numerical comparison would not express the conjunction; skipping the complete claim is appropriate."
+    },
+    {
+      "claim_id": "C05",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "E05 specifies Hodgkin-Huxley lowest-10-percent-energy interval guidance without retraining, including the constraint function and diffusion scaling. Its required energy-constraint satisfaction and voltage-likelihood consistency have no reported numerical samples, threshold outcome or coverage operands. figA15_guidance_bm.md measures guidance C2ST on other benchmark tasks and recurrence settings, not the HH interval/predictive conjunction. The prose-only skip avoids replacing the claim with an unrelated guidance comparison."
+    },
+    {
+      "claim_id": "C06",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "E01/E02 and fig_a5_extended_vesde.md give approximate posterior C2ST at 100k and qualitative all-conditional versus posterior-only comparisons, but C06 requires similar-or-better posterior performance and also describes posterior-only as approximately NPSE. No similarity or significance margin is supplied, and the 100k extraction does not resolve the full benchmark-budget scope. Strict non-inferiority or an invented tolerance would change the claim; the unclear skip is appropriate."
+    }
+  ]
+}

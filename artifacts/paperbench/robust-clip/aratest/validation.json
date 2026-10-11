@@ -1,0 +1,5 @@
+{
+  "returncode": 0,
+  "stdout": "{\n  \"ara\": \".runs/rq1-direct-20261010/artifacts/paperbench/robust-clip\",\n  \"source_format_version\": 7,\n  \"valid\": true,\n  \"property_count\": 2,\n  \"property_problems\": [],\n  \"families\": [],\n  \"legacy_unmapped\": [],\n  \"undeclared_claims\": [\n    \"C02\",\n    \"C03\",\n    \"C04\",\n    \"C05\",\n    \"C06\",\n    \"C07\"\n  ],\n  \"skipped_cells\": [\n    {\n      \"path\": \"evidence/tables/table1_lvlm_robustness.md\",\n      \"count\": 0\n    }\n  ]\n}\n",
+  "stderr": ""
+}

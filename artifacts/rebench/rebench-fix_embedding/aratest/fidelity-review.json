@@ -1,0 +1,83 @@
+{
+  "reviewer": "fresh-context same-system AI review",
+  "claims": [
+    {
+      "claim_id": "C01",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Scientific skip correctness is assessed separately from the fixed claims.md mechanical failure: a standalone horizontal rule after C06 is unindented non-bullet content in that claim block, and C07-C13 statuses include explanatory suffixes/partially supported outside the schema enum hypothesis/testing/supported/refuted. These source-format defects do not remove any of the 13 original claims from the denominator or themselves prove a scientific skip correct. For C01, E01 and trace N02/N03 preserve only performed poorly, explicitly no final loss/configuration; the loss<=2.8 no-adapter/no-small-model counterexample and sparse-gradient explanation have no reported numerical evidence. Recommendation separately: normalize claim syntax without altering scientific statements, but retain this missing-evidence skip."
+    },
+    {
+      "claim_id": "C02",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Independently of claims.md mechanical unreadability, E02/trace N05 explicitly lack an adapter-only final loss. The read config freezes to adapter.weight at lr=1e-3/max_iters=1000, and model_adapted.py inserts the small-to-large linear map, but reference_scores.md measures the complete pipeline, not Stage 1. There is also no reported PCA-space sharing measurement for the explicit mechanistic subclaim. A full-pipeline-versus-baseline comparison cannot discharge the adapter-only below-5.5 threshold and PCA conjunct; scientific skip is justified."
+    },
+    {
+      "claim_id": "C03",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "E03/trace N06 and config_adapter_all.py establish all-weight unfreezing, lr=1e-4 and 2000 iterations, but report only continued loss reduction. Neither the Stage-1/Stage-2 losses nor the extra-2000-iteration adapter-only control in the falsifier is recorded as a reported measurement. Scientific skip therefore remains justified after any mechanical claims-format repair; the eventual full-pipeline score cannot identify the stage comparison."
+    },
+    {
+      "claim_id": "C04",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "The read model_adapted.py save_with_baked_adapter computes einsum(vs,bs->vb), writes both tied embedding/output weights, removes adapter.weight, and drops embedding_size; config_baked.py specifies 4000 iterations/lr=8e-5. E04 supplies only final loss 2.8917, not a pre-bake loss or equal-budget continuation without baking. Reported comparisons cannot establish further reduction or the asserted dimensional-bottleneck cause. This is a scientific missing-evidence/mechanism skip, distinct from the fixed claims.md parser problem."
+    },
+    {
+      "claim_id": "C05",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "reference_scores.md has an actual Official run score.log row with loss 2.8917/derived 0.328, distinct from the README Official reference row 0.26/approximately 2.8. Whole C05 asserts an absolute reported loss and logarithmic score transformation, not a method ordering. The inspected reported catalog accepts comparisons/positive ratios but no absolute-cell equality or ln(loss-1.5) expression; generative threshold/equivalence operate on experiment results, not these existing cells. Scientific skip is correct independently of mechanical claim parsing. Do not alias the two official-source records or invent constant evidence."
+    },
+    {
+      "claim_id": "C06",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "reference_scores.md records the original model loss 2.55, but the statement bounds every recovery procedure using the permitted information, including unobserved future methods. Comparative/consistency over finite attempts would not retain that universal procedure quantifier. The source labels this an information-theoretic floor without furnishing a numerical proof; this is not repaired or endorsed here. Scientific full-claim skip is correct, separately from the horizontal-rule failure that prevents loading this fixed claims file."
+    },
+    {
+      "claim_id": "C07",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "malt_attempts.md contains the scale-up sweep 345749 and downward optimum near 0.66 in 345751/347458. Pairwise orderings of that finite sweep are expressible, but the whole claim asserts no global scalar can recover reference performance, a monotonic shape in absolute distance from one, and an exception. The reported domains do not encode that universal scalar/shape conjunction; the installed generative monotonic relation is not a reported-cell sweep operator. Scientific skip is correct, separate from its unsupported annotated status. The 0.95-to-0.80 improvements in 347455 are a source-shape tension, not grounds to cherry-pick a replacement declaration."
+    },
+    {
+      "claim_id": "C08",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "E15/malt_attempts.md run 345790 and trace N562-N564 give ascending norm 8.3875, ascending mean 13.4166 and descending norm 13.4438 against baseline 10.4909. Comparative can represent the three directions, but not the explicit inverse-permutation invariance requirement or the explanatory frequency-norm alignment mechanism. Sorting-control orderings alone would omit scientific conjuncts. Full-claim skip is justified independently of the claims.md structural status failure; no inference that symmetric controls logically prove the mechanism is certified."
+    },
+    {
+      "claim_id": "C09",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "E10/E11 and all-attempt rows distinguish 345746 internally printed loss 5.138 with null official score from 345747 officially valid loss 5.447/score 1.373. The claim universally covers any reachable LR/batch/iteration combination, asserts a plateau, and separates official logging from internal observations; finite mixed-strategy scores cannot express the whole budget-limited failure. Scientific skip is correct rather than a numerical-range relation gap. The source 5+ log-units above 0.26 conflicts with the roughly 1.11 logged-score gap and should be corrected separately, not silently weakened in the annotation. Mechanical claim parsing remains a different issue."
+    },
+    {
+      "claim_id": "C10",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "All-attempt evidence includes tile losses 22.2167 (345788) and 22.276 (348011), but also zero-pad losses 6.1291/5.5514, scaled projection 33.8658 (345748), and prefix-graft 10.8247 (345789), contradicting the asserted blanket [18.7,22.3] range. Directional comparisons could preserve some numerical subresults but not the explicit destructive-interference cause or only-known-transfer-path assertion. Full scientific skip is correct independently of annotated-status parse failures. Recommend revising the source range and mechanism scope separately; retain contradictory attempts rather than filtering them out."
+    },
+    {
+      "claim_id": "C11",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "The full malt_attempts.md summary retains all 19 runs; E05-E23 and the read trace evidence distinguish best internal 1.2915 from best official 1.373 and the 0.26 reference. Trace adapter mentions are official curriculum, retrospective explanations or absence statements, not a numerical measurement of a constructed MALT curriculum. A finite score comparison is expressible but does not assert absence of the multi-stage program across all traces or the load-bearing structural cause. Full scientific skip is justified, separate from claims.md mechanical failure; no corpus-wide certification is inferred from a score table."
+    },
+    {
+      "claim_id": "C12",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Trace N312 contains stdout score 1.291/loss 5.138 alongside official invalidSubmission/null/timeout and distinguishes clean-exit logging; N313 and N603-N608 document later failures, including one corrupt checkpoint rather than six homogeneous timeout observations. N315 supplies a narrative approximately-60s loading budget, not a parsed timing measurement. malt_attempts.md has scores and text statuses, no deserialization-duration or conditional timeout-cascade metric. Scientific full-claim skip is justified independently of claims-format failure. Recommend clarifying the source six-consecutive-timeouts wording separately rather than treating file corruption as a measured timeout."
+    },
+    {
+      "claim_id": "C13",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Trace N511/N512 and N605 compare small-model wpe std 0.122681 with corrupted-large-model 0.015167; they do not report the original uncorrupted large-model wpe std required by the falsifier. Table attempts 345789/10 and /13 give 10.8234 versus 10.8266 for token-only versus both-embedding reinitialization. Ordering those losses is expressible but cannot establish large-model positional corruption or negligible effect without a source-defined equivalence margin. Full scientific skip is correct; its partially supported status is an additional mechanical parser failure, not evidence of scientific nonexpressibility by itself."
+    }
+  ]
+}

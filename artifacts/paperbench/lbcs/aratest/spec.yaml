@@ -1,0 +1,45 @@
+format_version: 7
+evidence:
+  evidence/tables/table3_lbcs_sizes.md:
+    metric:
+      name: test_accuracy_percent
+    axes:
+      LBCS size: configuration
+      column: method
+      section: dataset
+claims:
+- claim_id: C02
+  provenance:
+    author: direct-session/AnnotateLearning
+    model: openai-codex/gpt-6-astra
+  properties:
+  - kind: best_baseline_consistency
+    metric: test_accuracy_percent
+    over: configuration
+    in_scope: &id001
+    - ≈957 (from k=1000)
+    - ≈1935 (from k=2000)
+    - ≈2832 (from k=3000)
+    - ≈3746 (from k=4000)
+    treatment:
+      method: LBCS (ours)
+    baseline_axis: method
+    group: dataset
+    groups:
+    - 'F-MNIST (LBCS coreset sizes: ≈957, 1915, 2832, 3746)'
+    - 'SVHN (LBCS coreset sizes: ≈970, 1902, 2713, 3805)'
+    - 'CIFAR-10 (LBCS coreset sizes: ≈970, 1955, 2914, 3736)'
+    comparator: ge
+    group_overrides:
+      'SVHN (LBCS coreset sizes: ≈970, 1902, 2713, 3805)':
+        in_scope:
+        - ≈970 (from k=1000)
+        - ≈1902 (from k=2000)
+        - ≈2713 (from k=3000)
+        - ≈3805 (from k=4000)
+      'CIFAR-10 (LBCS coreset sizes: ≈970, 1955, 2914, 3736)':
+        in_scope:
+        - ≈970 (from k=1000)
+        - ≈1955 (from k=2000)
+        - ≈2914 (from k=3000)
+        - ≈3736 (from k=4000)

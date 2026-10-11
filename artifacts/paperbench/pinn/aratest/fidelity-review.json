@@ -1,0 +1,47 @@
+{
+  "reviewer": "fresh-context same-system AI review",
+  "claims": [
+    {
+      "claim_id": "C01",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "The full statement combines a monotone nonlinear loss/error trend, PDE-dependent near-zero-loss necessity for low L2RE, and existence of near-zero-loss trivial solutions with L2RE near one. Figure 2 reports approximate ranges rather than a complete paired-run grid; E01 does not turn these into an available conditional/trend/existence relation. The falsifier's L2RE <0.05 and loss >1e-3 thresholds cannot replace the statement's other conjuncts or its approximately 1e-5 necessity condition."
+    },
+    {
+      "claim_id": "C02",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "The post-41000-iteration convection >1e4, reaction >1e3 and wave >1e5 outlier eigenvalues are substantive bounds, not incidental experimental labels. The statement also requires substantial near-zero spectral density and its ill-conditioning interpretation. The supplied Figure 3 versions provide bound strings and qualitative spectral summaries; pairwise reported relations do not express those absolute bounds and spectral-mass/convergence conjuncts. Top eigenvalues alone are not condition numbers."
+    },
+    {
+      "claim_id": "C03",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "A residual-versus-IC/BC largest-eigenvalue comparison could represent the empirical falsifier, but not the entire statement's theoretically predicted differential-operator source of ill-conditioning. Figure 3/7 component summaries also do not supply complete numerical spectra establishing condition-number rankings. Skipping avoids substituting an outlier ranking for the combined empirical and theoretical claim."
+    },
+    {
+      "claim_id": "C04",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "The statement requires at least 1000-fold top-eigenvalue reduction for every studied PDE and each individual loss component; the 100-fold falsifier is weaker and must not replace it. The complete fig3_hessian_spectral.md has malformed two-dash separator rows, and its raw maxima include descriptive bounds; alternate Figure 3 files do not provide all reaction/wave component operands. An inclusive ratio relation exists in principle, but there is no usable complete grid. Component summaries suggesting only roughly 100-fold reductions must not be excluded to make the claim hold."
+    },
+    {
+      "claim_id": "C05",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Table 1 gives best results pooled across widths, hyperparameters and switch points, not loss/L2RE values for each of widths 50, 100, 200 and 400. Figure 8 provides qualitative width winners and reaction exceptions but no width-resolved numerical grid. Declaring Table 1 superiority would silently weaken the all-PDE/all-width claim and omit its specific 14.2-fold and 6.07-fold improvements. Evidence exceptions are not grounds to repair the original quantifier."
+    },
+    {
+      "claim_id": "C06",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Tables 2 and 3 cover all three PDEs, the best-L2RE Adam+L-BFGS starting runs, 2000-step NNCG/GD continuations, final loss/L2RE and per-iteration timing. However, strictly >10-fold loss reduction is a substantive obligation, and the available ratio comparators are inclusive. Replacing it with >=10 or the falsifier's >2 would change the claim. The whole assertion also includes zero GD improvement and the 5–322-fold timing range, not just lower NNCG loss; Table 1's differently selected reaction loss is not the proper starting operand."
+    },
+    {
+      "claim_id": "C07",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Theorem 8.4 asserts a high-probability asymptotic lower bound under eigenvalue decay with alpha >1/2 and a residual-sample condition. Figure 10's two-layer width-32 convection proxy lambda1/lambda129 is finite empirical evidence and its cells are qualitative levels, not numerical condition numbers. Neither finite monotonicity nor a ratio comparison expresses the theorem's assumptions, probability, asymptotic growth and quantifiers."
+    }
+  ]
+}

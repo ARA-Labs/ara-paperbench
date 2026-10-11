@@ -1,0 +1,79 @@
+# aratest spec, format version 7. Annotation batch 1: the reviewed Track 1
+# bindings of DissClaimer's ara/src/eval3-track1-authority, converted without a model.
+# Every cell of the table reports pass@k; the parsed `measure` axis is k.
+format_version: 7
+
+evidence:
+  evidence/tables/table2_codegen_humaneval_temp02.md:
+    metric: {name: pass@k}
+    axes: {γ: gamma, group: model, measure: k}
+
+claims:
+  - claim_id: C04
+    properties:
+      - kind: consistency
+        metric: pass@k
+        where: {k: k=1}
+        treatment: {gamma: "1.1"}
+        baseline: {gamma: "1.0"}
+        comparator: gt
+        over: model
+        in_scope: [CodeGen-2B, CodeGen-350M, CodeGen-6B]
+      - kind: consistency
+        metric: pass@k
+        where: {k: k=1}
+        treatment: {gamma: "1.25"}
+        baseline: {gamma: "1.0"}
+        comparator: gt
+        over: model
+        in_scope: [CodeGen-2B, CodeGen-350M, CodeGen-6B]
+      - kind: consistency
+        metric: pass@k
+        where: {k: k=1}
+        treatment: {gamma: "1.5"}
+        baseline: {gamma: "1.0"}
+        comparator: gt
+        over: model
+        in_scope: [CodeGen-2B, CodeGen-350M, CodeGen-6B]
+      - kind: consistency
+        metric: pass@k
+        where: {k: k=100}
+        treatment: {gamma: "1.0"}
+        baseline: {gamma: "1.1"}
+        comparator: gt
+        over: model
+        in_scope: [CodeGen-2B, CodeGen-350M, CodeGen-6B]
+      - kind: consistency
+        metric: pass@k
+        where: {k: k=100}
+        treatment: {gamma: "1.0"}
+        baseline: {gamma: "1.25"}
+        comparator: gt
+        over: model
+        in_scope: [CodeGen-2B, CodeGen-350M, CodeGen-6B]
+      - kind: consistency
+        metric: pass@k
+        where: {k: k=100}
+        treatment: {gamma: "1.0"}
+        baseline: {gamma: "1.5"}
+        comparator: gt
+        over: model
+        in_scope: [CodeGen-2B, CodeGen-350M, CodeGen-6B]
+      - kind: consistency
+        metric: pass@k
+        where: {k: k=100}
+        treatment: {gamma: "1.0"}
+        baseline: {gamma: "1.75"}
+        comparator: gt
+        over: model
+        in_scope: [CodeGen-2B, CodeGen-350M, CodeGen-6B]
+      - kind: consistency
+        metric: pass@k
+        where: {k: k=100}
+        treatment: {gamma: "1.0"}
+        baseline: {gamma: "2.0"}
+        comparator: gt
+        over: model
+        in_scope: [CodeGen-2B, CodeGen-350M, CodeGen-6B]
+    provenance:
+      author: eval3-track1-authority

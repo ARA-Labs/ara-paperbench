@@ -1,0 +1,43 @@
+{
+  "claims": [
+    {
+      "claim_id": "C01",
+      "disposition": "declared",
+      "declaration_ids": [
+        "C01"
+      ],
+      "reason": null,
+      "explanation": "Table 1 (evidence/tables/table1_intra_lpips.md), E01 and the C01 falsifier identify the five main FFHQ/LSUN Church 10-shot tasks. Two aggregating best_baseline_consistency properties, one per distinct DDPM-TAN/LDM-TAN variant, each require beating every TGAN/TGAN+ADA/EWC/CDC/DCL/DDPM-PA baseline on at least three of the five tasks. The other TAN variant is not a baseline. Table label LMD-TAN is normalized to LDM-TAN using E01/PAPER method identity; no DDPM/LDM merger occurs. The mixed-unit table uses a table-specific value metric plus a measure axis: only the five dimensionless Intra-LPIPS task fields are in scope, never Parameter Rate. Reported ± spreads remain intact. E02/Table 3 supplies additional DDPM-only Sketches/Amedeo evidence, not another common five-task cohort; no unreported LDM result is fabricated."
+    },
+    {
+      "claim_id": "C02",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "unclear",
+      "explanation": "E01 specifies distinct DDPM-TAN and LDM-TAN models, but evidence/tables/table2_fid.md has only one Our method (TAN) row and explicitly describes it as a DDPM-TAN/LDM-TAN combined result (46.70 Babies, 20.06 Sunglasses). C02 names DDPM-TAN/LDM-TAN without resolving whether both must outperform all six baselines or which variant supplies each score. The TAN aggregate row is not aliased to both distinct methods; doing so would silently fill missing variant-specific outcomes. ADA/TGAN+ADA and ADMT/DDPM-PA spellings alone are resolvable, but the treatment identity is not."
+    },
+    {
+      "claim_id": "C03",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "prose-only",
+      "explanation": "E03 reports the 1.3% versus 100% trainable-parameter rates, 300 versus 5000 iterations, 3 versus 7.5 GPU hours and 9 versus 20 GB memory, with different batch/GPU configurations. evidence/tables/table1_intra_lpips.md provides parameter rates and table6_iteration_sensitivity.md an LDM iteration/FID series, but there are no parsed runtime or memory outcome measurements for the DDPM comparison. Keeping only the parameter-rate reduction would omit required computational-cost and convergence conditions; GPU-hour meaning is not inferred from the differing hardware."
+    },
+    {
+      "claim_id": "C04",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "prose-only",
+      "explanation": "E04 describes gradients from 10-shot 2D Gaussians versus a 10,000-sample reference and heatmaps from 20,000 generated samples, but supplies no numerical angles or target-mode concentration outcomes. evidence/figures/figure1_lpips_transfer.md measures perceptual distances for FFHQ face images, not the toy gradient/concentration metrics; figure4_ablation.md reports FID and cannot substitute for both toy-experiment conjuncts."
+    },
+    {
+      "claim_id": "C05",
+      "disposition": "declared",
+      "declaration_ids": [
+        "C05"
+      ],
+      "reason": null,
+      "explanation": "E05 and evidence/figures/figure4_ablation.md provide all four 300-iteration FFHQ→10-shot Sunglasses FID operands (38.65, 41.88, 26.41, 20.06). These reported values ground the claim’s explicit variant sequence; the substantive assertion is that adding similarity guidance and then adversarial noise each improves FID, not a separately stipulated minimum effect size. Three comparative properties preserve the complete sequence, including the adaptor-only worsening versus direct fine-tuning rather than falsely asserting monotonic improvement of all four variants. No single catalog relation expresses this mixed-direction chain. The file also notes 20.66 in prose versus 20.06 in Figure 4; the claim and tabulated figure use 20.06, and no value is repaired or copied into the spec."
+    }
+  ]
+}

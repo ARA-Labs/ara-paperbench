@@ -1,0 +1,156 @@
+format_version: 7
+evidence:
+  evidence/tables/table11_raw_efficiency_roberta_t5.md:
+    metric:
+      axis: column
+    axes:
+      Method: method
+      Model: model
+    at:
+      experiment: E01
+      task: SST2
+  evidence/tables/table5_ablation_llama.md:
+    metric:
+      axis: column
+    axes:
+      Method: method
+      Sparsity: sparsity
+    at:
+      experiment: E03
+      model: LLaMA2-7B
+  evidence/tables/table3_llama2_7b_main.md:
+    metric:
+      axis: column
+    axes:
+      Method: method
+    at:
+      experiment: E02
+      model: LLaMA2-7B
+      sparsity: 30%
+claims:
+- claim_id: C02
+  provenance: &id009
+    author: AnnotateExtra (direct annotation author)
+    model: openai-codex/gpt-6-astra
+  properties:
+  - kind: comparative
+    metric: 97% TTA (s)
+    over: model
+    in_scope: &id001
+    - RoBERTabase
+    where: &id002
+      experiment: E01
+      task: SST2
+    subject: &id003
+      method: LoRA+Prune
+    reference: &id004
+      method: APT
+    comparator: ratio_ge
+    ratio: 8.4
+  - kind: comparative
+    metric: 97% TTA (s)
+    over: model
+    in_scope: *id001
+    where: *id002
+    subject: *id003
+    reference: *id004
+    comparator: ratio_le
+    ratio: 8.4
+  - kind: comparative
+    metric: 97% TTA (s)
+    over: model
+    in_scope: &id005
+    - T5base
+    where: &id006
+      experiment: E01
+      task: SST2
+    subject: &id007
+      method: LoRA+Prune
+    reference: &id008
+      method: APT
+    comparator: ratio_ge
+    ratio: 8.2
+  - kind: comparative
+    metric: 97% TTA (s)
+    over: model
+    in_scope: *id005
+    where: *id006
+    subject: *id007
+    reference: *id008
+    comparator: ratio_le
+    ratio: 8.2
+- claim_id: C04
+  provenance: *id009
+  properties:
+  - kind: comparative
+    metric: Avg.
+    over: sparsity
+    in_scope: &id010
+    - 30%
+    where: &id011
+      experiment: E03
+      model: LLaMA2-7B
+    subject: &id012
+      method: w/o kurtosis
+    reference: &id013
+      method: APT
+    comparator: ratio_ge
+    ratio: 0.762
+  - kind: comparative
+    metric: Avg.
+    over: sparsity
+    in_scope: *id010
+    where: *id011
+    subject: *id012
+    reference: *id013
+    comparator: ratio_le
+    ratio: 0.762
+- claim_id: C06
+  provenance: *id009
+  properties:
+  - kind: comparative
+    metric: Avg.
+    over: sparsity
+    in_scope: &id014
+    - 30%
+    where: &id015
+      experiment: E02
+      model: LLaMA2-7B
+    subject: &id016
+      method: APT
+    reference: &id017
+      method: LoRA
+    comparator: ratio_ge
+    ratio: 0.864
+  - kind: comparative
+    metric: Avg.
+    over: sparsity
+    in_scope: *id014
+    where: *id015
+    subject: *id016
+    reference: *id017
+    comparator: ratio_le
+    ratio: 0.864
+  - kind: comparative
+    metric: Train Mem(⇓)
+    over: sparsity
+    in_scope: &id018
+    - 30%
+    where: &id019
+      experiment: E02
+      model: LLaMA2-7B
+    subject: &id020
+      method: APT
+    reference: &id021
+      method: LoRA
+    comparator: ratio_ge
+    ratio: 0.758
+  - kind: comparative
+    metric: Train Mem(⇓)
+    over: sparsity
+    in_scope: *id018
+    where: *id019
+    subject: *id020
+    reference: *id021
+    comparator: ratio_le
+    ratio: 0.758

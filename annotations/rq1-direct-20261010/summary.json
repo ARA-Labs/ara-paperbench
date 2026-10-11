@@ -1,0 +1,727 @@
+{
+  "summary": {
+    "aras": 33,
+    "claims": 243,
+    "declared": 24,
+    "properties": 57,
+    "claim_standings": {
+      "undecided": 5,
+      "holds": 17,
+      "violated": 2
+    },
+    "property_tags": {
+      "inconclusive": 9,
+      "holds": 45,
+      "violated": 2,
+      "no_verdict": 1
+    },
+    "skip_reasons": {
+      "nonquantitative": 24,
+      "parse failure": 15,
+      "no relation": 111,
+      "prose-only": 45,
+      "unclear": 24
+    },
+    "review_judgments": {
+      "correct": 213,
+      "faithful": 24,
+      "unclear": 6
+    }
+  },
+  "aras": [
+    {
+      "ara_id": "artifacts/extra/andes",
+      "split": "development",
+      "claims": 8,
+      "declared": 0,
+      "skipped": 8,
+      "properties": 0,
+      "claim_standings": {},
+      "property_tags": {},
+      "skip_reasons": {
+        "nonquantitative": 1,
+        "parse failure": 2,
+        "no relation": 1,
+        "prose-only": 4
+      },
+      "review_judgments": {
+        "correct": 8
+      },
+      "exit_code": 5
+    },
+    {
+      "ara_id": "artifacts/extra/expbench",
+      "split": "scored",
+      "claims": 6,
+      "declared": 0,
+      "skipped": 6,
+      "properties": 0,
+      "claim_standings": {},
+      "property_tags": {},
+      "skip_reasons": {
+        "no relation": 5,
+        "prose-only": 1
+      },
+      "review_judgments": {
+        "correct": 6
+      },
+      "exit_code": 5
+    },
+    {
+      "ara_id": "artifacts/extra/venn",
+      "split": "scored",
+      "claims": 6,
+      "declared": 0,
+      "skipped": 6,
+      "properties": 0,
+      "claim_standings": {},
+      "property_tags": {},
+      "skip_reasons": {
+        "parse failure": 1,
+        "unclear": 1,
+        "no relation": 3,
+        "prose-only": 1
+      },
+      "review_judgments": {
+        "correct": 6
+      },
+      "exit_code": 5
+    },
+    {
+      "ara_id": "artifacts/paperbench/adaptive-pruning",
+      "split": "scored",
+      "claims": 8,
+      "declared": 0,
+      "skipped": 8,
+      "properties": 0,
+      "claim_standings": {},
+      "property_tags": {},
+      "skip_reasons": {
+        "unclear": 2,
+        "no relation": 5,
+        "parse failure": 1
+      },
+      "review_judgments": {
+        "correct": 8
+      },
+      "exit_code": 5
+    },
+    {
+      "ara_id": "artifacts/paperbench/all-in-one",
+      "split": "scored",
+      "claims": 6,
+      "declared": 0,
+      "skipped": 6,
+      "properties": 0,
+      "claim_standings": {},
+      "property_tags": {},
+      "skip_reasons": {
+        "unclear": 2,
+        "no relation": 2,
+        "prose-only": 2
+      },
+      "review_judgments": {
+        "correct": 6
+      },
+      "exit_code": 5
+    },
+    {
+      "ara_id": "artifacts/paperbench/bam",
+      "split": "scored",
+      "claims": 6,
+      "declared": 0,
+      "skipped": 6,
+      "properties": 0,
+      "claim_standings": {},
+      "property_tags": {},
+      "skip_reasons": {
+        "no relation": 4,
+        "prose-only": 2
+      },
+      "review_judgments": {
+        "correct": 6
+      },
+      "exit_code": 5
+    },
+    {
+      "ara_id": "artifacts/paperbench/bbox",
+      "split": "scored",
+      "claims": 8,
+      "declared": 2,
+      "skipped": 6,
+      "properties": 12,
+      "claim_standings": {
+        "undecided": 1,
+        "holds": 1
+      },
+      "property_tags": {
+        "inconclusive": 6,
+        "holds": 6
+      },
+      "skip_reasons": {
+        "no relation": 6
+      },
+      "review_judgments": {
+        "correct": 6,
+        "faithful": 2
+      },
+      "exit_code": 4
+    },
+    {
+      "ara_id": "artifacts/paperbench/bridging-data-gaps",
+      "split": "scored",
+      "claims": 5,
+      "declared": 2,
+      "skipped": 3,
+      "properties": 5,
+      "claim_standings": {
+        "holds": 2
+      },
+      "property_tags": {
+        "holds": 5
+      },
+      "skip_reasons": {
+        "unclear": 1,
+        "prose-only": 2
+      },
+      "review_judgments": {
+        "faithful": 2,
+        "correct": 3
+      },
+      "exit_code": 0
+    },
+    {
+      "ara_id": "artifacts/paperbench/fre",
+      "split": "scored",
+      "claims": 5,
+      "declared": 0,
+      "skipped": 5,
+      "properties": 0,
+      "claim_standings": {},
+      "property_tags": {},
+      "skip_reasons": {
+        "unclear": 3,
+        "no relation": 1,
+        "parse failure": 1
+      },
+      "review_judgments": {
+        "correct": 5
+      },
+      "exit_code": 5
+    },
+    {
+      "ara_id": "artifacts/paperbench/ftrl",
+      "split": "scored",
+      "claims": 6,
+      "declared": 0,
+      "skipped": 6,
+      "properties": 0,
+      "claim_standings": {},
+      "property_tags": {},
+      "skip_reasons": {
+        "unclear": 1,
+        "no relation": 2,
+        "prose-only": 3
+      },
+      "review_judgments": {
+        "correct": 6
+      },
+      "exit_code": 5
+    },
+    {
+      "ara_id": "artifacts/paperbench/lbcs",
+      "split": "scored",
+      "claims": 5,
+      "declared": 1,
+      "skipped": 4,
+      "properties": 1,
+      "claim_standings": {
+        "undecided": 1
+      },
+      "property_tags": {
+        "inconclusive": 1
+      },
+      "skip_reasons": {
+        "no relation": 2,
+        "prose-only": 1,
+        "parse failure": 1
+      },
+      "review_judgments": {
+        "correct": 4,
+        "faithful": 1
+      },
+      "exit_code": 4
+    },
+    {
+      "ara_id": "artifacts/paperbench/lca-on-the-line",
+      "split": "scored",
+      "claims": 5,
+      "declared": 2,
+      "skipped": 3,
+      "properties": 4,
+      "claim_standings": {
+        "holds": 2
+      },
+      "property_tags": {
+        "holds": 4
+      },
+      "skip_reasons": {
+        "no relation": 3
+      },
+      "review_judgments": {
+        "correct": 3,
+        "faithful": 2
+      },
+      "exit_code": 0
+    },
+    {
+      "ara_id": "artifacts/paperbench/mechanistic-understanding",
+      "split": "scored",
+      "claims": 6,
+      "declared": 0,
+      "skipped": 6,
+      "properties": 0,
+      "claim_standings": {},
+      "property_tags": {},
+      "skip_reasons": {
+        "nonquantitative": 2,
+        "unclear": 2,
+        "no relation": 1,
+        "prose-only": 1
+      },
+      "review_judgments": {
+        "correct": 6
+      },
+      "exit_code": 5
+    },
+    {
+      "ara_id": "artifacts/paperbench/pinn",
+      "split": "scored",
+      "claims": 7,
+      "declared": 0,
+      "skipped": 7,
+      "properties": 0,
+      "claim_standings": {},
+      "property_tags": {},
+      "skip_reasons": {
+        "no relation": 5,
+        "parse failure": 1,
+        "prose-only": 1
+      },
+      "review_judgments": {
+        "correct": 7
+      },
+      "exit_code": 5
+    },
+    {
+      "ara_id": "artifacts/paperbench/rice",
+      "split": "scored",
+      "claims": 6,
+      "declared": 2,
+      "skipped": 4,
+      "properties": 2,
+      "claim_standings": {
+        "holds": 1,
+        "undecided": 1
+      },
+      "property_tags": {
+        "holds": 1,
+        "inconclusive": 1
+      },
+      "skip_reasons": {
+        "no relation": 1,
+        "prose-only": 3
+      },
+      "review_judgments": {
+        "correct": 4,
+        "faithful": 2
+      },
+      "exit_code": 4
+    },
+    {
+      "ara_id": "artifacts/paperbench/robust-clip",
+      "split": "scored",
+      "claims": 7,
+      "declared": 2,
+      "skipped": 5,
+      "properties": 5,
+      "claim_standings": {
+        "violated": 1,
+        "holds": 1
+      },
+      "property_tags": {
+        "violated": 1,
+        "holds": 4
+      },
+      "skip_reasons": {
+        "unclear": 2,
+        "no relation": 3
+      },
+      "review_judgments": {
+        "faithful": 2,
+        "correct": 5
+      },
+      "exit_code": 1
+    },
+    {
+      "ara_id": "artifacts/paperbench/sample-specific-masks",
+      "split": "scored",
+      "claims": 6,
+      "declared": 3,
+      "skipped": 3,
+      "properties": 7,
+      "claim_standings": {
+        "holds": 3
+      },
+      "property_tags": {
+        "holds": 7
+      },
+      "skip_reasons": {
+        "prose-only": 1,
+        "no relation": 2
+      },
+      "review_judgments": {
+        "correct": 3,
+        "faithful": 3
+      },
+      "exit_code": 0
+    },
+    {
+      "ara_id": "artifacts/paperbench/sapg",
+      "split": "scored",
+      "claims": 6,
+      "declared": 0,
+      "skipped": 6,
+      "properties": 0,
+      "claim_standings": {},
+      "property_tags": {},
+      "skip_reasons": {
+        "no relation": 1,
+        "unclear": 2,
+        "prose-only": 3
+      },
+      "review_judgments": {
+        "correct": 6
+      },
+      "exit_code": 5
+    },
+    {
+      "ara_id": "artifacts/paperbench/self-composing-policies",
+      "split": "scored",
+      "claims": 5,
+      "declared": 1,
+      "skipped": 4,
+      "properties": 6,
+      "claim_standings": {
+        "undecided": 1
+      },
+      "property_tags": {
+        "holds": 5,
+        "inconclusive": 1
+      },
+      "skip_reasons": {
+        "no relation": 3,
+        "nonquantitative": 1
+      },
+      "review_judgments": {
+        "correct": 4,
+        "faithful": 1
+      },
+      "exit_code": 4
+    },
+    {
+      "ara_id": "artifacts/paperbench/self-expansion",
+      "split": "development",
+      "claims": 4,
+      "declared": 2,
+      "skipped": 2,
+      "properties": 3,
+      "claim_standings": {
+        "violated": 1,
+        "holds": 1
+      },
+      "property_tags": {
+        "violated": 1,
+        "holds": 2
+      },
+      "skip_reasons": {
+        "no relation": 2
+      },
+      "review_judgments": {
+        "faithful": 2,
+        "correct": 2
+      },
+      "exit_code": 1
+    },
+    {
+      "ara_id": "artifacts/paperbench/semantic-self-consistency",
+      "split": "scored",
+      "claims": 6,
+      "declared": 1,
+      "skipped": 5,
+      "properties": 1,
+      "claim_standings": {
+        "holds": 1
+      },
+      "property_tags": {
+        "holds": 1
+      },
+      "skip_reasons": {
+        "no relation": 4,
+        "prose-only": 1
+      },
+      "review_judgments": {
+        "correct": 5,
+        "faithful": 1
+      },
+      "exit_code": 0
+    },
+    {
+      "ara_id": "artifacts/paperbench/sequential-neural-score-estimation",
+      "split": "scored",
+      "claims": 5,
+      "declared": 0,
+      "skipped": 5,
+      "properties": 0,
+      "claim_standings": {},
+      "property_tags": {},
+      "skip_reasons": {
+        "unclear": 2,
+        "no relation": 2,
+        "prose-only": 1
+      },
+      "review_judgments": {
+        "unclear": 2,
+        "correct": 3
+      },
+      "exit_code": 5
+    },
+    {
+      "ara_id": "artifacts/paperbench/stay-on-topic-with-classifier-free-guidance",
+      "split": "development",
+      "claims": 6,
+      "declared": 0,
+      "skipped": 6,
+      "properties": 0,
+      "claim_standings": {},
+      "property_tags": {},
+      "skip_reasons": {
+        "prose-only": 2,
+        "no relation": 3,
+        "unclear": 1
+      },
+      "review_judgments": {
+        "correct": 5,
+        "unclear": 1
+      },
+      "exit_code": 5
+    },
+    {
+      "ara_id": "artifacts/paperbench/stochastic-interpolants",
+      "split": "scored",
+      "claims": 5,
+      "declared": 0,
+      "skipped": 5,
+      "properties": 0,
+      "claim_standings": {},
+      "property_tags": {},
+      "skip_reasons": {
+        "no relation": 4,
+        "nonquantitative": 1
+      },
+      "review_judgments": {
+        "correct": 5
+      },
+      "exit_code": 5
+    },
+    {
+      "ara_id": "artifacts/paperbench/test-time-model-adaptation",
+      "split": "scored",
+      "claims": 7,
+      "declared": 2,
+      "skipped": 5,
+      "properties": 6,
+      "claim_standings": {
+        "holds": 2
+      },
+      "property_tags": {
+        "holds": 6
+      },
+      "skip_reasons": {
+        "no relation": 5
+      },
+      "review_judgments": {
+        "correct": 5,
+        "faithful": 2
+      },
+      "exit_code": 0
+    },
+    {
+      "ara_id": "artifacts/paperbench/what-will-my-model-forget",
+      "split": "scored",
+      "claims": 6,
+      "declared": 2,
+      "skipped": 4,
+      "properties": 3,
+      "claim_standings": {
+        "holds": 2
+      },
+      "property_tags": {
+        "holds": 3
+      },
+      "skip_reasons": {
+        "parse failure": 3,
+        "unclear": 1
+      },
+      "review_judgments": {
+        "correct": 4,
+        "faithful": 2
+      },
+      "exit_code": 0
+    },
+    {
+      "ara_id": "artifacts/rebench/rebench-fix_embedding",
+      "split": "scored",
+      "claims": 13,
+      "declared": 0,
+      "skipped": 13,
+      "properties": 0,
+      "claim_standings": {},
+      "property_tags": {},
+      "skip_reasons": {
+        "prose-only": 5,
+        "no relation": 8
+      },
+      "review_judgments": {
+        "correct": 13
+      },
+      "exit_code": 2
+    },
+    {
+      "ara_id": "artifacts/rebench/rebench-nanogpt_chat_rl",
+      "split": "scored",
+      "claims": 12,
+      "declared": 0,
+      "skipped": 12,
+      "properties": 0,
+      "claim_standings": {},
+      "property_tags": {},
+      "skip_reasons": {
+        "parse failure": 3,
+        "prose-only": 2,
+        "nonquantitative": 3,
+        "no relation": 3,
+        "unclear": 1
+      },
+      "review_judgments": {
+        "correct": 12
+      },
+      "exit_code": 2
+    },
+    {
+      "ara_id": "artifacts/rebench/rebench-restricted_mlm",
+      "split": "scored",
+      "claims": 14,
+      "declared": 0,
+      "skipped": 14,
+      "properties": 0,
+      "claim_standings": {},
+      "property_tags": {},
+      "skip_reasons": {
+        "no relation": 9,
+        "unclear": 2,
+        "nonquantitative": 2,
+        "prose-only": 1
+      },
+      "review_judgments": {
+        "correct": 12,
+        "unclear": 2
+      },
+      "exit_code": 2
+    },
+    {
+      "ara_id": "artifacts/rebench/rebench-rust_codecontests",
+      "split": "scored",
+      "claims": 14,
+      "declared": 0,
+      "skipped": 14,
+      "properties": 0,
+      "claim_standings": {},
+      "property_tags": {},
+      "skip_reasons": {
+        "prose-only": 3,
+        "nonquantitative": 7,
+        "no relation": 2,
+        "parse failure": 2
+      },
+      "review_judgments": {
+        "correct": 13,
+        "unclear": 1
+      },
+      "exit_code": 2
+    },
+    {
+      "ara_id": "artifacts/rebench/rebench-triton_cumsum",
+      "split": "development",
+      "claims": 12,
+      "declared": 0,
+      "skipped": 12,
+      "properties": 0,
+      "claim_standings": {},
+      "property_tags": {},
+      "skip_reasons": {
+        "nonquantitative": 5,
+        "no relation": 6,
+        "prose-only": 1
+      },
+      "review_judgments": {
+        "correct": 12
+      },
+      "exit_code": 2
+    },
+    {
+      "ara_id": "artifacts/speedrun/nanogpt-speedrun",
+      "split": "scored",
+      "claims": 10,
+      "declared": 0,
+      "skipped": 10,
+      "properties": 0,
+      "claim_standings": {},
+      "property_tags": {},
+      "skip_reasons": {
+        "no relation": 6,
+        "prose-only": 4
+      },
+      "review_judgments": {
+        "correct": 10
+      },
+      "exit_code": 5
+    },
+    {
+      "ara_id": "artifacts/subjects/mmdfuse",
+      "split": "development",
+      "claims": 12,
+      "declared": 2,
+      "skipped": 10,
+      "properties": 2,
+      "claim_standings": {
+        "holds": 1,
+        "undecided": 1
+      },
+      "property_tags": {
+        "holds": 1,
+        "no_verdict": 1
+      },
+      "skip_reasons": {
+        "no relation": 7,
+        "nonquantitative": 2,
+        "unclear": 1
+      },
+      "review_judgments": {
+        "correct": 10,
+        "faithful": 2
+      },
+      "exit_code": 4
+    }
+  ]
+}

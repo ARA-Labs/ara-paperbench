@@ -1,0 +1,77 @@
+{
+  "reviewer": "fresh-context same-system AI review",
+  "claims": [
+    {
+      "claim_id": "C01",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Present skip has concrete mechanical blockers, distinct from scientific skip correctness: fixed claims.md C02 and C03-C12 use parenthetically annotated Status values outside the supported schema enum, so the artifact cannot load unchanged; reference_scores.md also wraps 0.54 and 0.85 in backticks, which the read cell parser does not strip and treats as nonnumeric labels. E01/E04 and the read trainer identify N=8, four train-mode steps, lr=4e-6, response-only targets and held-out scoring against both references. The improvement subrelation is scientifically expressible after evidence repair, but an ordering alone would not necessarily preserve the final-score>=0.85/two-seed condition in the falsifier. Current parse-failure skip is correct, not evidence of scientific nonexpressibility. Recommend source-format repairs separately; retain C01 in the denominator."
+    },
+    {
+      "claim_id": "C02",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "E02 explicitly says the standalone best-of-2 versus best-of-8 ablation was not run; no four-factor attribution or selection-variance measurement is reported. The trainer code confirms the structural tournament change but cannot establish largest algorithmic contribution or the asserted approximately-sqrt(4) variance reduction. Scientific prose-only skip is correct independently of C02 annotated hypothesis status causing claims.md schema failure. The 50%-gain-share falsifier must not be replaced by a simple best-of-8 versus best-of-2 ordering."
+    },
+    {
+      "claim_id": "C03",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Read model.py generate_strings_autobatch overrides temperature/top_k/max_new_tokens to 0.7/8/20, matching E03 despite the trainer requesting top_k=10. E03 is code-path inspection, with no mismatched-generation score experiment. The whole claim asserts necessity of distribution alignment; a reported score comparison cannot express code-path equality plus that necessity, and the +/-0.02 intervention falsifier is unmeasured. Scientific nonquantitative skip is justified separately from fixed claims.md annotated-status failure."
+    },
+    {
+      "claim_id": "C04",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "The read evaluate_n implementation eliminates one candidate per pair and carries odd byes, grounding N-1 calls, while E03 is not a measured call-count/latency grid. Installed reported comparisons do not express a general-N optimality proof or complexity formula. Also, the code awaits each candidate-pair batch sequentially within a round; max_workers=20 parallelizes prompts within a batch, not all tournament matches, so the logarithmic-round latency statement is a source scientific issue, not a supplied timing measurement. Scientific full-claim skip is correct independently of claims-format failure; recommend clarifying the latency claim separately."
+    },
+    {
+      "claim_id": "C05",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "E04/reference_scores.md expressly identify README-recorded 0.85 and absence of score.log; the backtick-wrapped Value is nonnumeric under the inspected parser. Separately, whole C05 is an absolute reference score with a [0.83,0.87] falsification band, not just improvement over starting score. Existing reported relations have no absolute-cell constant/band operator; generative threshold needs experiment results rather than these cells. Current parse-failure skip and the additional scientific relation limitation are both real, but neither permits dropping C05 because annotated Status also makes the fixed claims file unreadable."
+    },
+    {
+      "claim_id": "C06",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "The claim cites E05, whereas the read experiments.md has only E01-E04. malt_attempts.md reports scores, not judge/GPU timing decomposition; trace N650/N653/N654 contains total score times 365.58/289.55/589.91s and retry narratives, not reported numerical latency operands for an API-dominance relation. Thus full scientific skip is justified, separate from annotated-status mechanical failure. The <60s falsifier must not be tested with fast 429-corrupted score times such as N151/N154 as if they demonstrated healthy judge throughput."
+    },
+    {
+      "claim_id": "C07",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "malt_attempts.md and N50/N53/N151 describe throughput failures; N656 ties the same step-10 checkpoint to 0.5527 versus N653 0.7930 under 429s. The whole claim includes workload conditions, a dominant causal binding constraint across 18 runs, and 0.4+-point same-weights gaps in named runs. The table has no parsed error-incidence/throughput grid or full paired-weight identities, and finite score comparisons cannot retain that causal/metadata-count conjunction. Scientific skip is correct separately from claims-format failure. N656 alone has about a 0.24-point gap and N154 involves continuing overwrites; recommend checking named same-weights examples rather than treating them all as interchangeable evidence."
+    },
+    {
+      "claim_id": "C08",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Read model.py forward directly confirms targets=None yields self.lm_head(x[:,[-1],:]) with [B,1,V] logits. N50/N101 explicitly show associated per-token failures, and N655 reports an analogous DPO failure; however the cited N200/N450/N500/N650 are baseline score nodes, N251 is a different target/mask failure, and N750 concerns gradient flow. The code/API mechanism and eight-of-eighteen incidence are not a reported numerical performance relation; do not manufacture an eight-run count from mismatched node IDs. Scientific full-claim skip is correct independently of annotated-status parsing. Recommend correcting evidence pointers separately."
+    },
+    {
+      "claim_id": "C09",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "The full claim combines LR>=3e-5 or >20-step/no-KL conditions, consistent score collapse below 0.1, output degeneration, and necessity of conservative settings. Table 345792 aggressive training gives 0.0303, but N504 collapses at lr=5e-6/ten total steps to 0.1875, N852 is an OOM, and N902 is a successful 0.789 continuation rather than the claimed collapse. Finite score orderings do not express the complete conditional/necessity conjunction, so scientific full-claim skip is justified separately from claims-format failure. Recommend revising source conditions/evidence mapping, not selecting only supportive low-score rows."
+    },
+    {
+      "claim_id": "C10",
+      "judgment": "unclear",
+      "field": "reason",
+      "explanation": "Potential missed expressible quantitative claim is specifically C10, not an undifferentiated lack-of-relation objection. The read table and N57/N404/N653-N654 identify the three named earlier/final checkpoint pairs 0.5693/0.0703, 0.7969/0.7813 and 0.7930/0.7852; separate comparative properties can encode them, and the inspected consistency/best-baseline domains explicitly support min_pass population quantifiers. The outcome categorical objection that no uncertainty means no significance relation is too strong: source significantly is not explicitly defined as a statistical test, and the reported gate uses printed precision, not variance. Nevertheless the whole statement also asserts persistent selection benefit, its status says six-plus runs, and the falsifier names >=15 of all 18; the three pairs alone cannot discharge that full population/benefit scope. Full scientific skip correctness is therefore unclear rather than certified correct or definitely expressible. Recommendation separately: clarify descriptive versus statistical significance and complete population/selection evidence, then declare all required checkpoint relations; mechanical annotated-status failure remains distinct."
+    },
+    {
+      "claim_id": "C11",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "All 18 runs remain represented in malt_attempts.md, including best 0.8184 at 345757/7; reference_scores.md official 0.85 is backtick-wrapped and not numeric under the read parser. The all-runs below-reference quantitative part is scientifically expressible once the reference is usable, but whole C11 additionally asserts qualitative recipe superiority and throughput-limited best-of-2/4 strategy scope. Finite maximum or all-attempt score orderings do not certify those extra conjuncts. Current parse-failure skip is correct; neither that evidence-format failure nor fixed claims.md annotated statuses constitute an independent scientific judgment or justify reducing the denominator."
+    },
+    {
+      "claim_id": "C12",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "N56 documents a lost 0.4395 artifact but N57 subsequently recovers a higher 0.5693 checkpoint; N504 and N903 document genuine losses, whereas N355 is successful continuation and N656 re-scores preserved weights under throttling. malt_attempts.md has no numerical backup-policy/recovery indicator or matched named-backup-versus-overwrite experiment for seven runs. The full operational/causal claim and policy counterfactual cannot be expressed by reported score orderings alone, so scientific skip is correct separately from fixed claims-format failure. Recommend reconciling the seven-run universal unrecoverability wording and citations without changing the author ledger."
+    }
+  ]
+}

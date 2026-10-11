@@ -1,0 +1,113 @@
+{
+  "format_version": "1",
+  "ara": "/home/yfhe/ara/DissClaimer/.runs/rq1-direct-20261010/artifacts/paperbench/robust-clip",
+  "results": null,
+  "claims": [
+    {
+      "claim_id": "C01",
+      "standing": "violated",
+      "properties": [
+        {
+          "kind": "best_baseline_consistency",
+          "version": "1",
+          "outcome": {
+            "tag": "violated",
+            "witnesses": [
+              {
+                "case_id": "[[\"encoder\",\"TeCoA2\"],[\"evaluation\",\"4/255\"],[\"vlm\",\"OF-9B\"]]",
+                "detail": "11.9 gt 13.3"
+              }
+            ]
+          },
+          "note": "a baseline in [TeCoA2] beats the treatment for vlm in [OF-9B]",
+          "refinement": {
+            "label": "inconsistency",
+            "note": ""
+          },
+          "statistic": null,
+          "checked": true,
+          "witnesses": [
+            "[[\"encoder\",\"TeCoA2\"],[\"evaluation\",\"4/255\"],[\"vlm\",\"OF-9B\"]]"
+          ]
+        },
+        {
+          "kind": "best_baseline_consistency",
+          "version": "1",
+          "outcome": {
+            "tag": "holds"
+          },
+          "note": "the treatment is the best of 1 baselines [TeCoA4] across all 2 groups",
+          "refinement": {
+            "label": "holds",
+            "note": ""
+          },
+          "statistic": null,
+          "checked": true,
+          "witnesses": []
+        }
+      ],
+      "record": null
+    },
+    {
+      "claim_id": "C05",
+      "standing": "holds",
+      "properties": [
+        {
+          "kind": "best_baseline_consistency",
+          "version": "1",
+          "outcome": {
+            "tag": "holds"
+          },
+          "note": "the treatment is the best of 1 baselines [TeCoA2-CLIP] across all 1 groups",
+          "refinement": {
+            "label": "holds",
+            "note": ""
+          },
+          "statistic": null,
+          "checked": true,
+          "witnesses": []
+        },
+        {
+          "kind": "best_baseline_consistency",
+          "version": "1",
+          "outcome": {
+            "tag": "holds"
+          },
+          "note": "the treatment is the best of 1 baselines [TeCoA4-CLIP] across all 1 groups",
+          "refinement": {
+            "label": "holds",
+            "note": ""
+          },
+          "statistic": null,
+          "checked": true,
+          "witnesses": []
+        },
+        {
+          "kind": "best_baseline_consistency",
+          "version": "1",
+          "outcome": {
+            "tag": "holds"
+          },
+          "note": "the treatment is the best of 2 baselines [FARE2-CLIP, FARE4-CLIP] across all 1 groups",
+          "refinement": {
+            "label": "holds",
+            "note": ""
+          },
+          "statistic": null,
+          "checked": true,
+          "witnesses": []
+        }
+      ],
+      "record": null
+    }
+  ],
+  "undeclared": [
+    "C02",
+    "C03",
+    "C04",
+    "C06",
+    "C07"
+  ],
+  "record_errors": [],
+  "exit_code": 1
+}

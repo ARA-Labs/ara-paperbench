@@ -1,0 +1,41 @@
+{
+  "reviewer": "fresh-context same-system AI review",
+  "claims": [
+    {
+      "claim_id": "C01",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "The RICE mixed-distribution claim concerns a tighter suboptimality upper bound and distribution-mismatch coefficient, not merely larger observed reward. PAPER.md identifies Theorem 3.6/Lemma 3.5; E01 measures fidelity/time and E03/Table 1 Group 2/Table 6 compare refining rewards. Those means do not provide occupancy-ratio supremum or bound operands, and the falsifier explicitly adds statistical significance. A mean reward advantage over Random would not preserve the full theoretical/statistical assertion."
+    },
+    {
+      "claim_id": "C02",
+      "judgment": "faithful",
+      "field": null,
+      "explanation": "The declaration selects Table 1 Group 1, optimized StateMask fixed, and compares Ours against PPO, JSRL and StateMask-R in all eight environments. Excluding No Refine matches the named refining baselines; Group 2 explanation variants are correctly excluded. Higher final reported mean is exactly the obligation in the statement/falsifier, not statistical significance. The gt direction is correct for negative Reacher/CAGE rewards and Malware's evasion percentage within each environment; standard deviations do not imply a significance requirement."
+    },
+    {
+      "claim_id": "C03",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Table 4 supplies both methods' fixed-budget training times and the reported average reduction, but Figure 9 compares alpha choices only within optimized StateMask. There is no original-versus-optimized fidelity grid across all eight environments and K=10/20/30/40%, nor an equivalence criterion for statistically comparable fidelity. Faster training alone would omit the fidelity conjunct; refining reward is not fidelity evidence."
+    },
+    {
+      "claim_id": "C04",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Figure 7 covers the eight dense applications and provides approximate intermediate-versus-extreme p sweeps, while Table 3 identifies default 0.25/0.5 choices. E05 additionally scopes sparse MuJoCo settings and SAC/GAIL Hopper sensitivity, without corresponding p-sweep evidence in the supplied files. Figure 2 is a refining-method comparison and Table 7 a single malware case, not the missing sweeps. A declaration restricted to the dense panels would not preserve all tested environments or the optimal-p condition; collapsed lambda curves must not be expanded into invented measurements."
+    },
+    {
+      "claim_id": "C05",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Figure 8 reports only positive lambda choices 0.1, 0.01 and 0.001; the lambda=0 baseline required by E05 and the claim is absent across the applications. Table 7 supplies only a malware exploration ablation. Comparing positive lambdas with each other cannot express any-positive-lambda improvement over zero, low sensitivity, and lambda=0.01 best in most environments. Noticeable improvement also lacks a specified magnitude, so no observed-gap tolerance should be invented."
+    },
+    {
+      "claim_id": "C06",
+      "judgment": "faithful",
+      "field": null,
+      "explanation": "The declaration selects Figure 3's final approximately 1M-step refining checkpoint in Hopper, with all four named baselines: PPO fine-tuning, JSRL, StateMask-R and SAC fine-tuning. E04 supplies SAC pretraining and GAIL transfer to the PPO-compatible policy; SAC fine-tuning remains the original SAC-policy baseline. It does not replace final reward with pretraining or earlier checkpoints, expand beyond Hopper, or claim statistical significance. Approximate extracted values remain approximate rather than being promoted to exact evidence."
+    }
+  ]
+}

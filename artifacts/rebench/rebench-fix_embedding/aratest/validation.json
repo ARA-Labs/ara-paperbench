@@ -1,0 +1,5 @@
+{
+  "returncode": 2,
+  "stdout": "",
+  "stderr": "error: 1 spec problem(s):\n- claims_unreadable: logic/claims.md: C06: unindented prose inside claim block (not a bullet, not a continuation): '---'\n"
+}

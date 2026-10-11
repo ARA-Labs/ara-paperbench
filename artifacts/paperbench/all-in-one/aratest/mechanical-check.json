@@ -1,0 +1,16 @@
+{
+  "format_version": "1",
+  "ara": "/home/yfhe/ara/DissClaimer/.runs/rq1-direct-20261010/artifacts/paperbench/all-in-one",
+  "results": null,
+  "claims": [],
+  "undeclared": [
+    "C01",
+    "C02",
+    "C03",
+    "C04",
+    "C05",
+    "C06"
+  ],
+  "record_errors": [],
+  "exit_code": 5
+}

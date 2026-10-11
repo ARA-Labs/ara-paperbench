@@ -1,0 +1,46 @@
+{
+  "claims": [
+    {
+      "claim_id": "C01",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "unclear",
+      "explanation": "E01 and evidence/tables/benchmark_c2st_posterior.md report C2ST at all three budgets for the four named tasks, but the required Gaussian Linear “similar performance” conjunct supplies no equivalence margin. The alternate extraction evidence/figures/fig4a_benchmark_posterior.md disagrees numerically with that table (including Gaussian Linear at 1k). A lower-C2ST comparison for only Mixture Gaussian, Two Moons and SLCP would omit the similarity conjunct; no tolerance is invented."
+    },
+    {
+      "claim_id": "C02",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "E01 and evidence/figures/fig4a_benchmark_posterior.md give approximate C2ST curves at 1k/10k/100k. The full claim requires matching a given C2ST level and averaging the resulting simulation-budget reduction over Linear Gaussian and SLCP for structured masks. Reported relations compare cell values, not interpolated level-crossing budgets or their average. The figure’s explicit 10-times statement instead compares Simformer to NPE across all tasks, not structured versus dense Simformer; it cannot substitute for this claim."
+    },
+    {
+      "claim_id": "C03",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "E02 and evidence/tables/benchmark_c2st_all_cond.md summarize C2ST averaged over 100 random conditionals per task; evidence/figures/fig4b_benchmark_all_cond.md refers to calibration figures A9–A12 without providing their coverage numbers. The full assertion concerns any conditional and well-calibrated sampling across Tree/HMM/Two Moons/SLCP, not merely a mean C2ST below 0.7. Neither a reported absolute-threshold relation nor a universal calibration relation is present; finite aggregate C2ST cannot discharge the full assertion."
+    },
+    {
+      "claim_id": "C04",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "prose-only",
+      "explanation": "E03/E04 describe Lotka-Volterra irregular observations and SIRD function-valued contact-rate inference, but evidence/figures/fig5c_lotka_volterra.md contains only paper-stated C2ST thresholds and qualitative posterior/predictive coverage descriptions. No numerical SIRD posterior/predictive coverage evidence or 99% interval endpoints are supplied. A Lotka-Volterra-only C2ST declaration would omit the SIRD and predictive-calibration conjuncts."
+    },
+    {
+      "claim_id": "C05",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "prose-only",
+      "explanation": "E05 describes Hodgkin-Huxley lowest-10%-energy interval guidance and preservation of voltage likelihood, but no energy samples, threshold measurement, or voltage predictive coverage is tabulated. evidence/figures/figA15_guidance_bm.md instead reports approximate guidance C2ST on Tree/HMM/Two Moons/SLCP with recurrence settings; those are not the HH energy-constraint and likelihood-consistency outcomes required here."
+    },
+    {
+      "claim_id": "C06",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "unclear",
+      "explanation": "E01/E02 and evidence/figures/fig_a5_extended_vesde.md provide approximate 100k posterior C2ST for Simformer, posterior-only Simformer and NSPE/NPSE, plus prose saying training only on the posterior mask does not enhance performance. “Similar or better” and posterior-only ≈ NPSE have no equivalence margin or significance definition; replacing similarity with strict non-inferiority, choosing a tolerance from the rounded figure, or using only 100k as the whole benchmark scope would add assumptions."
+    }
+  ]
+}

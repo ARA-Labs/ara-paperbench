@@ -1,0 +1,41 @@
+{
+  "reviewer": "fresh-context same-system AI review",
+  "claims": [
+    {
+      "claim_id": "C01",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "The full statement is a mathematical conjunction: nonnegativity with equality iff p=q, affine invariance, and independence from the target normalizing constant. algorithm.md defines the divergence, whereas E01/E02 and fig5_1_gaussian_targets.md / fig5_2_nongaussian_targets.md report empirical optimization behavior. Installed measurement comparisons do not express these universal identities or dependence assertions; a finite sampled experiment would not cover C01. The no-relation skip is correct."
+    },
+    {
+      "claim_id": "C02",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "algorithm.md gives the PSD U, PD V, quadratic covariance equation, closed-form matrix-square-root solution and subsequent mean update. C02 additionally requires a unique global minimum throughout the Gaussian family. E01-E04 convergence descriptions do not establish this theorem, and the reported catalog cannot express universal matrix identities plus uniqueness. Numerical residual checks on selected inputs would be narrower; the skip preserves the whole claim."
+    },
+    {
+      "claim_id": "C03",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "C03 requires exact GSM covariance and mean identities in the B=1, lambda-to-infinity limit. algorithm.md provides BaM formulas, but E01 is a finite-batch Gaussian benchmark. No installed reported relation expresses a symbolic limit and both matrix identities. Finite large-lambda numerical similarity would not discharge the exact limiting claim; skipping is appropriate."
+    },
+    {
+      "claim_id": "C04",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Theorem 3.1 in algorithm.md states both normalized mean and covariance error bounds for all t, Gaussian targets, infinite batch, fixed positive lambda and initialization-dependent alpha/beta/delta. fig5_1_gaussian_targets.md and figE3_gaussian_reverse_kl.md supply finite-batch KL convergence descriptions, not operands for those analytic bounds. A finite-run monotonicity or speed test would omit the theorem quantifiers and coupled bounds. The no-relation skip is faithful."
+    },
+    {
+      "claim_id": "C05",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "E01-E04 and the four fig5_1 through fig5_4 evidence files do not supply numerical matched-gradient KL/relative-mean-error/MSE trajectories for a complete faster-and-lower comparison over all four target families. The non-Gaussian evidence distinguishes higher limiting forward KL from similar reverse KL at large skew, and the VAE evidence describes comparable MSE at the same 3000 gradients, not a quantified lower error at fewer gradients. Skipping avoids treating iteration speed or isolated families as the whole claim."
+    },
+    {
+      "claim_id": "C06",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "E01-E04 and fig5_1_gaussian_targets.md, fig5_3_posteriordb.md and fig5_4_deep_generative.md give batch configurations and qualitative larger-batch effects, not numeric speed and stability measurements for BaM together with marginal/no improvements for ADVI and GSM. Configuration values such as 15/40/150 versus 2 are not measured benefits. Declaring only BaM improvement or ordering batch sizes would omit the baseline and stability conjuncts. The prose-only skip is correct."
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "format_version": "1",
+  "ara": "/home/yfhe/ara/DissClaimer/.runs/rq1-direct-20261010/artifacts/paperbench/semantic-self-consistency",
+  "results": null,
+  "claims": [
+    {
+      "claim_id": "C04",
+      "standing": "holds",
+      "properties": [
+        {
+          "kind": "best_baseline_consistency",
+          "version": "1",
+          "outcome": {
+            "tag": "holds"
+          },
+          "note": "the treatment is the best of 2 baselines [MathBERT, SciBERT] across all 1 groups",
+          "refinement": {
+            "label": "holds",
+            "note": ""
+          },
+          "statistic": null,
+          "checked": true,
+          "witnesses": []
+        }
+      ],
+      "record": null
+    }
+  ],
+  "undeclared": [
+    "C01",
+    "C02",
+    "C03",
+    "C05",
+    "C06"
+  ],
+  "record_errors": [],
+  "exit_code": 0
+}

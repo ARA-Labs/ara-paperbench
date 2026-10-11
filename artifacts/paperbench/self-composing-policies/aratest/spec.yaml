@@ -1,0 +1,58 @@
+format_version: 7
+evidence:
+  evidence/tables/table1_main_results.md:
+    metric: {axis: column}
+    axes: {METHOD: method}
+    at: {experiment: table1}
+claims:
+  - claim_id: C02
+    provenance: {author: direct-annotation, model: openai-codex/gpt-6-astra}
+    properties:
+      - kind: best_baseline_consistency
+        metric: META-WORLD PERF.
+        over: experiment
+        in_scope: [table1]
+        treatment: {method: COMPONET}
+        baseline_axis: method
+        exclude: ['RT (reference)']
+        comparator: ge
+      - kind: best_baseline_consistency
+        metric: META-WORLD FWD. TRANSF.
+        over: experiment
+        in_scope: [table1]
+        treatment: {method: COMPONET}
+        baseline_axis: method
+        exclude: ['RT (reference)']
+        comparator: ge
+      - kind: best_baseline_consistency
+        metric: SPACEINVADERS PERF.
+        over: experiment
+        in_scope: [table1]
+        treatment: {method: COMPONET}
+        baseline_axis: method
+        exclude: ['RT (reference)']
+        comparator: ge
+      - kind: best_baseline_consistency
+        metric: SPACEINVADERS FWD. TRANSF.
+        over: experiment
+        in_scope: [table1]
+        treatment: {method: COMPONET}
+        baseline_axis: method
+        exclude: ['RT (reference)']
+        comparator: ge
+      - kind: best_baseline_consistency
+        metric: FREEWAY PERF.
+        over: experiment
+        in_scope: [table1]
+        treatment: {method: COMPONET}
+        baseline_axis: method
+        exclude: ['RT (reference)']
+        comparator: ge
+      - kind: best_baseline_consistency
+        metric: FREEWAY FWD. TRANSF.
+        over: experiment
+        in_scope: [table1]
+        treatment: {method: COMPONET}
+        baseline_axis: method
+        exclude: ['RT (reference)']
+        comparator: ge

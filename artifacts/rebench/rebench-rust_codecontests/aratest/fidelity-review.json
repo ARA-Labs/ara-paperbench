@@ -1,0 +1,89 @@
+{
+  "reviewer": "fresh-context same-system AI review",
+  "claims": [
+    {
+      "claim_id": "C01",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "E01-E04 and reference_scores.md document the shipped filter/vote configuration and its official score, but do not supply matched single-sample and unfiltered best-of-N scores at the same token budget. E02 expressly records no ablation score. Comparing official performance with an empty scaffold or unrelated MALT attempts would change the comparison population and omit the universal same-budget superiority claim."
+    },
+    {
+      "claim_id": "C02",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "The solver source fixes tries=18 and num_global_loops=3, and returns once a batch supplies survivors. Its 54-candidate upper bound and early-return behavior are control-flow consequences, not reported-cell relations. The numeric constants do not make the complete program-behavior assertion expressible by a performance comparison."
+    },
+    {
+      "claim_id": "C03",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "The source and E02 support the enabled chain-of-thought flag and appended reasoning instruction. Neither supplies measured evidence for approximately 100-200 additional reasoning tokens per completion. Declaring the flag alone would omit that quantitative cost conjunct, while inventing a token-count comparison would manufacture evidence."
+    },
+    {
+      "claim_id": "C04",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "The source explicitly implements the multiple-survivor branch, GPT-3.5 call, zero temperature, JSON response mode and letter indexing. These are API and dispatch semantics, including a max_tokens cap, rather than an empirical relation between measurements. Numeric outcome comparisons cannot establish the whole claim."
+    },
+    {
+      "claim_id": "C05",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "The solver writes passing solutions before returning and calls get_few_shots with the configured zero count. File persistence and inactive-by-default sampling are the asserted behavior. No reported measurement relation establishes those implementation facts without replacing them with fabricated metrics."
+    },
+    {
+      "claim_id": "C06",
+      "judgment": "unclear",
+      "field": "explanation",
+      "explanation": "The claim and E05 specify an 80-second cutoff, but the copied solver checks elapsed time greater than 200 seconds before a new batch and does not interrupt an in-flight call. Thus even the claimed hard wall-clock guarantee does not follow from the source. The intended bound needs clarification, and preserving latency dominance plus a program-level time guarantee still requires evidence beyond reported scalar comparisons."
+    },
+    {
+      "claim_id": "C07",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "skip_hard=False and the gated rating/difficulty predicate are directly visible in the solver. The full assertion concerns a disabled short-circuit and which problems are attempted, not a comparative score. It therefore remains outside the reported numeric relation vocabulary."
+    },
+    {
+      "claim_id": "C08",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "The Python-generation/translation functions exist, but the corresponding call block in generate_solution is commented out; E07 also records no scoring run for that route. The claim is about inactive implementation and absence of execution. A performance relation cannot establish it from unrelated active-path measurements."
+    },
+    {
+      "claim_id": "C09",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "E08 describes repair as planned but not implemented, and the copied solver's complete generation/filter/vote/retry path contains no repair stage. The historical notes citation itself is absent from this copy. Planned-versus-shipped state is not a numeric relation, so skipping is justified without interpreting a missing implementation as a measured zero."
+    },
+    {
+      "claim_id": "C10",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "The source contains stochastic generation and random problem ordering, but human_baselines.md lists different human attempts rather than matched reruns of one configuration. Nontrivial same-configuration variance, the approximately 0.02 spread and the attributed cause therefore lack the required repeated-run evidence. Comparing different human scores or treating absent uncertainty as zero would change the statistical claim."
+    },
+    {
+      "claim_id": "C11",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "malt_attempts.md visibly contains a standalone schema header without a separator or data row; the frozen outcome reports a parser rejection there. That source-format failure is distinct from the scientific obligation: aggregate invalid counts and M07's prose do not provide an event-level audit proving every invalid event has the Python SyntaxError signature. Repairing parsing alone would not make the full counts-plus-universal-error-class claim expressible."
+    },
+    {
+      "claim_id": "C12",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "The same standalone schema header is the parser failure reported by the frozen outcome, while the file itself contains readable 22-run and stream summaries. Independently of parsing, the full Statement commits to named attained maxima, per-stream medians, a runner-up and the additive 0.033 gaps. An all-runs-below-reference comparison would express the headline but not this complete quantitative conjunction."
+    },
+    {
+      "claim_id": "C13",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "M02 narrates zero implementations and names nine supporting run summaries, but those external per-run insights are not included in the copied ARA. The obligation concerns algorithmic shape, absence of equivalent filtering/voting, and an interpretation of structural non-obviousness. Numeric run scores or a count threshold cannot establish the complete implementation-history claim."
+    },
+    {
+      "claim_id": "C14",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "M03-M04 report the library score ladder, prompt-engineering ceiling and independent rediscovery in prose, rather than a matched per-approach sequence of measurements. The claim additionally attributes all gains to four specific additions and extrapolates to 22/165 and 33/165. Comparing final run maxima would discard its causal and extrapolative commitments."
+    }
+  ]
+}

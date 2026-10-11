@@ -1,0 +1,53 @@
+{
+  "reviewer": "fresh-context same-system AI review",
+  "claims": [
+    {
+      "claim_id": "C01",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Correct skip. C01 asserts perceptual completeness for perfect delivery, initial delay, slow streaming and mid-stream pauses, including cases missed by TTFT/TPOT. E01 and PAPER.md discuss the timeline metric, while the supplied Figure 11 measurements do not establish agreement with perceived experience or exclusion of the alternative metrics. A pairwise reported-evidence relation would not cover the whole claim."
+    },
+    {
+      "claim_id": "C02",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Correct skip. E02 and the supplied Figure 15 variants report the 4.7× maximum only as multiplier/text cells and explicitly lack the per-model, per-dataset, per-intensity QoE grid. The measurement reader excludes multiplier cells; alternate Figure 15 extractions do not supply the missing comparison operands. Directional superiority or one configuration would omit the stated magnitude or four-model/three-dataset scope."
+    },
+    {
+      "claim_id": "C03",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Correct skip. The 61% GPU savings and equivalent 2.6× burst capacity are conditioned on average QoE ≥0.95. Figure 15 supplies summary text rather than threshold-conditioned capacity curves or GPU-count comparisons. An alternate Figure 15 extraction has a numeric 61% summary cell, but that alone cannot express the whole conditional savings/capacity conjunction. The falsifier's phrase '≥61% of vLLM resources (no savings)' is not equivalent to the statement's 61% savings and must not replace the statement."
+    },
+    {
+      "claim_id": "C04",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Correct skip. E01/Figure 11 supplies six substantive endpoints: Andes/vLLM qualifying-request fractions 97%/75% at QoE ≥0.95, average QoE 0.99/0.88, and average TTFT 1.8/10.5 seconds on the specified one-hour BurstGPT configuration. The reported catalog compares measured operands and lacks reported scalar-value equality for these endpoints. Relative improvement alone would lose the absolute values and qualifying-request threshold. A generative threshold relation requires experiment-result cases rather than these reported tables."
+    },
+    {
+      "claim_id": "C05",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Correct skip. E04 and both Figure 17 extractions describe QoE degradation and increasing preemptions after refiner removal over the burst-duration sweep, without a numeric Andes/ablated-Andes QoE and preemption grid. The alternate extraction's explicit zero preemptions concerns vLLM, not the required ablation. An unrelated baseline comparison or invented curve would not cover this claim."
+    },
+    {
+      "claim_id": "C06",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Correct skip. E05/Figure 18 and its alternate extraction report approximately 20× solver speedup as text and slightly better QoE qualitatively, without raw runtimes or numerical QoE sweep points. The complete claim also includes algorithmic complexities and the explanation that faster scheduling permits more frequent decisions. A direction-only QoE comparison would not discharge the whole claim."
+    },
+    {
+      "claim_id": "C07",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Correct skip. E01 cites Figures 3 and 13 for the 85% peak waiting-queue reduction, but the supplied evidence inventory has no corresponding queue measurement file. All Figure 11 variants concern QoE, TTFT and TDS, not peak waiting queues. Those metrics cannot substitute for the required queue-length operands and reduction magnitude."
+    },
+    {
+      "claim_id": "C08",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Correct skip. E02/E03/E06 require superiority to vLLM, Sarathi-Serve and LQSF over all tested architectures, datasets, burst intensity/duration sweeps and Poisson rates. Figures 15/16 lack numeric sweep grids; Figure 20 is qualitative, and its alternate extraction supplies estimated ranges while omitting two baselines. A maximum gain or selected favorable pair would not cover the universal tested-combination scope."
+    }
+  ]
+}

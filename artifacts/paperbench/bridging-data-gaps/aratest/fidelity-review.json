@@ -1,0 +1,35 @@
+{
+  "reviewer": "fresh-context same-system AI review",
+  "claims": [
+    {
+      "claim_id": "C01",
+      "judgment": "faithful",
+      "field": null,
+      "explanation": "The two best_baseline_consistency properties separately require DDPM-TAN and LDM-TAN to beat every TGAN, TGAN+ADA, EWC, CDC, DCL and DDPM-PA baseline on at least three of the five main 10-shot adaptation tasks. The explicit five-task falsifier resolves the main-table cohort; E02/Appendix Table 3 have two additional DDPM-only tasks and cannot silently provide LDM outcomes or enlarge a common cohort. Excluding only the other TAN variant preserves all six true baselines. LMD-TAN is a spelling normalization, not a variant merger. The generic table1_reported_value metric is pinned to the five Intra-LPIPS measure fields, excluding Parameter Rate. Thus majority, baselines, variants, tasks and units are preserved; reported spreads may affect decidability, not semantic fidelity."
+    },
+    {
+      "claim_id": "C02",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "C02 names DDPM-TAN/LDM-TAN while E01 distinguishes those models. table2_fid.md has one Our method (TAN) row, described as a combined DDPM-TAN/LDM-TAN result, without variant-specific Babies/Sunglasses scores or a rule resolving the slash in the statement. Assigning the same row to both models would fabricate missing variant outcomes. The baseline spelling aliases are resolvable but treatment identity is not; the unclear skip is appropriate until variant attribution and quantification are supplied."
+    },
+    {
+      "claim_id": "C03",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "The full conjunction includes DDPM-TAN parameter rate, convergence iterations, GPU hours and memory versus full fine-tuning. E03 gives prose values and different batch/GPU configurations; table1_intra_lpips.md supplies parameter rates, and table6_iteration_sensitivity.md describes a different LDM iteration/FID series. Neither supplies reported DDPM runtime/memory operands or resolves wall-clock versus aggregate GPU-hour meaning across one versus eight GPUs. Declaring only parameter efficiency would omit computational efficiency and convergence, so the prose-only skip is appropriate."
+    },
+    {
+      "claim_id": "C04",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "E04 describes 2D toy gradients against a 10000-sample reference and generated-sample heatmaps but gives no numerical angular deviations or target-mode concentration operands. figure1_lpips_transfer.md instead concerns FFHQ image perceptual distances; figure4_ablation.md concerns FID. Neither measures both the claimed gradient correction and target-mode concentration. Skipping the whole claim is appropriate; a face-image FID comparison would change the experiment and omit required outcomes."
+    },
+    {
+      "claim_id": "C05",
+      "judgment": "faithful",
+      "field": null,
+      "explanation": "The statement uses the four observed FID scores to ground a component sequence, not to stipulate exact target-score equality or a minimum additive benefit: its title and falsifier require similarity guidance to improve over adaptor only and adversarial noise to improve further. All three comparative properties preserve the complete mixed-direction sequence at FFHQ-to-10-shot Sunglasses and 300 iterations: adaptor-only FID exceeds direct fine-tuning, no-adversarial-noise FID is lower than adaptor-only, and full TAN FID is lower again. Variants and the fid metric are correctly selected from the Extracted Data Points section. figure4_ablation.md records 20.06 in the figure and 20.66 in prose; both preserve the claimed direction, and using the explicitly cited figure does not invent an exact-value requirement. No correction is needed; exact numeric reproducibility would require a clarified additional assertion."
+    }
+  ]
+}

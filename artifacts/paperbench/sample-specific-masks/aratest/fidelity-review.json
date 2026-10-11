@@ -1,0 +1,41 @@
+{
+  "reviewer": "fresh-context same-system AI review",
+  "claims": [
+    {
+      "claim_id": "C01",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Skipping is appropriate. C01 concerns different individual samples preferring different shared masks and positive final-minus-initial loss changes during shared-mask training. E01 requires per-image confidence and per-sample loss distributions; the evidence index links only dataset-aggregated accuracy Tables 1–2 for C01. Those aggregates do not supply either required individual-level observation, and an aggregate accuracy comparison would not preserve the claim."
+    },
+    {
+      "claim_id": "C02",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Skipping is appropriate. The claim asserts hypothesis-class containment for a fixed pretrained model and arbitrary target distribution, with an approximation-error ordering obtained from Theorem 4.2; it also asserts containment of the sample-specific-pattern class. E02 specifies the mathematical argument. Table 4 reports generator parameter sizes, and Table 11 reports finite EuroSAT train/test accuracies, neither of which establishes universal containment or approximation-error ordering. The title's strict wording and the statement's non-strict error inequality must not be silently replaced by empirical accuracy superiority."
+    },
+    {
+      "claim_id": "C03",
+      "judgment": "faithful",
+      "field": null,
+      "explanation": "The best-baseline declaration preserves the four Pad/Narrow/Medium/Full comparators, fixed ImageNet-1K ResNet-18 and ResNet-50 conditions, strict accuracy superiority, and both reported AVERAGE rows. Its ResNet-18 override excludes precisely DTD and retains the other ten datasets; ResNet-50 retains all eleven. Table 1 confirms that DTD is the ResNet-18 exception: SMM is 33.6 versus Pad 35.3, while its average is 52.53 versus the best baseline 46.85. Treating the named exception as outside the positive-comparison scope does not incorrectly demand superiority on DTD."
+    },
+    {
+      "claim_id": "C04",
+      "judgment": "expressible",
+      "field": "disposition",
+      "explanation": "The skip treats all reported numbers as additional exact-value or additive-margin commitments, but the claim's operative comparison is superiority over all four baselines on most of the eleven ViT-B32 datasets and higher overall average; its falsifier likewise tests average ordering, not a specified minimum numerical gain. The 72.4 versus 65.2 averages and the three 'Notable gains' ground and illustrate that comparison rather than impose an 'at least' margin. A best_baseline_consistency property over all eleven datasets with min_pass=6, conjoined with a strict best-baseline comparison on AVERAGE, preserves this comparative claim using Table 2 under E04's default LR=0.001. Table 2 supplies every operand; UCF101 and EuroSAT must remain in the majority scope, not be silently excluded or replaced by tuned UCF101 results."
+    },
+    {
+      "claim_id": "C05",
+      "judgment": "faithful",
+      "field": null,
+      "explanation": "The dataset choices for the two component-removal clauses are traceable to E05, not inferred opportunistically from observed accuracies: E05 explicitly names CIFAR10/Flowers102/UCF101 as feature-rich and CIFAR10/SVHN/GTSRB/SUN397 for the large-data comparison. The declaration separately compares full SMM against Only δ and Only fmask on those respective scopes, preserves the specifically highlighted GTSRB/Flowers102 single-channel comparisons, and requires AVERAGE superiority against all three ablations. Table 3 supplies all four actual variants under the same ResNet-18 conditions. The average comparison also preserves the channel-benefit falsifier across eleven datasets; 'especially' supplies no numerical margin, and the statement does not explicitly quantify single-channel superiority as universal over every dataset."
+    },
+    {
+      "claim_id": "C06",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Skipping the whole claim is appropriate. Table 5 supplies the stated ResNet-18/50 access counts and A100 batch-256 timing measurements, but C06 also expressly states that patch-wise interpolation requires no backpropagation through the interpolation step. Its categorical NO entry is not a numeric ordering or ratio. Numeric efficiency comparisons alone would leave that algorithmic condition unexpressed; the ViT-B32 rows are a different model condition and cannot substitute for the stated ResNet values."
+    }
+  ]
+}

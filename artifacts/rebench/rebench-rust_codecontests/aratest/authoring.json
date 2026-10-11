@@ -1,0 +1,112 @@
+{
+  "authoring_mode": "direct annotation by the current assistant; no model runner or provider calls",
+  "author": {
+    "agent": "AnnotateBenchmarks",
+    "model": "openai-codex/gpt-6-astra"
+  },
+  "format_version": 7,
+  "claims_inventoried": 14,
+  "declared": 0,
+  "skipped": 14,
+  "initial_candidate": "first-spec.yaml",
+  "current_candidate": "spec.yaml",
+  "candidate_sha256": "5b1e3ece5a60baac9559920d78f7ea429efb66f3095e096b16a8f4e1a222d0c6",
+  "repaired_candidates": [],
+  "source_fidelity_review": "No independent fidelity review performed",
+  "relations_inspected": [
+    {
+      "kind": "best_baseline_consistency",
+      "version": "1",
+      "reported_evidence": true
+    },
+    {
+      "kind": "comparative",
+      "version": "1",
+      "reported_evidence": true
+    },
+    {
+      "kind": "compound_consistency",
+      "version": "1",
+      "reported_evidence": true
+    },
+    {
+      "kind": "consistency",
+      "version": "1",
+      "reported_evidence": true
+    },
+    {
+      "kind": "differential",
+      "version": "1",
+      "reported_evidence": false
+    },
+    {
+      "kind": "equivalence",
+      "version": "1",
+      "reported_evidence": false
+    },
+    {
+      "kind": "invariant",
+      "version": "1",
+      "reported_evidence": false
+    },
+    {
+      "kind": "monotonic",
+      "version": "1",
+      "reported_evidence": false
+    },
+    {
+      "kind": "threshold",
+      "version": "1",
+      "reported_evidence": false
+    }
+  ],
+  "numeric_evidence_inspected": [
+    {
+      "ara": "rebench/rebench-rust_codecontests",
+      "file": "tables/reference_scores.md",
+      "blocks": 2,
+      "cells": 40,
+      "axes": [
+        [
+          "Quantity",
+          "column"
+        ],
+        [
+          "#",
+          "column",
+          "section"
+        ]
+      ],
+      "skipped_cells": 0
+    },
+    {
+      "ara": "rebench/rebench-rust_codecontests",
+      "file": "tables/human_baselines.md",
+      "blocks": 2,
+      "cells": 47,
+      "axes": [
+        [
+          "Run",
+          "column"
+        ],
+        [
+          "Statistic",
+          "column",
+          "section"
+        ]
+      ],
+      "skipped_cells": 0
+    }
+  ],
+  "validation_record": "validation.json",
+  "validation_exit_code": 2,
+  "verdicts_executed": false,
+  "fresh_experiments_executed": false,
+  "provenance_note": "No claim-level provenance fields can be attached because no complete declarations were authored; author identity is recorded here, not as an unsupported spec field.",
+  "evidence_parse_failures": [
+    {
+      "path": "evidence/tables/malt_attempts.md",
+      "error": "line 13: table block needs a header row, a separator row, and at least one data row"
+    }
+  ]
+}

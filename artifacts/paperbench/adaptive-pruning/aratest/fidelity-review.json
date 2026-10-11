@@ -1,0 +1,53 @@
+{
+  "reviewer": "fresh-context same-system AI review",
+  "claims": [
+    {
+      "claim_id": "C01",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Correct skip. E01/Table 2 covers RoBERTa/T5 MNLI and SST2 and T5 CNN/DM ROUGE-1/2/L at 60% sparsity. 'Up to 98%' does not identify a retention floor, maximum or task aggregation, while the falsifier introduces a different 96% floor. CNN/DM cells are slash-separated triples, not three numeric metric operands under the production reader. A GLUE-only declaration or a substituted 96% threshold would not cover the stated scope and magnitude."
+    },
+    {
+      "claim_id": "C02",
+      "judgment": "wrong",
+      "field": "properties[*].comparator / properties[*].ratio",
+      "explanation": "The model-specific subject/reference directions, SST2 97%-TTA metric and measured 60%-sparsity rows are appropriate, but conjunctions ratio_ge(8.4) AND ratio_le(8.4), and similarly at 8.2, demand exact ratio equality rather than handling the precision of the reported speedups. The reported gate compares subject−ratio×reference, returns inconclusive within half the coarser printed quantum, and otherwise necessarily fails one of the opposite comparisons. Therefore no measured pair can decisively satisfy either conjunction, even at exact equality. E01/Table 11 gives 6513/752≈8.66 and 14417/1774≈8.13; the outcome already acknowledges these evidence/statement discrepancies, which must not be repaired by changing the claim numbers. Required correction: distinguish exact versus rounded ratio meaning and use a supported precision-aware magnitude relation, or skip the whole claim if unavailable. Do not replace the statement with its weaker 6× falsifier or describe the existing equality conjunction as preserving a rounded magnitude."
+    },
+    {
+      "claim_id": "C03",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Correct skip. E01/Table 2 supplies the CoFi Prune+Distill comparison: MNLI 86.4 versus 87.3, SST2 94.5 versus 94.5, memory 70.1% versus 168.5% of FT, and time 592.1% versus 1495.3% of FT. The 41.6% memory claim is relative to CoFi, not directly to FT; 70.1/168.5≈0.416 preserves that baseline identity. The full claim additionally requires the additive within-0.9-point MNLI margin, SST2 equality and reported 2.5× convergence magnitude. The reported catalog has no general additive-margin/equality relation for this complete conjunction. E04/Table 10's FT-teacher and LoRA-teacher variants are not interchangeable with CoFi."
+    },
+    {
+      "claim_id": "C04",
+      "judgment": "wrong",
+      "field": "properties / outcomes.C04.explanation",
+      "explanation": "The selected E03/Table 5 operands correctly identify APT versus w/o kurtosis on LLaMA2-7B at 30% sparsity, but the same-target ratio_ge/ratio_le conjunction at 0.762 cannot produce a decisive satisfied equality under the comparison gate: 38.1−0.762×50.0=0, so both properties are inconclusive. Moreover, the statement substantively asserts a drop from 50.0 to 38.1, with the 23.8% reduction parenthetically derived from it; those are not merely parenthetical operand labels. A ratio-only predicate would also accept proportionally rescaled endpoints and does not enforce that whole assertion. Required correction: represent the endpoint change and reduction with supported precision-aware semantics, or skip the entire claim because that full relation is unavailable. Do not substitute only directional degradation or the weaker 5% falsifier."
+    },
+    {
+      "claim_id": "C05",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Correct skip. E03/Table 4 supplies full APT versus static-rank w/o AT SST2 94.5→93.2, MNLI 86.4→84.5 and normalized convergence time 592.1→684.9. A roughly 16% slowdown comparison alone would omit the explicitly asserted task-specific endpoint changes; direction-only accuracy comparisons likewise omit them. The reported catalog has no scalar/additive-change relation covering this complete conjunction. The additive 0.5-point falsifier must not be silently converted to a ratio margin."
+    },
+    {
+      "claim_id": "C06",
+      "judgment": "wrong",
+      "field": "properties[*].comparator / properties[*].ratio",
+      "explanation": "The declaration correctly retains the four-task Avg. metric, LLaMA2-7B 30% pruning condition and LoRA reference. Table 3 memory is normalized to dense LoRA, so comparing APT 75.8% with LoRA 100% has the correct baseline identity; FT and LLMPruner must not replace it. The parenthetical '50.0 vs 57.9' reasonably grounds the average-performance operands and is not an additional absolute-endpoint requirement. However, demanding exact equality through opposite comparisons at 0.864 and 0.758 mishandles rounded reported magnitudes and cannot yield a decisive satisfied conjunction. For performance, 50.0−0.864×57.9=−0.0256 lies inside the 0.05 printed-precision gate, so both comparisons are inconclusive; the memory equality also has zero margin. Required correction: use supported precision-aware ratio semantics for both retention and memory, or skip the whole claim if unavailable, without substituting the weaker 80%/90% falsifier."
+    },
+    {
+      "claim_id": "C07",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Correct skip on unresolved memory conditions. E02/Table 3 supplies APT/LLMPruner Avg. 50.0/42.9 and normalized memory 75.8%/253.6%, consistent with approximately 30% relative memory. But Table 12 gives raw APT 24,408 MB and LLMPruner 23,425 MB, explicitly conflicting with the ~80 GB LLMPruner prose figure and noting possible phase/condition differences. No available evidence identifies a same-phase pair supporting both the relative and absolute memory conditions. An accuracy-only property or an unqualified normalized-memory comparison would narrow the whole claim."
+    },
+    {
+      "claim_id": "C08",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Correct skip. E05/Figure 3 reports the same-accuracy RoBERTa 21.8% speed/7% memory advantages and T5-at-97%-dense-performance 62.7% speed/24.8% memory advantages in textual cells. It does not provide numeric matched-accuracy operand pairs or significance information. Table 2's fixed-sparsity points have different accuracies and cannot replace the claimed Pareto comparisons. All model-specific magnitudes and target-accuracy conditions must be retained."
+    }
+  ]
+}

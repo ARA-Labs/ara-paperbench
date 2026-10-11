@@ -1,0 +1,43 @@
+{
+  "claims": [
+    {
+      "claim_id": "C01",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "E01 and evidence/tables/table2_correlation.md report absolute R-squared and PEA for 75 combined VMs/VLMs, including all four severe-shift datasets and the Top-1 ImageNet-A R-squared. The statement requires both absolute R-squared >0.7 and PEA >0.7 at every named dataset plus the Top-1 approximately-zero condition. Reported relations only compare evidence cells and cannot bind these literal absolute bounds or an unspecified near-zero interval. The threshold relation is for fresh null-calibration run batches, not reported correlation cells. Merely checking LCA correlation > Top-1 correlation would omit the substantive 0.7 conditions; the weaker falsifier is not substituted for the statement."
+    },
+    {
+      "claim_id": "C02",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "E03 and evidence/tables/table4_kmeans_latent.md give mean/min/max/std PEA over 75 source-model hierarchies and WordNet reference values; the nine-layer construction is specified in E03 and table4_kmeans_latent_hierarchy.md. The complete assertion includes an absolute mean PEA >0.66 on each of ImageNet-S/R/A/ObjectNet as well as slightly lower than WordNet. The reported comparison relations cannot express the absolute mean bound or the falsifier absolute 0.5 and 0.3 criteria; no reported-table threshold relation exists. A WordNet comparison alone would discard the central quantitative robustness condition."
+    },
+    {
+      "claim_id": "C03",
+      "disposition": "declared",
+      "declaration_ids": [
+        "C03"
+      ],
+      "reason": null,
+      "explanation": "One compound_consistency property represents all six backbones, at least three improvements among ImageNet-S/R/A/ObjectNet for each backbone, AND nondecreasing ID ImageNet accuracy for each. evidence/tables/table5_soft_labels_wordnet.md identifies Ours as CE + LCA soft loss + linear weight interpolation (not uninterpolated CE+soft), Baseline as CE-only, and E04 fixes frozen linear probing, WordNet, lambda=0.03 and temperature=25. ImageNet-v2 is not one of the four claimed severe shifts. ID tolerance is zero as required by without reducing ID accuracy; the falsifier statement that >0.5% weakens the claim is not used to relax that stronger assertion. Missing variance remains missing; no significance conclusion is added."
+    },
+    {
+      "claim_id": "C04",
+      "disposition": "declared",
+      "declaration_ids": [
+        "C04"
+      ],
+      "reason": null,
+      "explanation": "The conjunction preserves all three measured conditions in evidence/tables/table7_simulation.md: causal-feature f has lower OOD Top-1 error, lower ID LCA distance, and higher ID Top-1 error than confounding-feature g. Three comparative properties are necessary because these are distinct metrics and ID error has the opposite direction. E06 supplies the controlled Gaussian-mixture generation, feature assignments, missing x2 at OOD and 100-trial average; the declaration is limited to that simulation rather than claiming causality in arbitrary real datasets. It uses the f/g rows directly, not the Diff row whose printed signs disagree with its g-minus-f label. Error is correctly treated as the inverse of accuracy; missing trial dispersion is not invented."
+    },
+    {
+      "claim_id": "C05",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "E05 and evidence/tables/table14_prompt_engineering.md identify CLIP-ViT32, all five OOD datasets (including ImageNet-v2), four prompt variants, Top-1 and cross-entropy. Directional comparisons could preserve both metrics and all baselines, but the full statement explicitly says significantly improves. The table gives single reported values with no uncertainty, paired predictions or significance level, and reported cell-pair relations cannot supply an inferential significance conclusion. No direction-only replacement is made, nor is all tested OOD datasets weakened to the at-least-four-of-five falsifier."
+    }
+  ]
+}

@@ -1,0 +1,59 @@
+{
+  "format_version": "1",
+  "ara": "/home/yfhe/ara/DissClaimer/.runs/rq1-direct-20261010/artifacts/paperbench/rice",
+  "results": null,
+  "claims": [
+    {
+      "claim_id": "C02",
+      "standing": "holds",
+      "properties": [
+        {
+          "kind": "best_baseline_consistency",
+          "version": "1",
+          "outcome": {
+            "tag": "holds"
+          },
+          "note": "the treatment is the best of 3 baselines [JSRL, PPO, StateMask-R] across all 1 groups",
+          "refinement": {
+            "label": "holds",
+            "note": ""
+          },
+          "statistic": null,
+          "checked": true,
+          "witnesses": []
+        }
+      ],
+      "record": null
+    },
+    {
+      "claim_id": "C06",
+      "standing": "undecided",
+      "properties": [
+        {
+          "kind": "best_baseline_consistency",
+          "version": "1",
+          "outcome": {
+            "tag": "inconclusive"
+          },
+          "note": "the treatment ties, reads approximate, or is unobserved against a baseline of [JSRL, PPO fine-tuning, SAC fine-tuning, StateMask-R] for group in [(all)]",
+          "refinement": {
+            "label": "inconclusive",
+            "note": ""
+          },
+          "statistic": null,
+          "checked": true,
+          "witnesses": []
+        }
+      ],
+      "record": null
+    }
+  ],
+  "undeclared": [
+    "C01",
+    "C03",
+    "C04",
+    "C05"
+  ],
+  "record_errors": [],
+  "exit_code": 4
+}

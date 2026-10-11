@@ -1,0 +1,1885 @@
+{
+  "artifacts/extra/andes": {
+    "claims": [
+      {
+        "claim_id": "C01",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "nonquantitative",
+        "explanation": "E01 and PAPER.md describe Equation 3 and the four user-experience cases, including the Figure 5d pause scenario. This is a claim about perceptual completeness and what TTFT/TPOT cannot detect, not a reported numeric comparison; the catalog cannot establish equivalence to perceived experience."
+      },
+      {
+        "claim_id": "C02",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "parse failure",
+        "explanation": "E02, evidence/figures/figure15_avg_qoe_vs_burst_intensity.md reports up to 4.7\u00d7 in a summary cell, but the production parser yields no numeric measurements for that file. No per-model/dataset/intensity Andes and vLLM QoE cells are supplied for the four-model, three-dataset sweep; reducing the claim to a directional comparison would omit the maximum magnitude."
+      },
+      {
+        "claim_id": "C03",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "parse failure",
+        "explanation": "E02, evidence/figures/figure15_avg_qoe_vs_burst_intensity.md contains textual summary cells for 61% savings and 2.6\u00d7 burst capacity at QoE 0.95, all nonnumeric under the production parser. The threshold-conditioned capacity curves and GPU counts needed for the full 61%/2.6\u00d7 assertion are not tabulated."
+      },
+      {
+        "claim_id": "C04",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "E01, evidence/figures/figure11_burstgpt_cdf_qoe_ttft_tds.md supplies Andes/vLLM average QoE 0.99/0.88, qualifying-request percentages 97/75, and TTFT 1.8/10.5 seconds for Phi-3.5-MoE on the one-hour trace. These parse, but reported-evidence relations only compare measured operands; they cannot assert all six absolute values. Relative improvement alone would discard the 97% at QoE\u22650.95 condition and the specified TTFT endpoint."
+      },
+      {
+        "claim_id": "C05",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "prose-only",
+        "explanation": "E04, evidence/figures/figure17_overhead_refiner_ablation.md gives only directional preemption and QoE descriptions over 25%,30%,35%,40%,45% burst durations, with no numeric measurements parsed. Both excessive preemptions and QoE degradation on Llama 3.1 70B/ShareGPT are required; neither may be replaced by an invented curve."
+      },
+      {
+        "claim_id": "C06",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "prose-only",
+        "explanation": "E05, evidence/figures/figure18_knapsack_solver_comparison.md gives the approximately 20\u00d7 speedup as text and describes slightly better QoE without numeric per-intensity/per-duration results or solver runtimes. The causal explanation and O(N log N) versus O(MN\u00b2) complexity also cannot be discharged by a reported pairwise QoE relation."
+      },
+      {
+        "claim_id": "C07",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "prose-only",
+        "explanation": "E01 names Figures 3 and 13 for peak waiting-queue length, but the supplied Figure 11 evidence tabulates only QoE, TTFT, and TDS. The 85% peak-queue reduction has no underlying peak queue measurements in the supplied evidence; QoE is not a substitute for queue length."
+      },
+      {
+        "claim_id": "C08",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "prose-only",
+        "explanation": "E02/E03/E06 and evidence/figures/figure15_avg_qoe_vs_burst_intensity.md, figure16_avg_qoe_vs_burst_duration.md, figure20_poisson_arrival.md describe superiority to vLLM, Sarathi-Serve, and LQSF but provide no parsed numeric QoE grid covering the four architectures, three datasets, both burst sweeps, and Poisson rates. A best-baseline aggregation is expressible, but its required operand grid is unavailable."
+      }
+    ]
+  },
+  "artifacts/extra/expbench": {
+    "claims": [
+      {
+        "claim_id": "C01",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "E01, evidence/tables/table1_main_results.md parses seven agent configurations and D/I/C/All\u00b7E\u2713 percentages. The specified phase ranges 6.4\u201320.6, 10.0\u201335.0, 0.0\u201314.9 and near-zero end-to-end conjunction cannot be represented by the reported-evidence pairwise catalog as absolute range/extremum assertions. The table also contains IterativeAgent+Nova D=0.1, outside the stated D range; it is not silently excluded."
+      },
+      {
+        "claim_id": "C02",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "E01, evidence/tables/table1_main_results.md supplies OpenHands+o3-mini All\u00b7E\u2713=0.5 across 461 tasks. A best-baseline relation could encode its ranking but not the independently asserted absolute 0.5% success rate; using only ranking would omit the central claim. The notes define the actual D>0/I>0/C/executable conjunction, which is retained rather than redefined."
+      },
+      {
+        "claim_id": "C03",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "E02, evidence/figures/fig6b_conjunctive_metrics.md parses the execution-verified average sequence 20.6,3.7,0.4,0.2 at M,M\u00b7C\u00b7D,M\u00b7C\u00b7D\u00b7I,M\u00b7C\u00b7D\u00b7I\u00b7E. Pairwise inequalities can encode decreasing order but cannot enforce the four asserted absolute averages; per-agent values for all intermediate levels required by the falsifier are also absent."
+      },
+      {
+        "claim_id": "C04",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "E03, evidence/tables/table2_failure_patterns.md and table8_extended_failure_patterns.md parse Missing Essential Implementation Components=39.71%. Ranking relations cannot express the absolute 39.71% prevalence condition. Both tables explicitly provide only subsets of the 361 categories distilled from 3,238 insights, so declaring a best-baseline comparison would also narrow the all-failure-category scope."
+      },
+      {
+        "claim_id": "C05",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "E03, evidence/tables/table2_failure_patterns.md parses execution environment/dependency errors=29.38% and script/file errors=23.84%. The catalog lacks reported scalar equality and sum-over-categories threshold relations, so neither both absolute percentages nor their over-half conjunction can be completely expressed. The evidence also warns that categories may overlap; no disjoint union is invented."
+      },
+      {
+        "claim_id": "C06",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "prose-only",
+        "explanation": "E04, evidence/figures/fig5_metric_stability.md contains High/Substantially lower descriptions, not numeric variances or standard deviations. There are no per-task/per-agent dispersion measurements for C vs C\u00b7D or E vs I\u00b7E to encode the lower-variance comparison or the falsifier requiring at least five of seven configurations."
+      }
+    ]
+  },
+  "artifacts/extra/venn": {
+    "claims": [
+      {
+        "claim_id": "C01",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "parse failure",
+        "explanation": "E01, evidence/tables/table1_jct_improvement.md contains the five Venn speedups 1.87\u00d7,1.78\u00d7,1.72\u00d7,1.88\u00d7,1.63\u00d7 for Even/Small/Large/Low/High under 50-job Poisson simulation. Production evidence parsing yields zero numeric cells because the multiplication-suffixed cells are not parsed. Figure 11 supplies only Low/High and cannot replace the full five-workload assertion."
+      },
+      {
+        "claim_id": "C02",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "unclear",
+        "explanation": "E02, evidence/figures/fig11_ablation_breakdown.md distinguishes FIFO (Low 1.55) from Venn w/o sched (Low 1.62), whereas C02 names Venn w/o sched / FIFO as if they were one 1.62 variant. The same figure supports IRS-only 1.79 Low and 1.63 High with no further High gain, but a faithful whole declaration cannot resolve that baseline-identity conflation by aliasing distinct methods. The falsifier additionally introduces a 5% component-removal threshold absent from the Statement."
+      },
+      {
+        "claim_id": "C03",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "E02, evidence/figures/fig11_ablation_breakdown.md supplies matching-only/FIFO speedups 1.62/1.55 in Low and 1.42/1.42 in High. Deterministic ratio comparisons could represent these reported means, but the claim falsifier explicitly requires statistically significant High-workload improvement; no variance, repetitions, significance margin, or compatible reported significance relation is available. Numerical equality of rounded means does not establish absence of statistical benefit."
+      },
+      {
+        "claim_id": "C04",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "E03, evidence/figures/fig10_overhead.md parses approximate 0.2\u20131.0 ms latency across 100\u20131000 jobs and 10\u2013100 groups. These observations cannot establish the asserted max(O(m log m),O(n\u00b2)) algorithmic complexity; the catalog also lacks a reported-evidence absolute ~1 ms ceiling. A trend-only comparison would omit both requirements."
+      },
+      {
+        "claim_id": "C05",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "prose-only",
+        "explanation": "E04 cites Figure 9 for FIFO/SRSF/Venn wall-clock accuracy trajectories on ResNet-18+MobileNet-V2/FEMNIST with 20 jobs, but no Figure 9 evidence file or trajectory table is supplied. evidence/figures/fig4_contention_impact.md instead compares job counts under random matching and cannot ground common ~0.75 final accuracy or faster Venn convergence. The one-percentage-point falsifier also has no uncertainty support."
+      },
+      {
+        "claim_id": "C06",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "E05, evidence/figures/fig14_fairness_knob.md parses approximate speedup/fairness sweeps and exact 69% at \u03b5=2. Comparisons can express ordering but cannot enforce the absolute 69% fair-share fraction at Ti=M\u00d7sdi. A directional sweep alone would omit that substantive condition; approximation markers cannot be erased to make strict monotonic claims."
+      }
+    ]
+  },
+  "artifacts/paperbench/adaptive-pruning": {
+    "claims": [
+      {
+        "claim_id": "C01",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "unclear",
+        "explanation": "E01, evidence/tables/table2_roberta_t5_main.md reports MNLI/SST2 and T5 CNN/DM ROUGE-1/2/L at 60% sparsity, but the claim does not resolve whether up to 98% is a maximum, an approximate retention floor, or an aggregation across tasks; its falsifier instead introduces a 96% floor. CNN/DM is a slash-separated triple not parsed into numeric metric operands. No single GLUE-only retention comparison discharges the stated CNN/DM scope."
+      },
+      {
+        "claim_id": "C02",
+        "disposition": "declared",
+        "declaration_ids": [
+          "C02"
+        ],
+        "reason": null,
+        "explanation": "E01 and evidence/tables/table11_raw_efficiency_roberta_t5.md identify APT and LoRA+Prune 97%-accuracy TTA in seconds on SST2 at 60% sparsity. Four properties jointly preserve the stated 8.4\u00d7 RoBERTa and 8.2\u00d7 T5 ratios with lower and upper ratio comparisons; the weaker 6\u00d7 falsifier is not substituted. Model-specific ratios prevent a single aggregation. Raw table notes explicitly give approximately 8.7\u00d7/8.13\u00d7 rather than the Statement values; the claim is not repaired to those evidence ratios."
+      },
+      {
+        "claim_id": "C03",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "E01 evidence/tables/table2_roberta_t5_main.md supplies RoBERTa APT/Prune+Distill MNLI 86.4/87.3, SST2 94.5/94.5, training memory 70.1/168.5 and time 592.1/1495.3, normalized to FT. The full claim requires an additive within-0.9-point MNLI margin, SST2 equality, 41.6% memory ratio and 2.5\u00d7 speed. The reported catalog has no general additive-margin relation for this heterogeneous conjunction; Table 10 self-distillation variants are not interchangeable with CoFi."
+      },
+      {
+        "claim_id": "C04",
+        "disposition": "declared",
+        "declaration_ids": [
+          "C04"
+        ],
+        "reason": null,
+        "explanation": "E03 evidence/tables/table5_ablation_llama.md gives LLaMA2-7B APT and w/o kurtosis Avg. at 30% sparsity (50.0 and 38.1 identify the measured operands). The conjunction of ratio_le and ratio_ge at 0.762 encodes the explicitly asserted 23.8% relative performance reduction without substituting the weaker 5% falsifier. Other sparsities and w/o AT are excluded as distinct conditions."
+      },
+      {
+        "claim_id": "C05",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "E03, evidence/tables/table4_ablation_roberta.md reports APT versus static-rank w/o AT SST2 94.5\u219293.2, MNLI 86.4\u219284.5 and TTA 592.1\u2192684.9. A 16% slowdown ratio can be expressed, but merely comparing accuracy directions would omit the explicitly stated task-specific endpoint changes and the additive 0.5-point falsifier. No reported-evidence scalar/additive difference relation expresses this complete conjunction."
+      },
+      {
+        "claim_id": "C06",
+        "disposition": "declared",
+        "declaration_ids": [
+          "C06"
+        ],
+        "reason": null,
+        "explanation": "E02, evidence/tables/table3_llama2_7b_main.md supplies APT and LoRA Avg. across ARC/HellaSwag/MMLU/TruthfulQA plus training memory normalized to LoRA, under 30% sparsity (70% parameters remaining). Parenthetical 50.0 vs 57.9 identifies the average-performance operands. Four ratio properties preserve both 86.4% performance retention and 75.8% memory, rather than replacing them with the weaker 80%/90% falsifier thresholds. No per-task dominance is inferred from the four-task average."
+      },
+      {
+        "claim_id": "C07",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "unclear",
+        "explanation": "E02 evidence/tables/table3_llama2_7b_main.md reports APT/LLMPruner Avg. 50.0/42.9 and normalized training memory 75.8%/253.6%, consistent with approximately 30% memory. However evidence/tables/table12_raw_efficiency_llama.md lists APT 24,408 MB and LLMPruner 23,425 MB and explicitly says the latter conflicts with the ~80 GB prose figure and may reflect different phases. The <24 GB/~80 GB absolute-memory condition cannot be bound to an unambiguous same-phase measurement pair without resolving unavailable conditions."
+      },
+      {
+        "claim_id": "C08",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "parse failure",
+        "explanation": "E05, evidence/figures/figure3_pareto_curves.md reports the RoBERTa same-accuracy advantages 21.8% speed and 7% memory and T5 at 97%-dense-accuracy advantages 62.7% and 24.8% in textual table cells, with zero parsed numeric measurements. The available Table 2 fixed-sparsity points are not matched-accuracy pairs and cannot substitute for the claimed Pareto comparisons; significance information in the falsifier is also absent."
+      }
+    ]
+  },
+  "artifacts/paperbench/all-in-one": {
+    "claims": [
+      {
+        "claim_id": "C01",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "unclear",
+        "explanation": "E01 and evidence/tables/benchmark_c2st_posterior.md report C2ST at all three budgets for the four named tasks, but the required Gaussian Linear \u201csimilar performance\u201d conjunct supplies no equivalence margin. The alternate extraction evidence/figures/fig4a_benchmark_posterior.md disagrees numerically with that table (including Gaussian Linear at 1k). A lower-C2ST comparison for only Mixture Gaussian, Two Moons and SLCP would omit the similarity conjunct; no tolerance is invented."
+      },
+      {
+        "claim_id": "C02",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "E01 and evidence/figures/fig4a_benchmark_posterior.md give approximate C2ST curves at 1k/10k/100k. The full claim requires matching a given C2ST level and averaging the resulting simulation-budget reduction over Linear Gaussian and SLCP for structured masks. Reported relations compare cell values, not interpolated level-crossing budgets or their average. The figure\u2019s explicit 10-times statement instead compares Simformer to NPE across all tasks, not structured versus dense Simformer; it cannot substitute for this claim."
+      },
+      {
+        "claim_id": "C03",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "E02 and evidence/tables/benchmark_c2st_all_cond.md summarize C2ST averaged over 100 random conditionals per task; evidence/figures/fig4b_benchmark_all_cond.md refers to calibration figures A9\u2013A12 without providing their coverage numbers. The full assertion concerns any conditional and well-calibrated sampling across Tree/HMM/Two Moons/SLCP, not merely a mean C2ST below 0.7. Neither a reported absolute-threshold relation nor a universal calibration relation is present; finite aggregate C2ST cannot discharge the full assertion."
+      },
+      {
+        "claim_id": "C04",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "prose-only",
+        "explanation": "E03/E04 describe Lotka-Volterra irregular observations and SIRD function-valued contact-rate inference, but evidence/figures/fig5c_lotka_volterra.md contains only paper-stated C2ST thresholds and qualitative posterior/predictive coverage descriptions. No numerical SIRD posterior/predictive coverage evidence or 99% interval endpoints are supplied. A Lotka-Volterra-only C2ST declaration would omit the SIRD and predictive-calibration conjuncts."
+      },
+      {
+        "claim_id": "C05",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "prose-only",
+        "explanation": "E05 describes Hodgkin-Huxley lowest-10%-energy interval guidance and preservation of voltage likelihood, but no energy samples, threshold measurement, or voltage predictive coverage is tabulated. evidence/figures/figA15_guidance_bm.md instead reports approximate guidance C2ST on Tree/HMM/Two Moons/SLCP with recurrence settings; those are not the HH energy-constraint and likelihood-consistency outcomes required here."
+      },
+      {
+        "claim_id": "C06",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "unclear",
+        "explanation": "E01/E02 and evidence/figures/fig_a5_extended_vesde.md provide approximate 100k posterior C2ST for Simformer, posterior-only Simformer and NSPE/NPSE, plus prose saying training only on the posterior mask does not enhance performance. \u201cSimilar or better\u201d and posterior-only \u2248 NPSE have no equivalence margin or significance definition; replacing similarity with strict non-inferiority, choosing a tolerance from the rounded figure, or using only 100k as the whole benchmark scope would add assumptions."
+      }
+    ]
+  },
+  "artifacts/paperbench/bam": {
+    "claims": [
+      {
+        "claim_id": "C01",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "logic/solution/algorithm.md defines the covariance-weighted score divergence, while E01/E02 and figures fig5_1_gaussian_targets.md / fig5_2_nongaussian_targets.md report finite-target convergence rather than the theorem. The full conjunction requires nonnegativity with equality iff p=q, affine invariance for coordinate transformations, and normalization independence. Catalog measurement/run relations cannot express the universal iff or mathematical dependence assertion; a sampled invariance experiment would be a narrower obligation."
+      },
+      {
+        "claim_id": "C02",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "logic/solution/algorithm.md, Match Step and Lemma B.1, gives the PSD U / PD V quadratic equation, matrix-square-root covariance solution and subsequent mean update. E01\u2013E04 convergence figures do not establish unique global optimality throughout the Gaussian family. No catalog relation expresses that uniqueness theorem together with both closed-form matrix identities; checking numerical residuals on selected matrices would narrow the claim."
+      },
+      {
+        "claim_id": "C03",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "C03 and the U,V/mean formulas in logic/solution/algorithm.md assert exact algebraic reduction to GSM when B=1 and lambda tends to infinity. E01 is a finite-batch Gaussian benchmark, not evidence of the limiting matrix identity. Catalog relations provide no symbolic-limit or universal matrix-equality relation; comparing finite large-lambda runs would not preserve the exact limit."
+      },
+      {
+        "claim_id": "C04",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "logic/solution/algorithm.md, Theorem 3.1, states both normalized mean and covariance error bounds for every t with alpha/beta/delta depending on initialization, fixed lambda>0 and B\u2192infinity. evidence/figures/fig5_1_gaussian_targets.md and figE3_gaussian_reverse_kl.md describe finite-batch KL curves instead. No installed relation expresses these coupled analytic bounds and the infinite-batch quantifier; a finite-seed monotonicity experiment would omit them."
+      },
+      {
+        "claim_id": "C05",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "prose-only",
+        "explanation": "E01\u2013E04 and evidence/figures/fig5_1_gaussian_targets.md, fig5_2_nongaussian_targets.md, fig5_3_posteriordb.md and fig5_4_deep_generative.md supply qualitative convergence descriptions and batch configurations, not numerical KL/relative-mean-error/MSE trajectories at matched gradient-evaluation budgets. The non-Gaussian file explicitly distinguishes higher limiting forward KL from similar reverse KL at large skew, and the VAE file reports comparable MSE at 3000 gradients only in prose. These cannot be converted into a faithful all-four-families faster-and-lower comparison."
+      },
+      {
+        "claim_id": "C06",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "prose-only",
+        "explanation": "E01\u2013E04 and evidence/figures/fig5_1_gaussian_targets.md, fig5_3_posteriordb.md and fig5_4_deep_generative.md describe BaM larger-batch improvements and ADVI/GSM marginal or absent gains, but do not tabulate convergence speed or stability measurements by batch. B=15/40/150 versus B=2, PosteriorDB B=32 versus 8, and VAE B=10/100/300 are configurations, not numeric measured batch effects. Both speed/stability for BaM and the no-benefit baselines must remain unsupported rather than testing only batch-size order."
+      }
+    ]
+  },
+  "artifacts/paperbench/bbox": {
+    "claims": [
+      {
+        "claim_id": "C01",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "E01 and evidence/tables/table2_main_results.md identify the Combined setting and four task-specific gains, including GSM8K +6.77 points. The assertion additionally fixes the four-task average gain to 6.39% and access restrictions (table1_method_comparison.md). Reported relations do not compute/check the additive average or maximum gain, nor categorical parameter/probability access. Comparing Combined > CoT alone would drop required conditions; accuracy and TruthfulQA True+Info are not silently treated as the same metric."
+      },
+      {
+        "claim_id": "C02",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "E03 and evidence/tables/table4_cost_analysis.md give full-step training costs $3.48/$11.58 and SFT $153.00/$216.50 for StrategyQA/GSM8K. The claimed approximately 31.30-fold reduction combines dataset-specific ratios; a per-dataset ratio_ge 31.30 would be a different assertion. No reported relation aggregates ratios or tests an approximate aggregate equality, and the caption\u2019s per-thousand normalization versus abbreviated Training Cost ($) headers is retained rather than silently changed."
+      },
+      {
+        "claim_id": "C03",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "E03 and evidence/tables/table4_cost_analysis.md give StrategyQA/GSM8K full-step costs $5.37/$12.46 per 1k questions versus Azure-SFT $7.50/$28.30, and single-step costs $2.20/$3.10. The full claim requires approximately 1.84-fold and 6.27-fold reductions across these datasets for distinct full-step and single-step variants. No reported relation computes the averages of those ratios or expresses their approximate equality; separate directional cost comparisons would not preserve the claimed magnitudes."
+      },
+      {
+        "claim_id": "C04",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "E05 and evidence/tables/table5_ablation_loss.md provide the specific StrategyQA 0.1B and GSM8K 0.3B NCE/MLM accuracy operands. C04 explicitly asserts +10.10 and +3.05 percentage-point gains as well as 71.62 versus 61.52 and 73.86 versus 70.81. Reported relations have no additive-difference equality; NCE > MLM alone would omit these quantified gains. The claim is not expanded to the other two adapter/task combinations."
+      },
+      {
+        "claim_id": "C05",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "E02 and evidence/tables/table3_plug_and_play.md explicitly identify the gpt-3.5-turbo Combined adapter transferred without retraining and provide Average delta +6.85 for davinci-002 and +4.50 for Mixtral-8\u00d77B across StrategyQA/GSM8K/TruthfulQA. There is no reported relation testing those additive gains against their claim values or linking the averages to all three constituent metrics. Generic adapted > base comparisons would omit the fixed average-improvement assertions; fresh retraining is not proposed."
+      },
+      {
+        "claim_id": "C06",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "E01 and evidence/tables/table2_main_results.md / table10_main_results_std.md provide AI Feedback and Ground-Truth rows for all four tasks, including TruthfulQA True+Info rather than accuracy. The statement requires an absolute difference \u22641.77 percentage points on every dataset (not the weaker 5-point falsifier). No reported relation expresses symmetric bounded additive differences for these existing cells. compound_consistency adds a mandatory separate directional scope and cannot encode this bound alone without inventing another conjunct; generative equivalence would instead require new runs and inferential assumptions."
+      },
+      {
+        "claim_id": "C07",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "E06 and evidence/figures/fig3a_beam_scaling.md state average enhancement 2.41 points from k=1 to k=5 over 0.1B/0.3B adapters. The figure\u2019s approximate per-beam cells differ from evidence/figures/figure3_scale_analysis.md, so neither extraction is treated as exact. Reported relations cannot compute the additive cross-adapter average, and declaring only monotonic per-beam accuracy would replace the magnitude assertion with the falsifier."
+      },
+      {
+        "claim_id": "C08",
+        "disposition": "declared",
+        "declaration_ids": [
+          "C08"
+        ],
+        "reason": null,
+        "explanation": "E07 and evidence/figures/fig3b_iteration_scaling.md bind StrategyQA, two-shot GPT-3.5-turbo, Ground-Truth adaptation for both 0.1B and 0.3B adapters. Six properties jointly require each adapter below the base at T=0, above it at T=1, and strictly improving T=1\u21922\u21923. T=4 is outside the asserted range. Approximate markers on T=0/1/2 are preserved; table values are never copied into operands. A single compound_consistency cannot encode the two opposite baseline directions plus adjacent-iteration increases; the conjunction retains all of them. figure3_scale_analysis.md contains an aggregate/range transcription, so the variant-resolved Figure 3(b) extraction is used without aliasing adapter sizes."
+      }
+    ]
+  },
+  "artifacts/paperbench/bridging-data-gaps": {
+    "claims": [
+      {
+        "claim_id": "C01",
+        "disposition": "declared",
+        "declaration_ids": [
+          "C01"
+        ],
+        "reason": null,
+        "explanation": "Table 1 (evidence/tables/table1_intra_lpips.md), E01 and the C01 falsifier identify the five main FFHQ/LSUN Church 10-shot tasks. Two aggregating best_baseline_consistency properties, one per distinct DDPM-TAN/LDM-TAN variant, each require beating every TGAN/TGAN+ADA/EWC/CDC/DCL/DDPM-PA baseline on at least three of the five tasks. The other TAN variant is not a baseline. Table label LMD-TAN is normalized to LDM-TAN using E01/PAPER method identity; no DDPM/LDM merger occurs. The mixed-unit table uses a table-specific value metric plus a measure axis: only the five dimensionless Intra-LPIPS task fields are in scope, never Parameter Rate. Reported \u00b1 spreads remain intact. E02/Table 3 supplies additional DDPM-only Sketches/Amedeo evidence, not another common five-task cohort; no unreported LDM result is fabricated."
+      },
+      {
+        "claim_id": "C02",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "unclear",
+        "explanation": "E01 specifies distinct DDPM-TAN and LDM-TAN models, but evidence/tables/table2_fid.md has only one Our method (TAN) row and explicitly describes it as a DDPM-TAN/LDM-TAN combined result (46.70 Babies, 20.06 Sunglasses). C02 names DDPM-TAN/LDM-TAN without resolving whether both must outperform all six baselines or which variant supplies each score. The TAN aggregate row is not aliased to both distinct methods; doing so would silently fill missing variant-specific outcomes. ADA/TGAN+ADA and ADMT/DDPM-PA spellings alone are resolvable, but the treatment identity is not."
+      },
+      {
+        "claim_id": "C03",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "prose-only",
+        "explanation": "E03 reports the 1.3% versus 100% trainable-parameter rates, 300 versus 5000 iterations, 3 versus 7.5 GPU hours and 9 versus 20 GB memory, with different batch/GPU configurations. evidence/tables/table1_intra_lpips.md provides parameter rates and table6_iteration_sensitivity.md an LDM iteration/FID series, but there are no parsed runtime or memory outcome measurements for the DDPM comparison. Keeping only the parameter-rate reduction would omit required computational-cost and convergence conditions; GPU-hour meaning is not inferred from the differing hardware."
+      },
+      {
+        "claim_id": "C04",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "prose-only",
+        "explanation": "E04 describes gradients from 10-shot 2D Gaussians versus a 10,000-sample reference and heatmaps from 20,000 generated samples, but supplies no numerical angles or target-mode concentration outcomes. evidence/figures/figure1_lpips_transfer.md measures perceptual distances for FFHQ face images, not the toy gradient/concentration metrics; figure4_ablation.md reports FID and cannot substitute for both toy-experiment conjuncts."
+      },
+      {
+        "claim_id": "C05",
+        "disposition": "declared",
+        "declaration_ids": [
+          "C05"
+        ],
+        "reason": null,
+        "explanation": "E05 and evidence/figures/figure4_ablation.md provide all four 300-iteration FFHQ\u219210-shot Sunglasses FID operands (38.65, 41.88, 26.41, 20.06). These reported values ground the claim\u2019s explicit variant sequence; the substantive assertion is that adding similarity guidance and then adversarial noise each improves FID, not a separately stipulated minimum effect size. Three comparative properties preserve the complete sequence, including the adaptor-only worsening versus direct fine-tuning rather than falsely asserting monotonic improvement of all four variants. No single catalog relation expresses this mixed-direction chain. The file also notes 20.66 in prose versus 20.06 in Figure 4; the claim and tabulated figure use 20.06, and no value is repaired or copied into the spec."
+      }
+    ]
+  },
+  "artifacts/paperbench/fre": {
+    "claims": [
+      {
+        "claim_id": "C01",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "unclear",
+        "explanation": "E01/E02 and evidence/tables/table1_main_results.md report normalized cumulative rewards across AntMaze, ExORL and Kitchen, with FRE K=32 and FB/SF K=5120 fixed in the conditions; OPAL has privileged online skill rollouts. The statement never defines a competitiveness margin or whether competitiveness is per task, per domain, or an aggregate against each specialized baseline. The falsifier (statistically worse than all baselines on a majority of tasks) is not the logical complement of a specified quantitative comparison. Choosing ge everywhere, a majority threshold, or an invented noninferiority margin would change the full claim; none is declared."
+      },
+      {
+        "claim_id": "C02",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "E01 and evidence/tables/table1_main_results.md provide mean +/- standard deviation over five seeds for the four named goal-reaching evaluations, under FRE K=32 versus FB/SF K=5120. The claim asserts significant improvement, not merely a larger reported mean. Reported comparative/consistency relations do not implement an inferential significance test from these summaries, and no significance level or paired observations are supplied. The falsifier additionally invokes SF/FB at K=32, whereas the table evaluates them only at K=5120. A directional comparison of the available means would not discharge those conditions."
+      },
+      {
+        "claim_id": "C03",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "unclear",
+        "explanation": "E01 and evidence/tables/table1_main_results.md identify the same FRE-all agent and provide goal-reaching, directional, random-simplex and path scores against GC-IQL/GC-BC. Neither competitive goal-reaching performance nor solving a task nor near-zero non-goal scores has a quantitative boundary in the fixed inputs. The falsifier introduces significant inferiority on goal tasks but gives no test or margin. Comparing only directional/simplex means would drop goal competitiveness, path scope and the near-zero baseline assertion; the whole claim is left unresolved."
+      },
+      {
+        "claim_id": "C04",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "unclear",
+        "explanation": "E03, evidence/tables/table4_reward_subset_ablation.md and evidence/figures/figure5_reward_diversity_scaling.md contain total and four task-family scores for FRE-all and all six strict subsets under identical training budgets. Highest total score can be expressed against every subset, but competitive per-task scores and the no-interference conclusion have no stated margin or statistical criterion. The falsifier tests only single-family total scores and would omit both two-family baselines and the required per-task condition. No total-only substitute is declared."
+      },
+      {
+        "claim_id": "C05",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "parse failure",
+        "explanation": "E04 fixes ant-directional, exorl-cheetah-velocity and exorl-walker-velocity as the three FRE-hint targets, with only the prior distribution changed. In evidence/figures/figure6_domain_knowledge.md the two velocity FRE-hint cells literally say higher than FRE-all without a number; the ant-directional cell borrows an approximately 39.4 baseline value and the note itself warns that the FRE-hint value is not printed. Public evidence parsing yields no numeric value for these FRE-hint cells. Thus there are no faithful paired numeric measurements for the all-three-target improvement claim; the borrowed baseline is not relabeled as FRE-hint evidence."
+      }
+    ]
+  },
+  "artifacts/paperbench/ftrl": {
+    "claims": [
+      {
+        "claim_id": "C01",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "unclear",
+        "explanation": "E01-E03 and evidence/tables/table4_nethack_full_eval.md plus evidence/figures/nethack_performance.md, montezuma_performance.md and robotic_performance.md cover three different domains and final metrics. Most practical scenarios is not a defined population, and comparable final performance has no equivalence margin. The figures also include different training horizons and approximate readings. A majority-of-three directional comparison would silently replace the stated population and comparability condition, and would not express the causal FAR-state-forgetting assertion."
+      },
+      {
+        "claim_id": "C02",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "E03 and evidence/figures/robotic_stage_success.md report FAR/CLOSE stage trajectories; evidence/figures/fig8_pushwall_loglikelihood.md gives approximate push-wall success at 0, 100K, 500K and approximately 4M steps. The complete claim requires collapse to the absolute 0% boundary within 100K steps on FAR stages and its temporal ordering before learning CLOSE, conditional on initial FAR competence/CLOSE incompetence. Reported cell-pair relations do not express this absolute boundary and event-order conjunction; a simple decrease against the initial policy would be weaker. The peg-unplug-side 100K entry is approximately 0.1, not 0, and is not corrected or silently excluded."
+      },
+      {
+        "claim_id": "C03",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "prose-only",
+        "explanation": "E01/E04 and evidence/figures/fig5_nethack_level_analysis.md and nethack_level4_sokoban.md evaluate score from AutoAscend level-4/Sokoban saves; evidence/tables/table4_nethack_full_eval.md reports final average dungeon level of fine-tuned methods. They do not tabulate the frozen BC policy versus expert visitation frequencies by level that the claim needs for rarely visits beyond Level 1. Small policy perturbations causing distribution shift and rapid forgetting are described in prose, not as a quantitative perturbation/visitation experiment. Final dungeon level is not substituted for the missing pre-trained/expert visitation comparison."
+      },
+      {
+        "claim_id": "C04",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "E01-E04 span final NetHack score, Montezuma Room-7 success and RoboticSequence FAR-stage success. evidence/tables/table5_nethack_sota_comparison.md supplies KS 10588 +/- 672 and Scaled-BC 5218 with missing spread; table4_nethack_full_eval.md gives vanilla final score 647, while nethack_performance.md uses an approximate 1K curve reading. The assertion requires significantly better final performance AND prevention of FAR forgetting for the stated retention methods, not only KS ranking above a frozen model. Available reported relations cannot certify statistical significance with the absent uncertainty or the full prevention condition; no exact-score/uncertainty assertions are replaced with gt comparisons."
+      },
+      {
+        "claim_id": "C05",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "prose-only",
+        "explanation": "E05 explicitly says KS was omitted from the final Montezuma and RoboticSequence plots after qualitative pre-analysis. evidence/figures/montezuma_performance.md and robotic_performance.md confirm KS is omitted; fig3_main_performance.md only states that it underperforms. NetHack KS/BC scores are available, but paired KS-versus-BC state-coverage-gap results for both other environments are not. The online-KL versus static-buffer explanation is also a mechanism statement. NetHack-only comparisons would omit the central method-by-gap-type condition."
+      },
+      {
+        "claim_id": "C06",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "prose-only",
+        "explanation": "E06 and evidence/figures/fig8_pushwall_loglikelihood.md describe log-likelihoods with PCA colors at 0, 100K, 500K and approximately 4M steps; only push-wall success rates are numeric. Neither expert-trajectory log-likelihood values nor original/relearned ratios are tabulated, so the falsifier recovery to within 10% of the original values cannot be bound. The available success-rate recovery is a different metric and cannot stand in for log-likelihood recovery or permanently lost transfer."
+      }
+    ]
+  },
+  "artifacts/paperbench/lbcs": {
+    "claims": [
+      {
+        "claim_id": "C01",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "E01/E02 and evidence/tables/table2_main_results.md contain test-accuracy means/spreads and LBCS coreset sizes for all three datasets at k=1000,2000,3000,4000. A best-baseline relation can express accuracy >= all seven baselines, but the equally required strict final-size < k compares a measured size against numeric configuration labels, not another reported measurement. No reported-evidence relation accepts those literal per-row size bounds or evaluates a coordinate as a numeric operand. Copying k into fake evidence or omitting size would narrow the conjunction; neither is done. The weaker falsifier involving lower accuracy than all baselines does not replace the stronger best-baseline statement."
+      },
+      {
+        "claim_id": "C02",
+        "disposition": "declared",
+        "declaration_ids": [
+          "C02"
+        ],
+        "reason": null,
+        "explanation": "A single best_baseline_consistency property compares LBCS mean test accuracy against every other method in evidence/tables/table3_lbcs_sizes.md, for all four configurations in each of F-MNIST, SVHN and CIFAR-10 (84 paired comparisons). ge preserves highest mean and the falsifier any baseline higher, including ties, rather than imposing a significance test or strict superiority from the title. Table 3 conditions and E01 step 7 identify these as baseline reruns at LBCS-selected sizes, not the original fixed-k Table 2. Source row/section labels are retained verbatim: F-MNIST k=2000 says approximately 1935 in its row but 1915 in its section and Table 2; no correction or equality of those sizes is asserted. The declaration tests all same-row accuracy comparisons under the reported equal-size protocol, not an independently verified exact size mapping."
+      },
+      {
+        "claim_id": "C03",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "The statement is an almost-sure asymptotic epsilon-optimality theorem under Progressable and Stable Moving conditions, with a minimum over the feasible masks. E03 and evidence/tables/table5_ablation_search_times.md provide only finite T=100 through 2000 empirical accuracy/size observations. The installed relations cannot express a probability-one limit, the two formal assumptions, or the constrained global optimum. Finite empirical convergence or decreasing size is not substituted for Theorem 2."
+      },
+      {
+        "claim_id": "C04",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "prose-only",
+        "explanation": "E04 requires all seven baselines at all four k values under 30% noise, 50% noise and imbalance. evidence/figures/fig2_imperfect_supervision.md and figure2_imperfect_supervision.md tabulate approximate accuracy only for 30% noise and class imbalance (and disagree in the approximate readings). evidence/tables/table7_imperfect_supervision.md and table6_imperfect_supervision_sizes.md include 50% noise only for coreset SIZE, not accuracy. The referenced Figure 4 accuracy results for 50% noise are not included as numeric evidence in this fixed ARA. Thus the full three-condition accuracy claim and the epsilon-compromise overfitting mechanism cannot be discharged by checking the two available conditions."
+      },
+      {
+        "claim_id": "C05",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "parse failure",
+        "explanation": "E05 and evidence/tables/table4_imagenet.md contain ImageNet-1k Top-5 scores at predefined 70%/80% ratios and optimized ratios 68.53%/77.82% in parentheses in the LBCS cells. Public evidence parsing exposes only the primary accuracy values 89.98/90.84, not either parenthetical selection ratio as an addressable measurement. The claim independently asserts those exact optimized ratios and the falsifier requires optimized < predefined; reported pairwise relations do not provide literal ratio-equality/bound checks either. An accuracy-only best-baseline property would omit this essential size condition. Influential is unreported rather than assigned a made-up score."
+      }
+    ]
+  },
+  "artifacts/paperbench/lca-on-the-line": {
+    "claims": [
+      {
+        "claim_id": "C01",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "E01 and evidence/tables/table2_correlation.md report absolute R-squared and PEA for 75 combined VMs/VLMs, including all four severe-shift datasets and the Top-1 ImageNet-A R-squared. The statement requires both absolute R-squared >0.7 and PEA >0.7 at every named dataset plus the Top-1 approximately-zero condition. Reported relations only compare evidence cells and cannot bind these literal absolute bounds or an unspecified near-zero interval. The threshold relation is for fresh null-calibration run batches, not reported correlation cells. Merely checking LCA correlation > Top-1 correlation would omit the substantive 0.7 conditions; the weaker falsifier is not substituted for the statement."
+      },
+      {
+        "claim_id": "C02",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "E03 and evidence/tables/table4_kmeans_latent.md give mean/min/max/std PEA over 75 source-model hierarchies and WordNet reference values; the nine-layer construction is specified in E03 and table4_kmeans_latent_hierarchy.md. The complete assertion includes an absolute mean PEA >0.66 on each of ImageNet-S/R/A/ObjectNet as well as slightly lower than WordNet. The reported comparison relations cannot express the absolute mean bound or the falsifier absolute 0.5 and 0.3 criteria; no reported-table threshold relation exists. A WordNet comparison alone would discard the central quantitative robustness condition."
+      },
+      {
+        "claim_id": "C03",
+        "disposition": "declared",
+        "declaration_ids": [
+          "C03"
+        ],
+        "reason": null,
+        "explanation": "One compound_consistency property represents all six backbones, at least three improvements among ImageNet-S/R/A/ObjectNet for each backbone, AND nondecreasing ID ImageNet accuracy for each. evidence/tables/table5_soft_labels_wordnet.md identifies Ours as CE + LCA soft loss + linear weight interpolation (not uninterpolated CE+soft), Baseline as CE-only, and E04 fixes frozen linear probing, WordNet, lambda=0.03 and temperature=25. ImageNet-v2 is not one of the four claimed severe shifts. ID tolerance is zero as required by without reducing ID accuracy; the falsifier statement that >0.5% weakens the claim is not used to relax that stronger assertion. Missing variance remains missing; no significance conclusion is added."
+      },
+      {
+        "claim_id": "C04",
+        "disposition": "declared",
+        "declaration_ids": [
+          "C04"
+        ],
+        "reason": null,
+        "explanation": "The conjunction preserves all three measured conditions in evidence/tables/table7_simulation.md: causal-feature f has lower OOD Top-1 error, lower ID LCA distance, and higher ID Top-1 error than confounding-feature g. Three comparative properties are necessary because these are distinct metrics and ID error has the opposite direction. E06 supplies the controlled Gaussian-mixture generation, feature assignments, missing x2 at OOD and 100-trial average; the declaration is limited to that simulation rather than claiming causality in arbitrary real datasets. It uses the f/g rows directly, not the Diff row whose printed signs disagree with its g-minus-f label. Error is correctly treated as the inverse of accuracy; missing trial dispersion is not invented."
+      },
+      {
+        "claim_id": "C05",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "E05 and evidence/tables/table14_prompt_engineering.md identify CLIP-ViT32, all five OOD datasets (including ImageNet-v2), four prompt variants, Top-1 and cross-entropy. Directional comparisons could preserve both metrics and all baselines, but the full statement explicitly says significantly improves. The table gives single reported values with no uncertainty, paired predictions or significance level, and reported cell-pair relations cannot supply an inferential significance conclusion. No direction-only replacement is made, nor is all tested OOD datasets weakened to the at-least-four-of-five falsifier."
+      }
+    ]
+  },
+  "artifacts/paperbench/mechanistic-understanding": {
+    "claims": [
+      {
+        "claim_id": "C01",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "nonquantitative",
+        "explanation": "E01 identifies a toxicity subspace through probe similarity, vocabulary projection and SVD. Table 1 (evidence/tables/table1_toxic_vector_tokens.md, rows 9\u201319) lists promoted tokens, not a quantified subspace-recovery criterion or similarities against a random baseline. E02/Table 2 supplies intervention scores but cannot establish the complete representation-and-SVD mechanism; no narrower toxicity-only claim is substituted."
+      },
+      {
+        "claim_id": "C02",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "unclear",
+        "explanation": "Table 2 (evidence/tables/table2_intervention_results.md, rows 10\u201314) reports all three subtraction vectors, GPT2 and DPO, with toxicity, Wikitext-2 perplexity and Wikipedia F1. The toxicity directions and falsifier's DPO perplexity comparison are selectable, but neither C02 nor E02 defines the allowed F1 difference for 'comparable' or a quantitative meaning for 'slightly increased but controlled' perplexity. F1 includes 0.192 versus 0.193; choosing an equivalence margin from this observed gap would invent a claim condition. The complete quality-preservation conjunction remains skipped."
+      },
+      {
+        "claim_id": "C03",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "E03 requires unchanged toxic keys/values with cosine similarity >0.99, while E04 requires a distributed offset across earlier value vectors that moves residual streams out of toxic activation regions. Figure 2 (figure2_mean_activations.md) contains approximate mean activations, Figure 4 (figure4_residual_shift.md) explicitly lacks numeric scatter coordinates, and Figure 5 describes distributions and the sign-flip explanation. The reported-evidence catalog's pairwise comparisons do not express the distributed causal bypass mechanism or its parameter-threshold conjunct. Lower activations alone would narrow the original claim."
+      },
+      {
+        "claim_id": "C04",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "prose-only",
+        "explanation": "E03 in logic/experiments.md, lines 50\u201369, specifies a per-tensor comparison and states the >0.99 cosine, <1e-5 average norm and <1e-3 unembedding exception only as expected outcomes. The evidence inventory and supplied figures/tables contain no per-parameter similarity/norm measurements. A universal assertion over embeddings, MLPs and attention, including the sole unembedding exception, cannot be grounded by treating these prose thresholds as measured evidence."
+      },
+      {
+        "claim_id": "C05",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "nonquantitative",
+        "explanation": "E04 and evidence/figures/figure5_cosine_similarity.md describe negative GeLU activations, increasingly antipodal value-vector changes toward layer 19, and their accumulated causal contribution to the residual shift on 1,199 RealToxicityPrompts. Figure 5 offers qualitative distributions and approximate modes/majority statements, not neuron-level contributions. The complete assertion is a sign-flip/accumulation mechanism; checking only a negative correlation or mean activation would not discharge it."
+      },
+      {
+        "claim_id": "C06",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "unclear",
+        "explanation": "E05 and Table 4 (evidence/tables/table4_unalignment_results.md) specify top-7 toxic keys scaled 10x and report toxicity 0.458 versus GPT2 0.453, perplexity 23.30 versus DPO 23.34, and F1 0.195 for both scaled and DPO models. C06 requires activation-region expansion/re-entry plus 'near-baseline' toxicity and 'unchanged' quality, while its falsifier says 'substantially degraded' perplexity. Neither E05 nor the table defines nearness or a quality equivalence margin, and the table has no region-membership measurements. Declaring only an increase in toxicity would drop required conditions."
+      }
+    ]
+  },
+  "artifacts/paperbench/pinn": {
+    "claims": [
+      {
+        "claim_id": "C01",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "E01 and evidence/figures/fig2_loss_vs_l2re.md give approximate ranges over PDE/width/optimizer/seed runs, including near-zero-loss trivial solutions with L2RE near 1. C01 combines a monotone nonlinear trend, a PDE-dependent necessity threshold around 1e-5 for low L2RE, and existence of trivial solutions; its falsifier uses a separate L2RE <0.05 and loss >1e-3 condition. No reported-evidence relation expresses this conditional threshold, trend and existential conjunction. A simple optimizer comparison would not preserve C01."
+      },
+      {
+        "claim_id": "C02",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "E02 and evidence/figures/fig3_hessian_spectral.md report PDE-specific outlier bounds (>1e4 convection, >1e3 reaction, >1e5 wave), qualitative density near zero, and the ill-conditioning interpretation after 41,000 Adam+L-BFGS iterations. The numeric thresholds are substantive, not merely method labels. Reported relations do not test scalar bounds plus near-zero spectral mass or its effect on first-order convergence. The alternative figure3_hessian_spectral_density.md also provides these bounds and prose, not a fully numerical spectrum."
+      },
+      {
+        "claim_id": "C03",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "E02/Figure 3 compares residual, initial-condition and boundary-condition spectra, and C03 additionally asserts theoretical prediction that the differential operator is the source of worst conditioning. figure3_hessian_spectral.md contains convection component approximations and qualitative reaction/wave references; fig3_hessian_spectral.md contains component summaries but fails public evidence parsing at its line-13 separator. Even a largest-eigenvalue comparison would not express the theoretical/source-of-conditioning conjunct or equate top eigenvalue with a condition number without the remaining spectrum."
+      },
+      {
+        "claim_id": "C04",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "parse failure",
+        "explanation": "The full assertion is a >=1000-fold top-eigenvalue reduction for each of three PDEs and every loss component, despite the weaker 100-fold falsifier. evidence/figures/fig3_hessian_spectral.md contains total and component summaries for all PDEs, but public aratest evidence parsing fails at line 13 because '|--|--|--|' is not an accepted separator. The alternate figure3_hessian_spectral.md has bound/range strings and only convection component numbers, with reaction/wave components summarized qualitatively; figure3_hessian_spectral_density.md is also incomplete for these operands. The >=1000 ratio relation is available, but a usable complete evidence grid is not. Evidence was not edited or replaced by invented values."
+      },
+      {
+        "claim_id": "C05",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "prose-only",
+        "explanation": "Table 1 (evidence/tables/table1_optimizer_comparison.md) gives minima selected across widths, learning rates and switch points, not separate results for every width 50/100/200/400. Figure 8 (figure8_optimizer_comparison.md) supplies qualitative winners and reaction exceptions at width 100 for loss and 200 for L2RE, but no width-resolved loss/L2RE measurements. A best-baseline relation on Table 1 would silently replace the all-width assertion with a best-over-widths assertion and ignore its conjunction with the stated 14.2x and 6.07x improvements. The observed exceptions are retained rather than removed from scope."
+      },
+      {
+        "claim_id": "C06",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "E04 and Table 2 (table2_nncg_results.md) identify the best-L2RE Adam+L-BFGS starts and 2,000-step NNCG/GD continuations; Table 3 (table3_timing.md) reports per-iteration seconds. The complete claim requires strictly >10-fold loss reduction, L2RE improvement on all PDEs, zero GD improvement, and the stated 5\u2013322-fold timing range. Reported-evidence relations support inclusive ratio_ge/ratio_le but not a strict ratio threshold (>10), while ordinary gt compares unscaled measurements. Replacing >10 by >=10 or the weaker >2 falsifier would alter the assertion; no such repair was made. Loss-versus-L2RE start selection and the different reaction loss in Table 1 were not conflated."
+      },
+      {
+        "claim_id": "C07",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "C07 asserts Theorem 8.4's high-probability asymptotic lower bound under eigenvalue-decay alpha >1/2 and residual-sample assumptions. E05 and evidence/figures/figure10_condition_number.md describe an empirical proxy lambda1/lambda129 for a two-layer width-32 convection model; figure rows contain 'low', 'moderate' and 'highest', not numeric condition numbers. A finite monotonicity comparison, even with additional measurements, would not establish the quantified asymptotic theorem or its probability and assumptions. No fresh experiment was proposed as a substitute proof."
+      }
+    ]
+  },
+  "artifacts/paperbench/rice": {
+    "claims": [
+      {
+        "claim_id": "C01",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "PAPER.md's overview attributes the tighter upper bound to Theorem 3.6 and Lemma 3.5, with a distribution-mismatch coefficient for the explanation-guided mixture. E01 measures fidelity/time and E03 measures reward; Table 1 Group 2 and table6_explanation_methods.md compare rewards for different explanations, not the bound or occupancy-ratio supremum. Reported-evidence comparisons cannot establish the theoretical sub-optimality bound and its distributional assumptions. A higher reward versus Random is not substituted for that quantitative theorem or the falsifier's statistical-significance condition."
+      },
+      {
+        "claim_id": "C02",
+        "disposition": "declared",
+        "declaration_ids": [
+          "C02"
+        ],
+        "reason": null,
+        "explanation": "One best_baseline_consistency property covers all eight named environments in Table 1 Group 1 (table1_main_results.md, lines 8\u201317), with optimized StateMask held fixed and RICE/Ours compared to PPO, JSRL and StateMask-R. No Refine is excluded because the statement names three refining baselines. The Group 2 explanation ablation is not conflated with method variants. The property compares final reported means, as the claim's falsifier specifies, not statistical significance: Reacher/CAGE retain their negative reward direction, and Malware retains its evasion-probability percentage within its own task. The public parser reads parenthetical standard deviations as unstructured raw text (spread absent), not as zero variance; the declaration adds no inferential certainty."
+      },
+      {
+        "claim_id": "C03",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "prose-only",
+        "explanation": "E01 calls for original-versus-optimized StateMask fidelity over all eight environments and K=10/20/30/40%, including seed variability. Table 4 has numeric training times and prose 'average time reduction =16.8%', but Figure 9 (figure9_alpha_sensitivity.md) compares three alpha choices within the optimized method, not original StateMask against optimized StateMask. Tables 1 and 6 measure refining reward, not explanation fidelity. The required two-method fidelity grid and statistical equivalence information are absent; neither reward nor alpha sensitivity can replace it, and no equivalence margin is specified."
+      },
+      {
+        "claim_id": "C04",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "prose-only",
+        "explanation": "Figure 7 (figure7_p_sensitivity.md) supplies approximate p sweeps for eight dense applications; Table 3 supplies their default p=0.25/0.50 choices. E05 also explicitly names three sparse MuJoCo environments and additional SAC/GAIL Hopper sensitivity, but no p-sweep measurements for those settings are provided in the supplied figures. Figure 2 is a method/refining-curve comparison rather than a p sweep, and Table 7 only gives one malware mixed-distribution case. Declaring the eight dense panels alone would narrow C04's 'across all tested environments' quantifier. Moreover several Figure 7 panels collapse all lambda values, so they cannot be silently expanded to separate lambda measurements."
+      },
+      {
+        "claim_id": "C05",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "prose-only",
+        "explanation": "E05 requires comparison with lambda=0 as well as all tested positive lambda values. Figure 8 (figure8_lambda_sensitivity.md) reports only 0.1, 0.01 and 0.001 and lacks the lambda=0 baseline across the benchmark applications. Table 7's malware case contrasts mixed initialization with and without exploration, but does not supply the full lambda-zero comparison grid or all environments. The complete 'any lambda>0' improvement, low sensitivity and '0.01 best in most' conjunction cannot be replaced by choosing the best among the positive-lambda rows."
+      },
+      {
+        "claim_id": "C06",
+        "disposition": "declared",
+        "declaration_ids": [
+          "C06"
+        ],
+        "reason": null,
+        "explanation": "One best_baseline_consistency property uses Figure 3's refining-phase final ~1M-step checkpoint (figure3_sac_hopper.md, lines 15\u201322), covering all four named baselines: PPO fine-tuning, JSRL, StateMask-R and SAC fine-tuning. E04 supplies the SAC pretraining and GAIL-to-PPO-compatible-policy conditions for RICE, while SAC fine-tuning remains the original SAC baseline. The pretraining series and earlier checkpoints are not substitutes for final reward. Values retain their approximate extraction flags; binding this claim is not a verdict and does not promote visual estimates to exact measurements."
+      }
+    ]
+  },
+  "artifacts/paperbench/robust-clip": {
+    "claims": [
+      {
+        "claim_id": "C01",
+        "disposition": "declared",
+        "declaration_ids": [
+          "C01"
+        ],
+        "reason": null,
+        "explanation": "Table 1 (table1_lvlm_robustness.md) reports Avg clean/2/255/4/255 across COCO, Flickr30k, TextVQA and VQAv2 for both OF-9B and LLaVA 1.5-7B. Two aggregating best_baseline_consistency properties are necessary because FARE2 must pair only with TeCoA2 and FARE4 only with TeCoA4; each covers both LVLMs and every clean/attack condition, using reported averages rather than requiring individual-task superiority. E01's clean-all-samples and 500-image adversarial conditions remain those of the source table. The OF-9B FARE2 4/255 condition is retained despite the reported directional discrepancy; no exception, weaker quantifier or verdict-driven repair was introduced."
+      },
+      {
+        "claim_id": "C02",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "E06/Table 14 (table14_embedding_loss.md) report mean squared clean and adversarial embedding distortions for both training radii on 500 ImageNet images, with 100-step APGD at attack radius 4/255. Their FARE-versus-TeCoA directions are available, but C02 also says 'significantly' lower and attributes drop-in LVLM replacement without retraining to preservation. No variance, significance criterion or direct causal/retraining measurement is supplied. A reported pairwise mean comparison cannot express that complete statistical-and-enabling assertion; no two-direction-only subclaim is substituted."
+      },
+      {
+        "claim_id": "C03",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "E02/Table 3 (table3_targeted_attacks.md) fully identifies six targets, 25 trials per target, both attack radii and FARE2/FARE4, including 0/25 counts and the 2.0% FARE2 mean at 4/255. C03 and its any-success falsifier make absolute zero success substantive, not merely a comparison to TeCoA. The reported-evidence catalog has pairwise directional/ratio relations, not absolute count/rate equality or a zero-success threshold. Comparing FARE to another zero-valued encoder would not establish zero without an independent bound and would add an unclaimed baseline. No measurements were copied into the spec as substitute operands."
+      },
+      {
+        "claim_id": "C04",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "E03/Table 4 (table4_zeroshot_classification.md) reports averages over the 13 non-ImageNet datasets, with clean gaps 7.0 and 6.9 percentage points and FARE2 adversarial 43.1% versus TeCoA2 43.6% at 2/255. The full statement asserts additive clean improvements and adversarial comparability; the falsifier's clean direction alone is weaker. Reported relations do not express a fixed additive gap or two-sided equivalence about a reported pair, and no margin defines 'comparable'. Compound consistency's one-sided ID tolerance would not preserve that equivalence conjunct or the two stated clean magnitudes."
+      },
+      {
+        "claim_id": "C05",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "E04/Table 5 (table5_pope_hallucination.md) reports clean POPE mean F1 across adversarial/popular/random splits for LLaVA-1.5 7B. C05 expressly reports FARE2 80.8 versus TeCoA2 75.9, FARE4 76.3 versus TeCoA4 72.2 and closeness to original CLIP 84.5. The catalog can compare FARE and TeCoA means, but has no reported-evidence absolute-value assertion or distance-to-a-third-operand relation for this full statement. The simpler higher-mean falsifier does not license silently dropping the stated means and original-CLIP closeness condition."
+      },
+      {
+        "claim_id": "C06",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "E04/Table 6 (table6_sqai.md) supplies SQA-I accuracy for original CLIP, FARE2/4 and TeCoA2/4 on clean LLaVA-1.5 7B. C06 asserts the 2.3- and 2.4-percentage-point improvements and the 1.1-point gap below original CLIP, not just higher accuracy than TeCoA. Reported-evidence relations lack additive-difference equality/bounds and scalar-value assertions; ratio comparison is not an additive percentage-point comparison. Declaring only the two gt relations would omit those substantive magnitudes and the original-CLIP condition."
+      },
+      {
+        "claim_id": "C07",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "unclear",
+        "explanation": "E01/Table 2 (table2_transfer_attacks.md) contains both transfer directions at 4/255; Table 1 supplies clean COCO CIDEr references. The non-robust cross-model values 25.5 versus 115.5 and 8.3 versus 79.7 are identifiable, but the required 'near-clean' result for FARE2 and FARE4 has no tolerance, equivalence margin or attack-success cutoff. The source table includes transfers both below and above clean scores. Choosing a margin after inspecting these differences or simply testing higher-than-nonrobust performance would change the full robustness condition, so the original claim remains skipped."
+      }
+    ]
+  },
+  "artifacts/paperbench/sample-specific-masks": {
+    "claims": [
+      {
+        "claim_id": "C01",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "prose-only",
+        "explanation": "E01 in logic/experiments.md requires OxfordPets per-image confidence under Full/Medium/Narrow masks and per-sample final-minus-initial training loss. The supplied evidence index and Tables 1\u20132 contain dataset-aggregated test accuracies, not those individual confidence or loss observations; these aggregates cannot establish differing optimal masks or the positive loss-change tail. No narrower aggregate-accuracy claim substitutes for C01."
+      },
+      {
+        "claim_id": "C02",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "E02 specifies a logical hypothesis-class inclusion argument for Fshr and Fsp within Fsmm and Theorem 4.2's distribution-level approximation-error ordering. Installed reported relations compare numeric measurements; neither they nor the experiment families certify universal set containment or strict containment. Table 4's parameter sizes would not discharge this mathematical assertion. The title's strict wording is not silently replaced by a finite empirical accuracy comparison."
+      },
+      {
+        "claim_id": "C03",
+        "disposition": "declared",
+        "declaration_ids": [
+          "C03"
+        ],
+        "reason": null,
+        "explanation": "Table 1 provides three-seed mean\u00b1std test accuracy under ILM, 200 epochs, and the fixed ResNet-18/50 training conditions of E03. One best-baseline aggregation includes PAD, NARROW, MEDIUM and FULL; its ResNet-18 scope is exactly the ten datasets named by excluding DTD, while ResNet-50 includes all eleven. Both scopes also require the reported AVERAGE row to exceed every baseline. DTD is treated as the stated ResNet-18 exception, not as an additional positive comparison. Reported spreads and precision remain in source measurements; no significance test is invented."
+      },
+      {
+        "claim_id": "C04",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "Table 2 gives the ViT-B32 mean accuracies for all eleven datasets and the AVERAGE row under E04's default LR=0.001 (not the separate tuned UCF101 result). C04 additionally asserts additive gains of 21.8, 15.4 and 7.3 percentage points over the best baselines on Flowers102, Food101 and SUN397. The catalog's reported comparisons support ordering and multiplicative ratios, not these asserted additive differences or exact aggregate levels 72.4% versus 65.2%. A majority/average ordering alone would omit substantive numeric conditions."
+      },
+      {
+        "claim_id": "C05",
+        "disposition": "declared",
+        "declaration_ids": [
+          "C05"
+        ],
+        "reason": null,
+        "explanation": "Table 3 reports ResNet-18, ILM, three-seed mean\u00b1std accuracy for the four actual ablations. E05 identifies feature-rich CIFAR10/Flowers102/UCF101 and large-data CIFAR10/SVHN/GTSRB/SUN397, giving the two component-removal scopes. A third conjunct preserves the explicitly highlighted GTSRB/Flowers102 three-channel advantage; a best-baseline conjunct requires the full SMM AVERAGE over all eleven datasets to beat all three ablations, including single-channel. These method-dependent scopes require a conjunction rather than one uniform all-baseline comparison; especially is not converted into an invented numerical margin."
+      },
+      {
+        "claim_id": "C06",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "Table 5 has ResNet-18/50 numeric pixel accesses and batch times (batch 256, A100) plus the categorical REQUIRE BACKPROPAGATION=NO cell for patch-wise interpolation. The full statement includes that categorical algorithmic condition as well as the explicit counts/times and spreads. Numeric ordering alone cannot assert NO backpropagation or all stated magnitudes; reported catalog relations have no categorical-equality or exact reported-value relation. The separate ViT table is not substituted for the named ResNet condition."
+      }
+    ]
+  },
+  "artifacts/paperbench/sapg": {
+    "claims": [
+      {
+        "claim_id": "C01",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "E01 and evidence/figures/fig2_ppo_batch_saturation.md supply approximate visual readings for Shadow Hand and Allegro Kuka Throw at about 1,500\u2013100,000 environments, with a plateau near 25,000. C01 additionally attributes the saturation to redundant IID samples from the shared Gaussian policy. A pairwise non-increase comparison of the visual readings would not express that causal redundancy assertion; the installed relations offer neither a saturation/change-point relation for reported curves nor a test of this causal mechanism. Approximate plotted values remain approximate, not exact convergence evidence."
+      },
+      {
+        "claim_id": "C02",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "unclear",
+        "explanation": "The preserved Statement simultaneously says SAPG has higher performance and 'near-zero improvements over PPO and PQL which fail entirely'; E02 instead expects substantial improvement over them. Table 1 measures episode success counts, not success rates, and uses SAPG entropy=0 for Regrasping/Throw versus entropy=0.005 for Reorientation/Two Arms; no one variant may be aliased to all of these. Its Two Arms PQL and entropy=0 cells are unreported, while the table note describes a >2x DexPBT gain outside the Statement's 12\u201366% range. These unresolved assertion/scope conflicts preclude a faithful full four-task declaration; they are not repaired by selecting convenient cells or dropping PQL."
+      },
+      {
+        "claim_id": "C03",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "prose-only",
+        "explanation": "E04 specifies a five-task leader-follower versus symmetric ablation at 2e10 steps, but evidence/figures/fig6_ablation_curves.md gives symmetric outcomes only as 'Worse', 'Significantly worse', or 'Worst performer', not paired numeric rewards/successes. It also does not supply measured policy convergence/diversity for the causal explanation. The falsifier's three-of-five threshold cannot be evaluated faithfully from those qualitative cells."
+      },
+      {
+        "claim_id": "C04",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "prose-only",
+        "explanation": "E05 requires both PCA reconstruction error by component count and MLP error by hidden dimension. Figures fig7_fig8_diversity_metrics.md, fig7_pca_diversity.md and fig8_mlp_diversity.md explicitly say exact data points are not supplied and provide rankings/qualitative descriptions, with some panels described as similar for SAPG and PPO. Component counts and hidden sizes are axis coordinates, not error measurements. Neither complete numeric comparison can be bound from these files."
+      },
+      {
+        "claim_id": "C05",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "prose-only",
+        "explanation": "E04 and fig6_ablation_curves.md describe no-off-policy as worst or significantly worse on the five tasks, but supply no numeric final reward/success values for that ablation; Table 1 contains only PPO/PBT/PQL and two complete SAPG entropy variants. Thus the majority-of-tasks degradation and the falsifier's three matching tasks cannot be declared as measurement comparisons without manufacturing the missing ablation outcomes or a significance procedure."
+      },
+      {
+        "claim_id": "C06",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "unclear",
+        "explanation": "Table 1 and fig6_ablation_curves.md distinguish entropy=0 from entropy=0.005: Reorientation is 33.2\u00b14.20 versus 38.6\u00b10.63, while AllegroHand, Regrasping and Throw are lower with entropy. The stated up-to-16.5% improvement could be bounded by ratio comparisons, but 'marginal or negative benefit' supplies no positive marginal-benefit tolerance, especially for Regrasping; the falsifier only resolves a non-positive condition for AllegroHand and Throw. Declaring strict non-improvement on all three would replace the original allowed marginal-benefit alternative with a stronger condition. No numerical tolerance is invented from observed differences."
+      }
+    ]
+  },
+  "artifacts/paperbench/self-composing-policies": {
+    "claims": [
+      {
+        "claim_id": "C01",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "E04, fig3_scalability.md and figb1_memory_growth.md give the O(n) argument in terms of a constant-size module m and fixed d_enc/d_model/action size, with symbolic entries such as approximately 10m rather than numeric parameter counts. The claim is universal linear asymptotic growth derived from six fixed transformations and a feed-forward block. Installed numeric reported relations do not prove that structural/asymptotic assertion; finite monotonic parameter comparisons would not establish it."
+      },
+      {
+        "claim_id": "C02",
+        "disposition": "declared",
+        "declaration_ids": [
+          "C02"
+        ],
+        "reason": null,
+        "explanation": "Table 1 supplies mean\u00b1std from ten seeds under E01/E02: 20-task Meta-World with SAC and 10-task SpaceInvaders/7-task Freeway with PPO, 1M steps per task. The conjunction covers every performance P(T) and FTr column with ge against all five baseline methods, excluding RT because it is a reference-transfer statistic rather than a sixth method. The parser retains six unsplit sequence-specific metric column labels, so six metric-specific best-baseline properties are necessary rather than silently conflating performance with forward transfer. No task or baseline is omitted, and equality remains allowed."
+      },
+      {
+        "claim_id": "C03",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "nonquantitative",
+        "explanation": "E03 and fig4_arch_validation.md discuss attention and internal-policy mechanisms for scenarios (i) and (iii), with approximate time-dependent qualitative matching patterns. Scenario (ii)'s general ability to learn a function over previous policies is not a numeric benchmark outcome in that evidence. Full three-scenario correctness\u2014including learning from scratch without interference\u2014cannot be replaced by the two approximate final returns or one dominant-attention comparison."
+      },
+      {
+        "claim_id": "C04",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "E04 and fig3_scalability.md contain separate main-figure measurements (d_enc=64, action size 6, up to 100 tasks) and Appendix C.1 readings (d_enc=39, action size 4, through 300 tasks), all approximate. C04 asserts slower empirical growth, O(n\u00b2) theoretical complexity, and an architectural parallel-attention explanation. Reported pairwise time ordering is not a growth-rate/curvature or complexity proof, and the catalog has no relation expressing that full assertion. The two configurations are not merged, nor is lower time at selected points substituted for slower scaling."
+      },
+      {
+        "claim_id": "C05",
+        "disposition": "declared",
+        "declaration_ids": [
+          "C05"
+        ],
+        "reason": null,
+        "explanation": "Three metric-specific consistency properties compare CompoNet FTr strictly above the Table 1 RT (reference) entry in Meta-World, SpaceInvaders and Freeway. Figure D.2 explains RT as best-previous-task fine-tuning transfer derived from three-seed transfer matrices; Table 1 CompoNet results aggregate ten seeds. The source's compositional-knowledge interpretation is operationalized by its own FTr>RT falsifier, not by a new causal-intervention experiment. RT's absent spread is retained as unknown rather than zero, and RT is not confused with FT-N or FT-1."
+      }
+    ]
+  },
+  "artifacts/paperbench/self-expansion": {
+    "claims": [
+      {
+        "claim_id": "C01",
+        "disposition": "declared",
+        "declaration_ids": [
+          "C01"
+        ],
+        "reason": null,
+        "explanation": "Table 1 and E01 fix ViT-B/16-IN1K, frozen backbone, no rehearsal and the named CIL splits. One best-baseline property compares SEMA against FT Adapter, L2P, DualPrompt, CODA-P, SimpleCIL, ADAM and InfLoRA at all six dataset/split coordinates, with ge preserving the allowed equality. AN is bound to the table's explicitly labelled final average accuracy, not the adjacent average-incremental \u0100 columns. The 91.37% in the falsifier identifies the reported SEMA CIFAR-100 measurement rather than a new stand-alone threshold; that measurement is read from evidence, never copied into the spec. No exceptional dataset or baseline is dropped."
+      },
+      {
+        "claim_id": "C02",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "E02 requires sub-linear growth over ImageNet-A tasks versus linear CODA-P/DualPrompt plus fewer final parameters at equivalent or better accuracy than Expansion by Task. Figure fig8_param_growth.md has approximate sparse parameter readings (including a range at task 10), while Table 5 has final parameter/accuracy pairs. Reported catalog comparisons cannot express a sub-linear versus linear curve-shape assertion; endpoint ratios or lower final parameter counts would omit it. Table 5 additionally labels its accuracy as AN while its values coincide with Table 1's \u0100 column, so those metric identities are not silently reconciled. No partial efficiency-only declaration discharges C02."
+      },
+      {
+        "claim_id": "C03",
+        "disposition": "declared",
+        "declaration_ids": [
+          "C03"
+        ],
+        "reason": null,
+        "explanation": "Table 2 and E03 compare the full z-score-triggered, learned-soft-router SEMA with precisely No Exp., Avg. W., Rand. W., Top-1 Sel., and Rand. Sel. on ImageNet-A and VTAB under the frozen IN1K no-rehearsal setup. Two conjunctive best-baseline properties preserve both AN and \u0100, the two performance metrics named in the experiment and falsifier. Top-1 Sel. Inf. is excluded because inference-only hard selection is a distinct sixth ablation not named by C03; no aliases merge it with Top-1 Sel. The Statement's per-dataset superiority is retained rather than weakened to merely not losing both metrics on both datasets simultaneously."
+      },
+      {
+        "claim_id": "C04",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "Table 3 has AN and \u0100 for default Adapter [9], LoRA [30] and Convpass [34] on both ImageNet-A and VTAB. C04's substantive within-2%-AN condition is an additive accuracy margin (its falsifier specifically prohibits a drop exceeding two percentage points), not an ordering or a 0.98 ratio. The reported relations have no standalone additive-margin/equivalence comparison; compound_consistency's tolerance applies only alongside an additional required comparison scope, which this claim does not supply. The catalog's generative equivalence relation requires paired fresh runs and introduces a confidence commitment, so it is not substituted for these fixed reported measurements."
+      }
+    ]
+  },
+  "artifacts/paperbench/semantic-self-consistency": {
+    "claims": [
+      {
+        "claim_id": "C01",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "Table 1 (evidence/tables/table1_semantic_consistency.md, rows 9\u201320) reports accuracy for SCW versus SC at k=10, temperature=0.8, across five models and three datasets. Its parsed axes are Dataset, Method/Metric, and column (model). The assertion is a pooled majority of all 15 model\u2013dataset pairs, not a majority within each dataset or model. Catalog consistency counts values of one axis; best_baseline_consistency imposes separate group requirements. Neither the evidence map nor these relations forms and counts the two-axis Cartesian product as eight of 15. Conjoining per-dataset majorities or choosing observed winning cells would change the quantifier."
+      },
+      {
+        "claim_id": "C02",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "Table 1 (evidence/tables/table1_semantic_consistency.md, CPW and SC baseline rows for AQuA-RAT, SVAMP and StrategyQA) supplies per-model accuracies and parenthesized percentage-point deltas. C02 requires across-model arithmetic means, their directions for all three datasets, and the stated +3.14, +0.97 and \u22121.63 magnitudes. The reported-evidence catalog compares individual measurements but provides no mean-of-differences/additive-value relation. Per-model comparisons or a count of positive deltas would not express these dataset-level averages."
+      },
+      {
+        "claim_id": "C03",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "prose-only",
+        "explanation": "E02 requires Isolation Forest, KNN and one-class SVM best-configuration accuracy to beat SC in a majority of conditions AND gains to persist with fewer samples. evidence/tables/table2_outlier_detection.md contains Best / Average entries only at k=10 (conditions, line 5); it has no reduced-sample-size results. Reduced-size persistence appears only as the procedure/expected outcome in logic/experiments.md E02, lines 42 and 46. Even a declaration of the available k=10 comparisons would omit the required reduced-size condition, and best and average must not be interchanged."
+      },
+      {
+        "claim_id": "C04",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "unclear",
+        "explanation": "evidence/tables/table6_featurizer_distance.md and table6_featurizer_comparison.md report the arithmetic-sample mean distances 45.281 (SciBERT), 45.892 (MathBERT), and 48.697 (RoBERTa), without sample counts, sampling variability or a significance procedure. C04 says significantly lower, whereas its falsifier only asks whether RoBERTa is \u2264 either alternative; E03 defines only a mean-distance comparison. The fixed inputs do not resolve whether significantly is an inferential commitment or merely emphasis. A pairwise directional declaration is available but cannot be asserted to preserve that unresolved qualifier; no zero variance or significance level is invented."
+      },
+      {
+        "claim_id": "C05",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "evidence/tables/table3_seq_length_bleu.md has average token length and average semantic-method accuracy increase for the 15 model\u2013dataset units (AQuA-RAT, SVAMP, StrategyQA; five models). The claim and E04 concern a positive cross-unit correlation, with a proposed discriminative-signal explanation, not pairwise monotonicity or a treatment/baseline difference. No installed reported-evidence relation calculates or tests correlation between measurement columns. Ranking a selected subset or imposing all-pairs monotonicity would change the asserted tendency."
+      },
+      {
+        "claim_id": "C06",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "evidence/tables/table3_seq_length_bleu.md contains BLEU and average accuracy increase on all 15 model\u2013dataset units; C06 falsifies on statistically significant positive correlation. E04 requests no significant correlation, but specifies no correlation statistic, significance level or inferential sampling protocol. The catalog has neither a reported correlation test nor an independence/equivalence predicate for these paired columns. ROUGE-N averages in evidence/figures/figure2_rouge_n.md are a different metric and cannot replace the BLEU assertion or establish that generation quality and reasoning accuracy are orthogonal."
+      }
+    ]
+  },
+  "artifacts/paperbench/sequential-neural-score-estimation": {
+    "claims": [
+      {
+        "claim_id": "C01",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "unclear",
+        "explanation": "C01 names NPSE-VE AND NPSE-VP versus NPE on eight tasks at 1k, 10k and 100k simulations, with comparable or lower C2ST. E01 repeats those budgets, but evidence/figures/fig2_nonseq_c2st.md and evidence/tables/benchmark_nonseq.md / benchmark_nonsequential.md explicitly provide only approximate 10k and 100k values. No equivalence margin defines comparable; \u2264 would replace comparability with non-inferiority. The figure/table extractions also disagree numerically (e.g. Lotka Volterra, NPSE-VE, 10k is approximately 0.75, 0.68 and 0.80 respectively). Missing 1k coverage and unresolved comparability preclude the full declaration; no extraction or method variant is selected to obtain a favorable comparison."
+      },
+      {
+        "claim_id": "C02",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "E02 and evidence/figures/fig3_seq_c2st.md supply separate TSNPSE-VE and TSNPSE-VP, SNPE (=SNPE-C), and TSNPE C2ST for SLCP and Lotka Volterra at 10k/100k, all approximate. C02 permits VE and/or VP to beat BOTH baselines; its falsifier also quantifies over both variants and tested budgets. Reported relations compare a fixed treatment against a baseline/cohort, and a claim is a conjunction. They cannot encode the existential alternative between VE and VP without picking a fixed variant or strengthening and/or to both. E02 also names 1k, absent from these extractions. No narrower fixed-variant declaration is substituted for the full claim."
+      },
+      {
+        "claim_id": "C03",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "prose-only",
+        "explanation": "evidence/figures/fig6_seq_comparison.md tabulates TSNPSE versus SNPSE-A/B on SLCP and Gaussian Linear Uniform at 10k/100k, but SNPSE-C is explicitly omitted (lines 6\u20137, 27\u201328) and its approximately-one C2ST failure is prose only. fig6_sequential_comparison.md likewise omits C. C03 requires BOTH dominance over A/B and the C failure condition; comparisons with the tabulated baselines alone would omit the latter. The TSNPSE SDE variant is also unspecified in the figure, so it is not aliased to a particular VE/VP variant."
+      },
+      {
+        "claim_id": "C04",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "evidence/figures/fig4c_pyloric_valid.md reports approximate per-budget valid-summary percentages for SNPSE (ours, VP; the E04 TSNPSE method), TSNPE and SNVI at nine rounds from 30k to 190k simulations. The claim asserts 81% at the final round and comparisons at matched budgets; its falsifier additionally uses the fixed \u226581% baseline threshold and all budgets \u2264200k. Pairwise best-baseline consistency could represent only the directional budget comparisons, not the fixed final-round percentage and threshold conditions. Those are not discarded. The alternate table pyloric_rounds.md contains different approximate baseline percentages; no alias or averaging reconciles conflicting extraction values."
+      },
+      {
+        "claim_id": "C05",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "unclear",
+        "explanation": "E01/E02 and evidence/figures/fig2_nonseq_c2st.md / fig3_seq_c2st.md distinguish VE from VP for nonsequential NPSE and sequential TSNPSE at 10k/100k. C05 requires VE better on SIR, Two Moons, Gaussian Mixture, but VP comparably or better on SLCP, Lotka Volterra, Bernoulli GLM and Gaussian Linear Uniform. No tolerance or test defines comparably, and the falsifier changes to correlation with dimensionality rather than a budget-by-budget dominance rule. Alternate numeric extractions disagree, including which variant is lower on some high-dimensional tasks. A strict/non-strict directional conjunction or an invented dimension correlation would settle unresolved meaning rather than faithfully encode it."
+      }
+    ]
+  },
+  "artifacts/paperbench/stay-on-topic-with-classifier-free-guidance": {
+    "claims": [
+      {
+        "claim_id": "C01",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "prose-only",
+        "explanation": "E01 requires the seven named improving benchmarks across GPT-2/Pythia/LLaMA at \u03b3=1.5 versus \u03b3=1, plus LLaMA-7B Lambada approximately81% surpassing PaLM-540B 77.9%. evidence/tables/fig2a_zero_shot_arc_boolq_hellaswag.md and fig2b_zero_shot_piqa_sciq_trivia_wino_lambada.md contain paired baseline/CFG accuracy cells; the LLaMA-7B Lambada cell is 73.6 / 81.3. PaLM-540B 77.9% appears only in fig2b prose (lines 7 and 27), not as a bindable evidence cell. The supported pairwise relations do not accept copied prose constants; omitting the SOTA comparison or weakening it to LLaMA versus its own vanilla baseline would narrow the claim."
+      },
+      {
+        "claim_id": "C02",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "evidence/tables/table4_ancova_pvalues.md supplies nine ANCOVA p-values and categorical winners for matched inference FLOPs: five nonsignificant at p=0.01, two favoring CFG and two vanilla. The full assertion requires thresholding p-values against the nominal level, counting both sides, and retaining the 2\u00d7 parameter/FLOP comparison. Reported-evidence relations compare measurement pairs, not p-values to constants or categorical winner counts. The generative threshold relation requires null-calibration runs and is not a predicate over these reported ANCOVA cells. A point-estimate accuracy comparison would not preserve this statistical assertion."
+      },
+      {
+        "claim_id": "C03",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "prose-only",
+        "explanation": "E02 requires BOTH valid-answer percentage and overall accuracy on GSM8K AND AQuA for WizardLM-30B and Guanaco-65B, with low-\u03b3 improvement and high-\u03b3 low invalid rate but degraded accuracy. evidence/figures/cot_gsm8k.md and figure2_cot_gsm8k.md contain only directional descriptions such as Higher than baseline and Near peak; the AQuA extension is prose (figure2_cot_gsm8k.md lines 21\u201323). There are no numeric per-model/per-dataset/per-\u03b3 rates to bind, and no quantitative rarity threshold for high-\u03b3 invalid chains. Token-parsing examples are not substitute measurements of both outcome rates."
+      },
+      {
+        "claim_id": "C04",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "unclear",
+        "explanation": "E03 and evidence/tables/table2_codegen_humaneval_temp02.md plus tables5/6/7 full results provide pass@1/10/100 for three CodeGen models at \u03b3=1,1.1,1.25,1.5,1.75,2.0. The original statement puts \u03b3=1.5 in BOTH low guidance (uniform improvement) and high guidance (deterioration) but never says whether deterioration is relative to \u03b3=1, the optimum, or the previous \u03b3. Its large-k conjunct permits either diminishing improvement or actual harm, not a single fixed comparison. The falsifier specifies only one 350M pass@1 point and pass@100 and cannot discharge all other conditions. The comparison reference and boundary meaning remain unresolved; the duplicated 2B/6B source values are retained, not corrected."
+      },
+      {
+        "claim_id": "C05",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "evidence/figures/fig5_human_preference.md tabulates 75% system-prompt preference and 52% user-prompt relevance at \u03b3=3 for GPT4All-J with the default negative and edited positive system prompts. The whole claim includes undegraded relevance approximately equal to chance; its falsifier names \u226560% system preference and a significant drop below 50% relevance. The catalog cannot express these reported constant thresholds plus statistical non-degradation as a complete predicate. Figure 5 notes that per-\u03b3 vote counts are unavailable despite totals of 611 votes/71 voters, so no sampling variance, equivalence margin or fresh human-evaluation protocol is invented. Comparing \u03b3=3 to an approximate \u03b3=1 row alone would omit the uncertainty commitment."
+      },
+      {
+        "claim_id": "C06",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "evidence/figures/fig6_entropy_analysis.md gives mean entropy 4.7 for CFG \u03b3=1.5 versus 5.4 vanilla and approximately4.7 instruct on Falcon/P3, but the full claim also requires similarity to instruction-tuned entropy AND CFG/instruct top-p=0.9 overlap <30%. The alternate entropy_analysis.md includes <30% as an inequality-valued cell, not a precise overlap; the main figure gives it in prose. Reported pairwise relations do not express an absolute overlap threshold or entropy equivalence with an unspecified margin, and no variance supports the significant-entropy falsifier. The numeric CFG/vanilla overlap (~50%) is a different operand and is not substituted for CFG/instruct."
+      }
+    ]
+  },
+  "artifacts/paperbench/stochastic-interpolants": {
+    "claims": [
+      {
+        "claim_id": "C01",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "C01 asserts a universal theorem: for ANY joint density with correct marginals, including dependent couplings, the conditional velocity is the UNIQUE minimizer of the quadratic objective and satisfies the transport equation. E01 is an analytical validation plan; evidence/tables/table1_couplings.md classifies coupling PDFs and figure2_transport_comparison.md provides a three-mode GMM illustration. No reported comparison or finite generative catalog predicate expresses universal minimizer uniqueness and the transport identity. Numeric loss comparisons on a chosen GMM would be a narrower assertion, not a test of this whole theorem."
+      },
+      {
+        "claim_id": "C02",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "C02 requires the symbolic transport bound under x0=m(x1)+\u03c3\u03b6 with \u03b1=1\u2212t, \u03b2=t to equal d\u03c3\u00b2 and be strictly below 2E|x1|\u00b2+d\u03c3\u00b2. E01 supplies an analytical/GMM procedure; evidence/figures/figure2_transport_comparison.md explicitly contains no numerical trajectory data. The catalog does not express equality of symbolic expectation integrals or the universally parameterized bound. In particular, the unspecified dependence on m(x1) must not be silently replaced by m(x1)=x1; a numerical comparison at one selected \u03c3, d or coupling would change the claim."
+      },
+      {
+        "claim_id": "C03",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "evidence/tables/table2_inpainting_fid.md reports ImageNet-256 FID-50k 1.13 for the data-dependent mask coupling and 1.35 for the uncoupled model, with the E02 coupling/schedule conditions. A directional comparison between those two evidence cells is expressible, but C03 explicitly asserts those magnitudes and its falsifier names fixed thresholds (dependent \u22651.35 OR uncoupled \u22641.13 in reproduction). The reported catalog cannot declare those absolute reported/reproduction thresholds; a mere dependent<uncoupled comparison would allow both values to move past them. No narrower directional subclaim is counted as the full assertion."
+      },
+      {
+        "claim_id": "C04",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "evidence/tables/table3_superresolution_fid.md provides train FID-50k 2.13 and validation2.05 for ImageNet64\u2192256 dependent coupling, plus I\u00b2SB validation2.70 (its train value is unreported). C04 asserts BOTH train and validation magnitudes and superiority to I\u00b2SB; its falsifier uses the fixed validation threshold2.70. A validation pairwise comparison alone omits the independent train assertion, and comparing train to another baseline invents a condition not equivalent to train2.13. Reported relations cannot express the entire absolute-value/threshold conjunction; no values are copied into synthetic evidence or a spec constant."
+      },
+      {
+        "claim_id": "C05",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "nonquantitative",
+        "explanation": "evidence/figures/figure2_transport_comparison.md explicitly identifies itself as a qualitative 2D three-mode GMM visualization with no numerical data points. Its left/right descriptions contrast simple non-crossing dependent-coupling flows with complex independent-coupling flows and auxiliary intermediate modes. E04 gives no numeric trajectory-complexity measure, mode-detection criterion or crossing counts. None of these qualitative descriptions is converted into fabricated measurements or a finite predicate standing in for the complete visual assertion."
+      }
+    ]
+  },
+  "artifacts/paperbench/test-time-model-adaptation": {
+    "claims": [
+      {
+        "claim_id": "C01",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "Tables 2 and 16 report ImageNet-C severity-5 mean accuracy/ECE for 32-bit ViT-Base (FOA 66.3/3.2, TENT 59.6/18.5), and Table 8 reports zero backward passes. The full statement also requires no model-weight modification; the reported-evidence numeric relations cannot certify that algorithmic constraint. An accuracy/ECE-only declaration would omit it."
+      },
+      {
+        "claim_id": "C02",
+        "disposition": "declared",
+        "declaration_ids": [
+          "C02"
+        ],
+        "reason": null,
+        "explanation": "Two required comparisons preserve cross-precision identity: Table 4 8-bit PTQ4ViT FOA mean accuracy versus Table 2 32-bit TENT on all 15 severity-5 ImageNet-C corruptions, and Table 7 BS=64 FOA (8-bit) versus TENT memory. The 63.5/59.6 and 208/5165 values identify reported operands, not fabricated constants. Table 7 explicitly calls 8-bit memory an ideal 0.25-times estimate; it is not an independently measured 8-bit allocation."
+      },
+      {
+        "claim_id": "C03",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "Table 7 BS=64 supplies FOA 8-bit 208 MB and TENT 32-bit 5165 MB, with the former estimated from 832 MB rather than measured. A ratio comparison could express the memory reduction, but not the claim's required causal attribution to absence of gradient buffers/backward computation graph. The 24.8-fold assertion is not replaced by the weaker falsifier threshold of 10-fold."
+      },
+      {
+        "claim_id": "C04",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "Table 9 exp5 (norm layers+CMA+entropy) gives 0.1% and exp6 (prompts+CMA+entropy) 44.9%, versus NoAdapt 55.5%; Table 5 confirms the prompt ablation. Numeric comparisons cannot express the full conclusion that entropy alone cannot provide stable CMA learning signals, and no stability measurement or time series is reported. The within-5-percentage-point falsifier is not reduced to merely worse-than-NoAdapt."
+      },
+      {
+        "claim_id": "C05",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "Table 5 separates NoAdapt 55.5%, activation-discrepancy-only 63.4%, and full entropy+discrepancy+shifting 66.3%; Table 9 instead reports a distinct 65.4% FOA design-choice row. Reported relations could compare those averages but cannot certify consistent learning signals/stability or the required additive gain of at least 5 percentage points in the falsifier. The variants are not aliased."
+      },
+      {
+        "claim_id": "C06",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "Table 12 provides clean-ImageNet accuracy FOA 85.11, NoAdapt 85.17, TENT 84.80, CoTTA 83.91, SAR 84.52, with signed drops in parentheses. Full fidelity requires the near-original/at-most-1-percentage-point NoAdapt drop condition as well as superiority to all three gradient baselines. The catalog has no standalone additive-difference bound on reported cells; compound_consistency ties its ID clause to the same baseline as a separate non-ID scope, which this clean-only comparison does not supply. No arbitrary relative-ratio surrogate is introduced."
+      },
+      {
+        "claim_id": "C07",
+        "disposition": "declared",
+        "declaration_ids": [
+          "C07"
+        ],
+        "reason": null,
+        "explanation": "All four Table 11 method comparisons are declared: higher accuracy and lower ECE against both TENT and SAR for class-ordered online label shift and the single mixed-corruption stream. Each property aggregates every other method row (the cohort is exactly TENT and SAR). Separate properties are necessary for four metric columns, and preserve the stronger statement rather than the weaker ECE falsifier."
+      }
+    ]
+  },
+  "artifacts/paperbench/what-will-my-model-forget": {
+    "claims": [
+      {
+        "claim_id": "C01",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "parse failure",
+        "explanation": "Table 1 is the required 7-of-8 best-method evidence, but aratest evidence rejects its repeated BART0Large/FLAN-T5Large/FLAN-T53B column headers at line 5. Moreover the fixed table visibly contains only seven configurations (2+3+2), not the claimed eight; the omitted setting cannot be invented or the quantifier silently changed to 6-of-7."
+      },
+      {
+        "claim_id": "C02",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "parse failure",
+        "explanation": "The all-eight prior-versus-no-prior comparison relies on Table 1 Representation and w/o Prior rows. Production parsing rejects duplicate model headers at line 5, and the seven visible columns do not identify an eighth configuration. No numeric values are copied into replacement evidence and no all-seven substitute is declared."
+      },
+      {
+        "claim_id": "C03",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "parse failure",
+        "explanation": "Table 1 contains the required BART0Large Full FT trainable-logit/threshold pair 57.15/55.75 and FLAN-T5Large LoRA 36.54/43.93 and Full FT 40.91/48.43. The production parser rejects its duplicate model headers. Figure 2(a) demonstrates token-level transfer on one example pair but does not replace these configuration-level F1 operands."
+      },
+      {
+        "claim_id": "C04",
+        "disposition": "declared",
+        "declaration_ids": [
+          "C04"
+        ],
+        "reason": null,
+        "explanation": "One comparative property includes all four Table 3 sequential error-fixing model/tuning settings, comparing Representation replay with Random replay on EM Drop (%). Table 4 is separate single-error fixing and is intentionally not substituted; success rate is not an asserted conjunct of C04."
+      },
+      {
+        "claim_id": "C05",
+        "disposition": "declared",
+        "declaration_ids": [
+          "C05"
+        ],
+        "reason": null,
+        "explanation": "Table 2 P3-TestOOD binary F1 on BART0Large Full FT: Representation with prior must exceed Threshold; Threshold must exceed both Trainable Logit and w/o Prior. The second property aggregates both unsuccessful alternatives. This preserves the word only, not merely best-of-all performance; ID scores are outside the claim."
+      },
+      {
+        "claim_id": "C06",
+        "disposition": "declared",
+        "declaration_ids": [
+          "C06"
+        ],
+        "reason": null,
+        "explanation": "The stated 1/6700 FLOP magnitude is preserved as conjunction of ratio_ge and ratio_le with Ground Truth over Representation from Table 8 (FLAN-T5Large Full FT, 3600 upstream examples); it is not weakened to merely cheaper or the 1%-cost falsifier. Table 8 actually reports 1.35e10 and 9.04e14, whose displayed ratio differs from the prose magnitude; no semantic repair is made. Comparable replay EM Drop is bounded within factor two in both directions using Table 3 FLAN-T5Large Full FT Representation and GT Forget, as specified by the falsifier. No missing variance is imputed."
+      }
+    ]
+  },
+  "artifacts/rebench/rebench-fix_embedding": {
+    "claims": [
+      {
+        "claim_id": "C01",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "prose-only",
+        "explanation": "E01 explicitly records only notes.md:7 saying vanilla fine-tuning performed poorly, with no surviving final-loss log or configuration. The required no-adapter/no-small-model outcome against loss 2.8 is unavailable as numeric evidence; the sparse-gradient causal explanation is also not a reported metric."
+      },
+      {
+        "claim_id": "C02",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "prose-only",
+        "explanation": "E02 documents adapter-only training at lr=1e-3 for 1000 iterations with frozen small-model embeddings, but explicitly says no exact final loss was recorded. reference_scores.md reports only the eventual full pipeline, not the adapter-only below-5.5 outcome; the PCA-space sharing subclaim is qualitative rather than a reported embedding-similarity measurement."
+      },
+      {
+        "claim_id": "C03",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "prose-only",
+        "explanation": "E03 documents lr=1e-4 and 2000 iterations after adapter warmup, but its outcome is only continued loss reduction. Neither the Stage-1 plateau nor Stage-2 final loss nor the extra-2000-iteration adapter-only control named in the falsifier is tabulated. The end-to-end full-pipeline reference score cannot stand in for this stage comparison."
+      },
+      {
+        "claim_id": "C04",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "prose-only",
+        "explanation": "E04 gives the exact bake operation and 4000-iteration lr=8e-5 schedule, but only the eventual 2.8917 final loss is recorded. There is no matched continued-adapter+all control or pre-bake loss to test further reduction; the dimensional-bottleneck mechanism is not a numerical evidence relation."
+      },
+      {
+        "claim_id": "C05",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "reference_scores.md distinguishes the score.log official-run loss 2.8917 and derived 0.328 from README reference 0.26 / approximately 2.8. The full assertion is an absolute reported loss plus logarithmic score transformation, not an ordering against a baseline. The installed reported-evidence relations cannot assert a cell equals that stated value or verify ln(loss-1.5); using the README row as if it were the same run would change the claim."
+      },
+      {
+        "claim_id": "C06",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "reference_scores.md records the original uncorrupted loss 2.55, but the statement universally bounds every permissible future recovery procedure. Pairwise comparisons of the existing finite attempts do not establish that information-theoretic lower bound, and no reported-evidence relation expresses the universal procedure quantifier."
+      },
+      {
+        "claim_id": "C07",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "malt_attempts.md run 345749 attempts 5-15 tabulates the scale-up sweep; 345751 attempts 5-15 and 347458 attempts 7-11 record the small downward-scaling improvement near 0.66. The full claim combines universal nonrecoverability, monotonicity in absolute distance from one, and a qualified exception. The reported-evidence catalog cannot express that entire shape/universal assertion; its monotonic relation requires fresh run-batch evidence, not these cells. No outside experiment is run."
+      },
+      {
+        "claim_id": "C08",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "malt_attempts.md run 345790 gives ascending-L2 8.3875, ascending-mean 13.4166, descending-L2 13.4438 and unchanged baseline 10.4909. Comparisons could express their ordering, but the whole assertion also requires inverse-permutation invariance and the frequency-norm-alignment explanatory mechanism. Those do not follow as executable reported-cell relations, so no narrower sorting comparison discharges C08."
+      },
+      {
+        "claim_id": "C09",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "E10/E11 and malt_attempts.md distinguish run 345746 unlogged 5.138 loss / null official score from run 345747 logged 5.447 / 1.373. The full statement quantifies over any reachable LR/batch/iteration combination, asserts plateau/range and official-log restrictions, and compares to the reference. Finite mixed-strategy attempt rows cannot encode the universal budget-limited failure or plateau; the stated 5+ log-unit gap is not replaced with a weaker direction."
+      },
+      {
+        "claim_id": "C10",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "malt_attempts.md contains tile/upcast failures, e.g. 345788 attempt 2 loss 22.2167 and 348011 attempt 7 loss 22.276, but also zero-pad runs 345748 at 6.1291 and 5.5514. The full claim includes the [18.7,22.3] range, destructive-interference mechanism, and only-known-transfer-path assertion. The reported catalog cannot express that conjunction and no contradictory rows are filtered away to create a directional-only surrogate."
+      },
+      {
+        "claim_id": "C11",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "All 19 runs appear in malt_attempts.md and E05-E23. The table mixes internal and official scores (run 345746 summary 1.2915 versus timeout/null official attempt 13); E10/E11 distinguish best internal 1.29 and best official 1.373. The claim additionally asserts absence of an adapter curriculum and a structural causal explanation. Numeric score comparisons neither inspect program-construction absence nor express that mechanism, so the full claim remains skipped."
+      },
+      {
+        "claim_id": "C12",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "prose-only",
+        "explanation": "E10 and malt_attempts.md run 345746 attempts 13-14 record an official timeout even though internal loss 5.138 was printed; E16 and run 347460 attempts 4-9 describe recurrent timeout/corrupt-checkpoint failures. No parsed table reports checkpoint deserialization duration, wall-clock ceiling observations, or a conditional timeout-cascade frequency. Scores and textual status labels cannot substitute for the required approximately-60-second and 180-second timing evidence."
+      },
+      {
+        "claim_id": "C13",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "Trace N511/N512 report small-versus-large wpe standard deviations 0.122681/0.015167 and the wte=0.001 comparison 10.823 versus 10.827; malt_attempts.md run 345789 attempts 10 and 13 give corresponding losses. The original uncorrupted large-model wpe standard deviation required by the falsifier is not supplied. A small-model variance comparison cannot establish corruption of the large model, and no defined equivalence margin quantifies negligible improvement. The mechanistic/full claim is not replaced by a loss-ordering subclaim."
+      }
+    ]
+  },
+  "artifacts/rebench/rebench-nanogpt_chat_rl": {
+    "claims": [
+      {
+        "claim_id": "C01",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "parse failure",
+        "explanation": "E01/E04 identify the best-of-8, four-step, lr=4e-6 held-out Alpaca mean-win-rate comparison, but reference_scores.md wraps 0.54 and 0.85 in backticks. Production aratest evidence returns value=null for both required Value cells. They cannot bind as numeric operands, and no score.log is shipped. The code conditions and absolute 0.85 falsifier are not replaced by MALT scores from different recipes."
+      },
+      {
+        "claim_id": "C02",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "prose-only",
+        "explanation": "E02 explicitly says the best-of-2 versus best-of-8 standalone ablation was not run and has no quantitative comparison. No table contains four isolated deltas or selection-variance measurements for the asserted approximately-sqrt(4) reduction. The structural implementation change is not evidence that it accounts for the largest share of the win-rate gain."
+      },
+      {
+        "claim_id": "C03",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "nonquantitative",
+        "explanation": "E03 is explicitly a code-path equality observation with no numeric metric: generate_strings_autobatch overrides temperature/top_k/max_new_tokens to 0.7/8/20 for both trainer and scorer. The full statement asserts distribution alignment is required, while the mismatched-generation experiment in its falsifier was not performed. A score-ordering relation cannot certify these code-path and necessity assertions."
+      },
+      {
+        "claim_id": "C04",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "E03 and the cited tournament implementation establish an algorithmic N-1 comparison-count formula, the N=8 round-robin count 28, and parallel logarithmic-round latency rationale. The evidence contains no measured timing/count grid, and the reported numeric relations cannot express the general-N complexity and judge-call-optimality proof. No synthetic table or fresh judge calls are created."
+      },
+      {
+        "claim_id": "C05",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "parse failure",
+        "explanation": "E04 and reference_scores.md explicitly identify the README-recorded 0.85 and absence of a shipped score.log. Production parsing returns value=null for the backtick-wrapped reference Value cell at line 6. Even with a parseable cell, this is an absolute-score claim with [0.83,0.87] falsification band rather than a mere better-than-starting comparison; no fabricated constant evidence is added."
+      },
+      {
+        "claim_id": "C06",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "prose-only",
+        "explanation": "C06 cites run-0 msg193 score_time=244.15 and labels E05, but logic/experiments.md ends at E04. malt_attempts.md has win-rate columns, not GPU/judge timing measurements. Trace score_time descriptions (e.g. N654 589.91s with retries) are narrative and not a parsed timing decomposition. Neither API-dominated wall time nor the less-than-60s falsifier can be tested from win-rate values."
+      },
+      {
+        "claim_id": "C07",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "malt_attempts.md and trace N151/N154 record 429 storms, reduced concurrency, and failed preference signals; N656 contrasts the same step-10 checkpoint under rate limiting. The full claim requires a causal binding-constraint conclusion, workload/error conditions and counts across 18 runs, and 0.4+-point same-weights gaps. Reported-cell comparisons cannot express the causal/throughput and metadata-count conjunction; no error flags or paired identities are fabricated from prose."
+      },
+      {
+        "claim_id": "C08",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "nonquantitative",
+        "explanation": "Trace N50 and N101 explicitly document the targets=None last-token-logit branch, shape [B,1,50257], and per-token-loss failures; N655 records an analogous DPO shape failure. The claim is a code/API mechanism plus a cross-run incidence assertion, not a numeric performance relation. The listed node IDs do not uniformly identify shape failures (e.g. N650 is a baseline score), so no numeric eight-of-eighteen count is inferred."
+      },
+      {
+        "claim_id": "C09",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "malt_attempts.md records collapse examples such as run 345792 lr=3e-5 at 0.0303 and run 347461 continuation 0.7061 to 0.1875; trace N400 and N504 describe model degeneration and concurrent judge failures. The assertion combines LR/step/KL conditions, universal consistent collapse below 0.1, and necessity of conservative settings. The table does not expose a controlled quantitative grid or separable causal relation for all those conditions; a few low scores are not a complete declaration."
+      },
+      {
+        "claim_id": "C10",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "The required named checkpoint pairs are present in malt_attempts.md: run 345752 attempts 9/8 (0.5693/0.0703), 345791 attempts 4/2 (0.7969/0.7813), and 347463 attempts 2/3 (0.7930/0.7852). Trace N57/N404/N654 supplies checkpoint identity. But the full claim says significantly higher and makes a persistent selection-benefit assertion; no uncertainty estimates or paired evaluation outcomes support a significance relation. The >=15-of-18 falsifier also cannot be replaced by the three favorable examples alone."
+      },
+      {
+        "claim_id": "C11",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "parse failure",
+        "explanation": "malt_attempts.md lists the 18 runs and best observed 0.8184 at run 345757 attempt 7, but the required official-reference 0.85 in reference_scores.md parses as value=null because it is backtick-wrapped. A quantitative all-attempt comparison cannot bind that reference. The additional qualitative-superiority and throughput-limited-method explanations are not discharged by the observed maximum alone."
+      },
+      {
+        "claim_id": "C12",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "nonquantitative",
+        "explanation": "Trace N56, N154 and N504 describe checkpoint overwrites and unrecoverable earlier states; N656 instead describes a rate-limited re-score of a preserved step-10 checkpoint. malt_attempts.md reports scores but not a numeric backup-policy experiment or recovery indicator for seven runs. The full operational/causal assertion and counterfactual benefit of keeping named backups are not reported-evidence numeric relations."
+      }
+    ]
+  },
+  "artifacts/rebench/rebench-restricted_mlm": {
+    "claims": [
+      {
+        "claim_id": "C01",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "evidence/tables/reference_scores.md:5-9 reports baseline/reference losses and scores, but C01 independently asserts the log(loss-1.5) transformation and approximately 0.68 additive score-unit improvement. The reported-evidence catalog supports cell ordering and ratios, not this logarithmic identity or additive magnitude. Declaring only reference < baseline would discard conditions. The table also reports reference score 1.143 whereas the claim uses approximately 1.13; neither value was rewritten."
+      },
+      {
+        "claim_id": "C02",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "evidence/tables/reference_scores.md:13-21 gives the analytical formula and halving argument. C02 asserts an asymptote and the universal identity that halving loss-1.5 changes score by -log(2), not an ordering among reported cells. No installed relation expresses that functional identity and domain limit; finite reruns would not discharge the mathematical assertion."
+      },
+      {
+        "claim_id": "C03",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "unclear",
+        "explanation": "The C03 heading says unigram is worse, while its Statement and src/kernel/notes.md:3,18-19 say loss 7.58 is marginally below the 7.636 MLP baseline. evidence/tables/reference_scores.md:27-29 records scores 1.814 and 1.808. The fixed inputs do not resolve the direction conflict. The additional assertion that both round to approximately 1.81 would also require a rounding/equality relation, not just a loss comparison."
+      },
+      {
+        "claim_id": "C04",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "unclear",
+        "explanation": "C04 simultaneously says bigrams beat every neural-only attempt and describes losses 5.83/5.75 as better than conv-only loss 5.25, while qualifying conv as a later experiment. src/kernel/notes.md:5-7 and evidence/tables/reference_scores.md:30-32 retain those losses; logic/experiments.md E03-E04 says conv beats bigrams. The required historical neural-only cohort and temporal comparison are not specified consistently, so no scope or comparator was guessed."
+      },
+      {
+        "claim_id": "C05",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "src/kernel/notes.md:7 and evidence/tables/reference_scores.md:32 report Conv1D loss 5.25; the claim requires that attained loss for kernel=7, hidden=512, layers=6, expansion=2 after 100k steps, not merely a lower loss than bigrams. No reported-evidence relation tests a cell against an absolute target. src/kernel/tao_train.py:19,24-30,73-75 configures these hyperparameters for the shipped composite, not a separately logged ConvMLM-only run, so training-condition attribution cannot be strengthened."
+      },
+      {
+        "claim_id": "C06",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "evidence/tables/reference_scores.md:32-33 and src/kernel/notes.md:7,11 give the 5.25 to 4.6 loss change. src/kernel/tao_solution.py:332-359 identifies the learned scalar initialized to 1.0 and frozen bigram path. A comparative property could express lower composite loss, but would not preserve the claimed endpoint magnitudes or largest-single-win assertion, which needs comparisons of stage-to-stage differences. The catalog has no reported difference-of-differences or attained-value relation."
+      },
+      {
+        "claim_id": "C07",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "nonquantitative",
+        "explanation": "src/kernel/tao_solution.py:293-297,346,363-367 and src/kernel/tao_train.py:123 locate multiplication by inverse_stds in forward and reciprocal EMA updates in the training loop. C07 is a code-location/primitive-compliance mechanism assertion. Numeric cell relations do not establish where division occurs or whether the forward-pass restriction is obeyed."
+      },
+      {
+        "claim_id": "C08",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "nonquantitative",
+        "explanation": "src/kernel/tao_solution.py:206-236 implements padding, an as_strided view and einsum, with pad=(kernel_size-1)//2. C08 asserts an implementation substitution and preserved same-padding behavior under the primitive allow-list, not a reported quantitative comparison. No catalog relation expresses code construction or allow-list membership."
+      },
+      {
+        "claim_id": "C09",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "prose-only",
+        "explanation": "src/kernel/notes.md:13-16 contains the approximation MFU measurements, the approximately 23x slowdown, and the observation that loss did not decrease. evidence/tables/reference_scores.md:34 instead marks the approximation loss/score n/a. There is no parseable matched runtime and learning-curve evidence covering both the slowdown and failed training conjuncts. The notes distinguish GPT-2-small's 2.3 MFU from a smaller configuration's 1.88 versus 43.9 MFU; those variants were not merged."
+      },
+      {
+        "claim_id": "C10",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "evidence/tables/human_baselines.md:5-27 supplies all 11 scores and summary rows. C10 additionally asserts best-loss inversion, an approximately 0.79 additive score gap, median 1.36354 and exactly five worse-than-anchor humans. Reported cell comparisons cannot express the logarithmic inversion, median calculation or exact additive magnitude; retaining only selected humans beating reference would narrow the claim. The evidence's four beat-reference humans and its stated 1.13 anchor were preserved, not reconciled with the claim's count."
+      },
+      {
+        "claim_id": "C11",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "evidence/tables/malt_attempts.md:13-36,40-48,64-67 records 22 runs, their model identities, the two named winning scores and the Sonnet best. The whole claim also requires run_14 to be within 0.09 score-units of the reference and the named attained scores. The catalog's comparisons/count-at-least scans cannot preserve this absolute-distance and attained-value conjunction. In particular run_14's reported 1.2218 and the prose reference 1.13 were not adjusted to make the stated 0.09 condition true."
+      },
+      {
+        "claim_id": "C12",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "evidence/tables/malt_attempts.md:40-46,64-70 provides median/mean best-of-run and per-model mean values, while evidence/tables/human_baselines.md:23 supplies the best human. C12 asserts those attained aggregates, approximately 0.6 above reference, the 0.71 best-human gap and the 0.247 Opus-versus-Sonnet mean gap. No reported-evidence relation checks these median/mean identities and additive differences; simple model ordering would not be the same obligation."
+      },
+      {
+        "claim_id": "C13",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "evidence/tables/malt_attempts.md:58-60,76-77 and logic/experiments.md EM01-EM04 describe ReLU-attention winners, no loaded bigram priors across 22 runs and the three-seed ensemble. C13 combines those code-history assertions with a learning-rate ceiling and an asserted 0.55-loss-unit official contribution; a score comparison or count relation would not establish the whole conjunction. The per-run code/rebench-pipeline paths cited by C13 are not part of this copied ARA, and the official table's 5.25 to 4.6 change was not changed to match 0.55."
+      },
+      {
+        "claim_id": "C14",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "evidence/tables/malt_attempts.md:74-77 names runs 01,06,09,11,16,19,20 and narrates NaNs and recovery by fixed residual scaling; logic/experiments.md EM05 summarizes seven of 22. C14 requires universal recovery across those cases, timing at or shortly after step zero, the reciprocal-emulation cause, and absence of the official workaround. The table has no per-step failure/recovery measurements, and numeric cell relations do not express this causal/code-history conjunction. The cited external per-run insights are unavailable within the fixed copy."
+      }
+    ]
+  },
+  "artifacts/rebench/rebench-rust_codecontests": {
+    "claims": [
+      {
+        "claim_id": "C01",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "prose-only",
+        "explanation": "evidence/tables/reference_scores.md:6-7 reports the official 21/165 score, but neither it nor logic/experiments.md E01-E04 supplies matched single-sample and best-of-N-without-filter scores at the same token budget. E02 explicitly says no ablation score was recorded. The universal superiority claim over those strategies cannot be established by comparing the official score against the empty scaffold, human runs, or MALT runs with different budgets; the specified N=18 configuration and held-out 165-problem scope were not substituted."
+      },
+      {
+        "claim_id": "C02",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "nonquantitative",
+        "explanation": "src/kernel/solve_code_contests_rust.py:25-27,160-194 fixes 18 requested completions, three outer iterations, and immediate return after a nonempty surviving batch. The 54-candidate bound is a control-flow consequence, not a reported measured comparison. No catalog relation expresses API argument configuration, early return, or an upper bound on loop executions."
+      },
+      {
+        "claim_id": "C03",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "prose-only",
+        "explanation": "src/kernel/solve_code_contests_rust.py:32,51-58 confirms the enabled chain-of-thought prompt, and logic/experiments.md E02 identifies it as shipped. The additional assertion of approximately 100-200 extra reasoning tokens per completion has no token-count evidence table or matched prompt ablation. A declaration about the flag alone would omit the quantitative token-cost conjunct."
+      },
+      {
+        "claim_id": "C04",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "nonquantitative",
+        "explanation": "src/kernel/solve_code_contests_rust.py:63-86,188-194 specifies GPT-3.5-turbo-1106, temperature zero, max_tokens=1600, JSON-object response format, letter indexing and the multiple-survivor branch. C04 is a software interface/control-flow assertion; the numeric configuration constants do not turn it into a measured performance comparison expressible by the catalog."
+      },
+      {
+        "claim_id": "C05",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "nonquantitative",
+        "explanation": "src/kernel/solve_code_contests_rust.py:28,89-91,110-126,182-187 shows the disabled-by-zero few-shot sampling and writes of passing solutions before returning. C05 concerns persistence and subsequent sampling behavior, with no outcome metric or reported quantitative relation. No declaration was invented to turn file writes or bank reads into fabricated measurements."
+      },
+      {
+        "claim_id": "C06",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "The claim and logic/experiments.md E05 assert an 80-second global per-problem bound and three-loop cap, but the fixed src/kernel/solve_code_contests_rust.py:160-163 actually checks elapsed time >200 before starting a batch; it does not cancel an in-flight API call. No per-problem timing table or catalog code-control-flow relation can express the complete claimed 80-second guarantee and latency-dominance assertion. The source discrepancy was retained rather than repaired or silently changing the bound to 200."
+      },
+      {
+        "claim_id": "C07",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "nonquantitative",
+        "explanation": "src/kernel/solve_code_contests_rust.py:30,35-36,156-157 makes skip_hard false and gates the rating/difficulty predicate behind it. C07 asserts that a configuration-dependent short circuit is disabled, not an ordering of empirical measurements. The catalog does not encode program branch reachability or literal flag values."
+      },
+      {
+        "claim_id": "C08",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "nonquantitative",
+        "explanation": "src/kernel/solve_code_contests_rust.py:195-216 contains the commented Python-generation/translation call path, and logic/experiments.md E07 reports no scoring evidence for that path. C08 is a claim about explored-but-inactive implementation and absence of execution in the shipped solver. Numeric performance relations cannot establish commented-code status or universal nonexecution."
+      },
+      {
+        "claim_id": "C09",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "nonquantitative",
+        "explanation": "logic/experiments.md E08 records repair as a notes-only plan, and the shipped generate_solution body at src/kernel/solve_code_contests_rust.py:160-219 generates, filters, votes, retries and returns without a repair stage. C09 is a historical implementation-absence claim. The cited notes.md is not included in this copy's src/kernel, and no catalog relation expresses planned-versus-implemented state."
+      },
+      {
+        "claim_id": "C10",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "evidence/tables/human_baselines.md:9-24 records different human attempts, not a matched same-configuration rerun series; temperature=1.0 is configured at src/kernel/solve_code_contests_rust.py:31. C10 asserts non-trivial same-configuration variance and an approximately 0.02 absolute baseline difference, with a five-rerun +/-0.005 falsifier. Neither reported cell ordering nor a generated seed-resampling experiment would recover those missing historical matched reruns or establish the stated async-batching cause. No provider calls were made."
+      },
+      {
+        "claim_id": "C11",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "parse failure",
+        "explanation": "Production aratest evidence parsing rejects evidence/tables/malt_attempts.md at line 13: the standalone schema header lacks a separator and data row. That file contains the per-run invalid counts needed for 11 primary, 202 supplement and 213/2508 total. Even if it were parseable, trace/exploration_tree.yaml M07 and the table's status notes give prose error signatures rather than an event-level ledger establishing that every invalid event is a Python SyntaxError, and count arithmetic alone would omit that required condition. The fixed evidence file was not changed."
+      },
+      {
+        "claim_id": "C12",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "parse failure",
+        "explanation": "Production aratest evidence rejects evidence/tables/malt_attempts.md at line 13, preventing binding its 22 per-run summary rows and stream median rows. evidence/tables/reference_scores.md:6,8-10 can identify reference, best human and stream maxima, but cannot replace all named runs, runner-up and per-stream medians. The whole claim further requires exact attained maxima and an additive 0.033 gap, not merely all runs below reference; the catalog has no reported median/additive-gap identity relation. No narrower maximum-only declaration discharges C12."
+      },
+      {
+        "claim_id": "C13",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "nonquantitative",
+        "explanation": "trace/exploration_tree.yaml M02:222-239 narrates zero implementations of the filter-then-vote shape across 22 runs and names nine summaries. C13 concerns the structural content of each agent's code and an interpretation of non-obviousness, not just numerical scores. The referenced per-run insights.yaml files are outside this copy, and no installed relation classifies code implementations or proves absence of an equivalent filter stage from numeric tables."
+      },
+      {
+        "claim_id": "C14",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "prose-only",
+        "explanation": "trace/exploration_tree.yaml M03-M04:242-272 supplies the 0.0424 to 0.0970 ladder and hand-coded-library attribution only in prose; the aggregate evidence table does not retain a matched per-approach sequence. C14 also requires the same-run prompt-engineering ceiling, specific four added solutions, independent rediscovery, and extrapolations to 22/165 and 33/165. A comparison of final run maxima would not express those conditions, and no new library experiment or extrapolated numeric evidence was manufactured."
+      }
+    ]
+  },
+  "artifacts/rebench/rebench-triton_cumsum": {
+    "claims": [
+      {
+        "claim_id": "C01",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "nonquantitative",
+        "explanation": "logic/experiments.md E03 and src/kernel/tao_correct_solution.py:174-200 describe the staged parity and value scans. C01 is an algebraic decomposition/correctness assertion over valid inputs and associative operators, not a measured scalar comparison. The reported-cell relations do not prove functional equality over all inputs; a finite generated performance experiment would not preserve the asserted algorithmic identity."
+      },
+      {
+        "claim_id": "C02",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "nonquantitative",
+        "explanation": "src/kernel/tao_correct_solution.py:194-200 uses the shifted positive_count parity and assigns prefix_sum[1:], while logic/experiments.md E01-E02 discusses correctness failures. C02 asserts the necessity of exclusive rather than inclusive prefix counts and wrong output whenever an input element is positive. No installed relation encodes this universal input-dependent semantic assertion; comparing reported runtimes would not test parity correctness."
+      },
+      {
+        "claim_id": "C03",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "evidence/tables/reference_scores.md:5-8 gives naive PyTorch time 4.76 ms and reference time 1.6 ms; those cells support a simple ordering. C03 additionally asserts five or more kernel launches with intermediate allocations, an approximately 4-5 ms attained range at N=10^8 and a significant performance difference. No launch-count/allocation table or uncertainty is reported, and the catalog does not express that complete mechanism/range conjunction. Missing variance was not treated as zero."
+      },
+      {
+        "claim_id": "C04",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "prose-only",
+        "explanation": "logic/experiments.md E04:49-59 explicitly says the torch.compile plus CUDA-graph alternative was not scored, and the inference of inferiority comes from file naming and absence of a submission log. evidence/tables/reference_scores.md has only naive PyTorch and official reference rows, not this compiled graph variant. Thus neither the required non-fusion assertion nor its no-sub-reference-performance conjunct has usable matched numeric evidence; a different MALT compiled variant was not substituted."
+      },
+      {
+        "claim_id": "C05",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "evidence/tables/reference_scores.md:8 reports the reference target 0.47 and 1.6 ms, while logic/experiments.md E03 and src/kernel/tao_correct_solution.py:153-182 identify the three-kernel pipeline and grid size. There is no independently measured pipeline row separate from the reference anchor. The claim and falsifier require that named configuration achieve score <=0.47 at N=10^8; the catalog lacks a reported absolute-threshold relation. Self-comparing the reference row or checking only speedup over naive PyTorch would be vacuous or weaker."
+      },
+      {
+        "claim_id": "C06",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "nonquantitative",
+        "explanation": "src/kernel/tao_correct_solution.py:130-143,206-215 shows three warmup calls, graph capture and graph replay. The assertion is that this execution ordering removes JIT compilation from measured calls. No before/after compilation-time or direct-launch versus graph-replay timing table supports the performance falsifier. A numeric relation cannot establish the control-flow mechanism from these source statements alone."
+      },
+      {
+        "claim_id": "C07",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "nonquantitative",
+        "explanation": "evidence/tables/malt_attempts.md includes run 343935 attempt 1 and run 343936 attempts 1-2 with textual shape_dtype_match failures and cast recovery; logic/experiments.md E07 summarizes 18 runs. C07 is a dtype-promotion/scorer-contract assertion for all int32-input submissions, including exact acceptance semantics and required repair choices. Numeric score/time relations do not evaluate tensor dtypes or logical scorer fields; null invalid scores were not converted to numeric failures."
+      },
+      {
+        "claim_id": "C08",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "evidence/tables/malt_attempts.md records run 345741 attempt 1 (index 67084935), 345745 attempt 8 (67091334), 345786 attempt 5 (37280717), 345787 attempt 7 (37284089), and 347483 v17 (67134331) in textual invalid-status descriptions. The complete claim asserts a universal float32 precision mechanism past 2^24, a 1-ULP output mismatch and safety of int64 intermediates. The parser provides scores/times, not paired per-element outputs or cumulative magnitudes, and the catalog cannot express this universal precision/correctness conjunction."
+      },
+      {
+        "claim_id": "C09",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "logic/experiments.md E05-E06 and evidence/tables/malt_attempts.md describe eager and compiled variants, but C09 requires the two-pass 1.6-GB traffic calculation, attained latency ranges, every observed MALT run above the reference and the necessity of Triton fusion. These are not equivalent to selected runtime comparisons. The table has no measured HBM traffic; several rows (for example run 345786) carry time magnitudes inconsistent with the ms header, and the cited run 347447 attempt 3 is absent. No unit rescaling, cohort filtering or causal claim weakening was applied."
+      },
+      {
+        "claim_id": "C10",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "evidence/tables/malt_attempts.md has wrong-output/null-score single-program attempts (344673, 345742 attempt 3, 345745 attempts 16/18) and valid but slow serial attempts (347450 attempts 1,5-9). C10 is a disjunction of all-zero incorrectness or 1-94-second runtime, universally extended to any grid=(1,) full-array kernel, together with a programming-model explanation. Reported scalar comparisons cannot express the correctness/runtime disjunction or universal kernel-class assertion; null correctness outcomes were not treated as timings."
+      },
+      {
+        "claim_id": "C11",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "nonquantitative",
+        "explanation": "evidence/tables/malt_attempts.md identifies block-carry failures in 345743 attempts 3/6, 347447 attempt 11, 347450 attempt 4 and 347483 v6, while logic/experiments.md E10 explains the proposed cause. C11 asserts necessity and insufficiency of specific parity-carry representations and characterizes correct algorithms over arbitrary inputs. The observations are textual correctness statuses, not a relation over reported numeric cells. A finite timing comparison would not preserve this algorithmic correctness claim."
+      },
+      {
+        "claim_id": "C12",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "evidence/tables/malt_attempts.md records 345741 attempts 7/14 as 216.946/233.936-ms compile-dominated runs, 347448 attempts 7/11/13/18-21 as compiled rescoring, and 347450 attempt 16 as a 2.78-ms compiled result. C12 jointly asserts specific eager/compiled magnitudes, reduce-overhead regression, first-call overhead 200 ms-3 s, same-code dispersion of 1.5x-2x, a minority-below-reference count and an autotune cause. The table lacks separate first-call overhead and paired code identities, and omits cited run 347447 attempt 3. No catalog conjunction preserves all those conditions; score-order-only checks would be incomplete."
+      }
+    ]
+  },
+  "artifacts/speedrun/nanogpt-speedrun": {
+    "claims": [
+      {
+        "claim_id": "C01",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "evidence/tables/table1_speedrun_progression.md:10-30 supplies all 21 times and validation losses on the stated speedrun trajectory. The endpoint speedup can be expressed as a ratio, but the full claim and falsifier require every record to have val_loss <=3.28 as well as the 16.1x reduction on 8xH100. The reported-evidence catalog has no absolute-threshold relation for those losses; comparing each loss to the baseline would not be equivalent. Record 3 is reported as 3.2813; the threshold or evidence was not adjusted to remove that discrepancy."
+      },
+      {
+        "claim_id": "C02",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "evidence/tables/table3_main_fsr_results.md reports approximate IQM FSR aggregates, evidence/figures/fig3_fsr_distributions.md gives selected medians/IQMs, and table6_per_record_fsr.md averages ranges of records for Multi-AIDE+L1. None supplies every model-record-hint attempt's target time and val_loss. C02 and its falsifier quantify over any successful record reproduction, which cannot be inferred from IQM or mean FSR below one; the 4-model, all-record, hinted scope was not replaced by an aggregate shortfall claim."
+      },
+      {
+        "claim_id": "C03",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "evidence/tables/table1_speedrun_progression.md:10-30 gives the successive times, including Record 2 at 36.83 minutes and Record 3 at 23.10. C03 requires the Muon transition's 37% reduction to be the largest single-step absolute or relative reduction among all transitions. best_baseline_consistency compares measured levels, not adjacent-record differences or ratios against every other transition; no installed reported-evidence relation computes that derived ranking. Checking only Record 3 < Record 2 or global best final time would discard the central assertion."
+      },
+      {
+        "claim_id": "C04",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "prose-only",
+        "explanation": "evidence/tables/table1_speedrun_progression.md:20-21 reports Records 11-12, with FlexAttention, masking, block-mask optimization and additional distributed/data-loader changes. The claim requires negligible overhead relative to standard attention at shorter context, and the falsifier invokes a >10% overhead comparison at equivalent context plus no loss regression. No matched standard-attention/FlexAttention ablation at controlled context is provided; aggregate successive-record timing cannot isolate that overhead or reconcile the two comparison contexts."
+      },
+      {
+        "claim_id": "C05",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "prose-only",
+        "explanation": "evidence/tables/table1_speedrun_progression.md records sequential mixed optimizations at Records 5,7,8,10,15, not optimizer-only, architecture-only and combined factorial ablations. logic/experiments.md E06 is a cumulative experiment plan with expected outcomes. The multiplicative-compounding assertion and the falsifier's 20% architectural increment require those missing matched arms; differences along the observed progression cannot substitute for independent axis effects."
+      },
+      {
+        "claim_id": "C06",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "prose-only",
+        "explanation": "logic/experiments.md E04 describes a planned bug classification and expected >70% implementation-error share. The cited agent workspace logs and an error-category count table are not supplied by evidence/README.md's inventory; evidence/figures/fig3_fsr_distributions.md has only FSR summaries and qualitative buggy-fraction observations. There is no parseable ideation-versus-implementation classification ledger to express the claim or its >50% direction/strategy falsification conditions. FSR alone was not treated as a bug-cause metric."
+      },
+      {
+        "claim_id": "C07",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "evidence/figures/fig5_scaffold_comparison.md:12-17 provides four-model L1-hint IQM FSR for Tree, Forest, AIDE, Multi-AIDE and Flat; table2_scaffold_configs.md distinguishes single-branch AIDE from branching variants. A directional comparison of those aggregate IQMs is expressible, but C07's falsifier requires linear search to match or exceed branching on more than 50% of records. Neither fig5 nor table3_main_fsr_results.md supplies per-record paired scaffold rankings, so an IQM comparison cannot preserve that statistical unit and quantifier. No narrower aggregate-only declaration is counted as complete."
+      },
+      {
+        "claim_id": "C08",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "evidence/tables/table6_per_record_fsr.md:10-15 reports mean FSR for four record ranges under Multi-AIDE+L1, while evidence/figures/fig6_per_record_fsr.md:12-19 gives approximate best-model FSR ranges. C08 and its falsifier require monotonic agent success rate at each record across models/hints, not decreasing mean recovery for grouped ranges. The missing individual-record success counts cannot be reconstructed from those summaries, and the catalog's generative monotonic relation is not a reported-table trend operator. No extrapolation to exponential difficulty or causal compounding was encoded."
+      },
+      {
+        "claim_id": "C09",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "evidence/figures/fig4_hint_ablation.md:12-17 and table3_main_fsr_results.md provide IQM FSR by hint level, not binary agent success rates with uncertainty. C09 asserts no significant success-rate improvement and an implementation-not-understanding explanation; its falsifier uses a twofold success-rate comparison. An L1/L3 IQM-FSR ratio would change the metric and would not preserve the statistical-significance or causal conditions. Missing uncertainty was not converted to zero variance or an invented equivalence margin."
+      },
+      {
+        "claim_id": "C10",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "prose-only",
+        "explanation": "evidence/tables/table1_speedrun_progression.md:26-29 shows Records 17-20 with FP8 plus sigmoid offset, learning-rate, QKV, window, Muon and context changes. C10 attributes approximately 15% specifically to FP8/precision tuning and its falsifier requires at least a 10% time increase when FP8 is removed. No FP8-off matched ablation is supplied, and the cited src/execution/fp8_linear.py is absent from the fixed copy. The total multi-change progression was not substituted for the missing causal removal comparison."
+      }
+    ]
+  },
+  "artifacts/subjects/mmdfuse": {
+    "claims": [
+      {
+        "claim_id": "C01",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "E01 and evidence/proofs/calibration.md assert a universal permutation-calibration theorem under exchangeability. Finite threshold tests cannot express that mathematical theorem; the claim explicitly excludes a local finite-precision calibration interpretation."
+      },
+      {
+        "claim_id": "C02",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "E02 and evidence/proofs/fusion.md assert an unrestricted variational identity with integrability and absolute-continuity assumptions. Numerical equivalence on a finite RunPair would not establish that identity or preserve its posterior domain."
+      },
+      {
+        "claim_id": "C03",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "E01/E02 and evidence/proofs/fusion.md give a conditional mathematical implication for every finite positive invariant normalizer. Testing a few row permutations would narrow this universal statement to one implementation and finite samples."
+      },
+      {
+        "claim_id": "C04",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "E03 and evidence/proofs/power.md retain author-stated sufficient-power bounds with boundedness, fixed-prior, permutation and reciprocal-moment hypotheses. The catalog has no relation encoding the theorem or its proof obligations."
+      },
+      {
+        "claim_id": "C05",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "E03/E08 concern the divergence term in a sufficient condition, not measured monotonic power. Figure 7 does not measure posterior divergence, so a monotonic relation on its rejection proportions would substitute a different claim."
+      },
+      {
+        "claim_id": "C06",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "nonquantitative",
+        "explanation": "E02/E09 assert the absence of an additional multiplicity-calibration stage in the algorithm. Figure 8 runtime comparisons do not establish that structural assertion, and the claim explicitly disclaims universal wall-clock superiority."
+      },
+      {
+        "claim_id": "C07",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "nonquantitative",
+        "explanation": "E04 and Figure 1 provide whole-method comparisons, while C07 is a bandwidth-scale mechanism hypothesis requiring all other components held fixed. Comparing MMD-FUSE and MMD-Median rejection proportions would not isolate that mechanism."
+      },
+      {
+        "claim_id": "C08",
+        "disposition": "declared",
+        "declaration_ids": [
+          "C08"
+        ],
+        "reason": null,
+        "explanation": "Figure 1, Galaxy: sample size, retains the image-specific MMD-D and MMD-FUSE rows at all five sample sizes. The statement says can exceed, so consistency with min_pass=1 expresses existence over the full named sweep rather than universal dominance or inferential significance. The panel pin excludes synthetic MMD-D and the AutoML variant."
+      },
+      {
+        "claim_id": "C09",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "unclear",
+        "explanation": "C09 and evidence/figures/figure7.md explicitly leave the inferential noninferiority margin, starting collection/expansion acceptance rule, paired outcomes and simultaneous uncertainty procedure unfrozen. Choosing a tolerance from the observed sweep would invent the missing acceptance criterion."
+      },
+      {
+        "claim_id": "C10",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "Table 1 reports aggregate rejection proportions but C10's falsification criterion requires source-denominator reconciliation and a prespecified uncertainty comparison to the null level. Neither inferred binomial counts from rounded decimals nor a pairwise comparison among the 13 methods expresses the full assertion."
+      },
+      {
+        "claim_id": "C11",
+        "disposition": "skipped",
+        "declaration_ids": [],
+        "reason": "no relation",
+        "explanation": "E10/E11 combine an aggregate reproduction with a symbolic mismatch between executed and paper exponents. evidence/results/local_run.md supplies the numerical match, but no catalog relation checks the symbolic non-equivalence conjunct documented in evidence/source_conflicts.md."
+      },
+      {
+        "claim_id": "C12",
+        "disposition": "declared",
+        "declaration_ids": [
+          "C12"
+        ],
+        "reason": null,
+        "explanation": "E12 and evidence/admission/frozen-protocol.json define the finite treatment mean band [0.13,0.23], reference band, label-permutation maximum 0.1 and minimum reference-to-control drop 0.05. The invariant excludes the reference from the treatment mean and retains the control gate. Only batches for the registered two-treatment seed or row-order families are admissible; no generic family is attached because its schema cannot pin the original exact seeds and row-manifest identities. Existing admission results are not supplied as fresh RunBatch cases in this study, so this declaration needs protocol-aligned cases and has zero declared generator pairings."
+      }
+    ]
+  }
+}

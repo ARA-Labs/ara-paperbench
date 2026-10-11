@@ -1,0 +1,82 @@
+format_version: 7
+evidence:
+  evidence/tables/table5_soft_labels_wordnet.md:
+    metric:
+      name: top1_accuracy_percent
+    axes:
+      Backbone Models: backbone
+      group: dataset
+      measure: method
+  evidence/tables/table7_simulation.md:
+    metric:
+      axis: column
+    axes:
+      Model: model
+    at:
+      experiment: controlled_simulation_100_trials
+claims:
+- claim_id: C03
+  provenance:
+    author: direct-session/AnnotateLearning
+    model: openai-codex/gpt-6-astra
+  properties:
+  - kind: compound_consistency
+    metric: top1_accuracy_percent
+    over: dataset
+    in_scope:
+    - ImgNet-S
+    - ImgNet-R
+    - ImgNet-A
+    - ObjectNet
+    treatment:
+      method: Ours
+    baseline:
+      method: Baseline
+    group: backbone
+    groups:
+    - ResNet 18
+    - ResNet 50
+    - VIT-B
+    - VIT-L
+    - ConvNext
+    - Swin Transformer
+    comparator: gt
+    min_pass: 3
+    id_value: ImgNet
+    id_comparator: ge
+    id_tolerance: 0
+- claim_id: C04
+  provenance:
+    author: direct-session/AnnotateLearning
+    model: openai-codex/gpt-6-astra
+  properties:
+  - kind: comparative
+    metric: OOD Top1 Error
+    over: experiment
+    in_scope:
+    - controlled_simulation_100_trials
+    subject:
+      model: f (w. transferable feature x1)
+    reference:
+      model: g (w. confounding feature x2)
+    comparator: lt
+  - kind: comparative
+    metric: ID LCA Distance
+    over: experiment
+    in_scope:
+    - controlled_simulation_100_trials
+    subject:
+      model: f (w. transferable feature x1)
+    reference:
+      model: g (w. confounding feature x2)
+    comparator: lt
+  - kind: comparative
+    metric: ID Top1 Error
+    over: experiment
+    in_scope:
+    - controlled_simulation_100_trials
+    subject:
+      model: f (w. transferable feature x1)
+    reference:
+      model: g (w. confounding feature x2)
+    comparator: gt

@@ -1,0 +1,47 @@
+{
+  "reviewer": "fresh-context same-system AI review",
+  "claims": [
+    {
+      "claim_id": "C01",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Scientific skip correctness: the whole statement requires both higher accuracy/lower ECE and no backpropagation or model-weight changes. E01, Table 2 (FOA 66.3/3.2 versus 32-bit TENT 59.6/18.5), Table 16 and Table 8 (#BP=0) ground numerical comparisons, but the installed reported domains cannot assert unchanged weights. An accuracy/ECE declaration alone would omit an explicit conjunct; this is not a missed expressible whole claim."
+    },
+    {
+      "claim_id": "C02",
+      "judgment": "faithful",
+      "field": null,
+      "explanation": "Both required comparisons are preserved: Table 4 PTQ4ViT 8-bit FOA versus Table 2 full-precision 32-bit TENT average accuracy at ImageNet-C severity 5/BS=64, and Table 7 BS=64 memory 208 versus 5165 MB. The 63.5/59.6 and 208/5165 values ground reported operands; the source falsifier is directional accuracy and substantial memory reduction, not equality to every displayed number. E04 and the Table 7 caption explicitly make 208 MB an ideal 0.25-times estimate of measured 832 MB, not measured 8-bit allocation. The outcome preserves this distinction: interpret the declaration only as a reported-estimate comparison, not as certification of actual 8-bit runtime memory. Neither FOA-I/BS=1 nor Table 8 K=28 memory 3386 MB is substituted."
+    },
+    {
+      "claim_id": "C03",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "The 24.8-fold magnitude is an asserted reduction, rather than merely an operand label; ratio_ge/ratio_le can represent it and must not be replaced by the weaker 10-fold falsifier. However, the whole statement also says the reduction occurs because gradient buffers and the backward computation graph are absent, which the reported coordinate comparisons cannot establish. Table 7/E04 explicitly estimate 8-bit memory from 832 MB at 0.25 times; there is no measured 208-MB allocation. Skip is scientifically defensible for the full causal claim, not because ratios are unavailable."
+    },
+    {
+      "claim_id": "C04",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "E05/E06, Table 5 entropy-only prompt ablation 44.9%, and Table 9 exp5 norm-layer+CMA+entropy 0.1% and exp6 prompt+CMA+entropy 44.9% are the correct variants against NoAdapt 55.5%. These cells permit performance comparisons, but do not measure stable CMA learning signals or express the general entropy-only infeasibility conclusion. The within-5-percentage-point falsifier needs an additive bound absent from the reported domains; simple worse-than-NoAdapt would also weaken it. The unusual near-random description of 44.9% is a source scientific issue, not a reason to rewrite the annotation."
+    },
+    {
+      "claim_id": "C05",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Table 5 identifies NoAdapt 55.5%, discrepancy-only 63.4%, and full entropy+discrepancy+shifting 66.3%; those must remain distinct from the Table 9 FOA design-choice row 65.4%. Best-baseline consistency can express a numerical best-variant assertion, but the whole statement additionally asserts consistent/stable CMA learning signals, without such a reported measurement. The at-least-5-percentage-point gain in the falsifier is additive, not a source-authorized multiplicative ratio. Full-claim skip is justified; the numerical ablation subrelations alone are expressible."
+    },
+    {
+      "claim_id": "C06",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "E07/Table 12 contain clean-ImageNet accuracy FOA 85.11, NoAdapt 85.17, TENT 84.80, CoTTA 83.91 and SAR 84.52; superiority to all three gradient baselines is expressible. Near-original preservation is a separate substantive conjunct, operationalized by the greater-than-1-percentage-point falsifier, not merely the printed 0.06 drop as a label. Comparative/consistency have no additive difference operand; compound_consistency has id_tolerance but requires a separate non-ID scan against the same baseline and cannot be used as a standalone clean-only bound. No faithful complete reported declaration is missed; an arbitrary 0.99 accuracy ratio would change percentage points to relative percent."
+    },
+    {
+      "claim_id": "C07",
+      "judgment": "faithful",
+      "field": null,
+      "explanation": "All four Table 11 obligations are retained: FOA higher accuracy and lower ECE than both TENT and SAR in class-ordered online label shift and in the single mixed-corruption stream. The best_baseline_consistency cohort is exactly TENT and SAR because those and FOA are the only method rows for each selected metric. Separate metric columns preserve both scenario identities and the stronger statement; the weaker falsifier allowing ECE failure in one scenario is not used to shrink scope. Mild/i.i.d. columns and FOA-I variants are not included."
+    }
+  ]
+}

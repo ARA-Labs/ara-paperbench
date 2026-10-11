@@ -1,0 +1,47 @@
+format_version: 7
+evidence:
+  evidence/tables/table1_main_results.md:
+    metric: {axis: measure}
+    axes: {Method: method, group: dataset}
+    at: {experiment: main_in1k}
+  evidence/tables/table2_ablation_composing.md:
+    metric: {axis: measure}
+    axes: {Method: method, group: dataset}
+    at: {experiment: ablation_composing}
+labels:
+  metric:
+    AN: final_average_accuracy_percent
+    Ā: average_incremental_accuracy_percent
+claims:
+  - claim_id: C01
+    provenance: {author: direct-annotation, model: openai-codex/gpt-6-astra}
+    properties:
+      - kind: best_baseline_consistency
+        metric: final_average_accuracy_percent
+        over: dataset
+        in_scope: [CIFAR-100, 5-Task IN-R, 10-Task IN-R, 20-Task IN-R, ImageNet-A, VTAB]
+        where: {experiment: main_in1k}
+        treatment: {method: SEMA}
+        baseline_axis: method
+        comparator: ge
+  - claim_id: C03
+    provenance: {author: direct-annotation, model: openai-codex/gpt-6-astra}
+    properties:
+      - kind: best_baseline_consistency
+        metric: final_average_accuracy_percent
+        over: dataset
+        in_scope: [ImageNet-A, VTAB]
+        where: {experiment: ablation_composing}
+        treatment: {method: SEMA}
+        baseline_axis: method
+        exclude: [Top-1 Sel. Inf.]
+        comparator: gt
+      - kind: best_baseline_consistency
+        metric: average_incremental_accuracy_percent
+        over: dataset
+        in_scope: [ImageNet-A, VTAB]
+        where: {experiment: ablation_composing}
+        treatment: {method: SEMA}
+        baseline_axis: method
+        exclude: [Top-1 Sel. Inf.]
+        comparator: gt

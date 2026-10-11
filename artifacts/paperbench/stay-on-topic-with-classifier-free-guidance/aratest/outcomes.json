@@ -1,0 +1,46 @@
+{
+  "claims": [
+    {
+      "claim_id": "C01",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "prose-only",
+      "explanation": "E01 requires the seven named improving benchmarks across GPT-2/Pythia/LLaMA at γ=1.5 versus γ=1, plus LLaMA-7B Lambada approximately81% surpassing PaLM-540B 77.9%. evidence/tables/fig2a_zero_shot_arc_boolq_hellaswag.md and fig2b_zero_shot_piqa_sciq_trivia_wino_lambada.md contain paired baseline/CFG accuracy cells; the LLaMA-7B Lambada cell is 73.6 / 81.3. PaLM-540B 77.9% appears only in fig2b prose (lines 7 and 27), not as a bindable evidence cell. The supported pairwise relations do not accept copied prose constants; omitting the SOTA comparison or weakening it to LLaMA versus its own vanilla baseline would narrow the claim."
+    },
+    {
+      "claim_id": "C02",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "evidence/tables/table4_ancova_pvalues.md supplies nine ANCOVA p-values and categorical winners for matched inference FLOPs: five nonsignificant at p=0.01, two favoring CFG and two vanilla. The full assertion requires thresholding p-values against the nominal level, counting both sides, and retaining the 2× parameter/FLOP comparison. Reported-evidence relations compare measurement pairs, not p-values to constants or categorical winner counts. The generative threshold relation requires null-calibration runs and is not a predicate over these reported ANCOVA cells. A point-estimate accuracy comparison would not preserve this statistical assertion."
+    },
+    {
+      "claim_id": "C03",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "prose-only",
+      "explanation": "E02 requires BOTH valid-answer percentage and overall accuracy on GSM8K AND AQuA for WizardLM-30B and Guanaco-65B, with low-γ improvement and high-γ low invalid rate but degraded accuracy. evidence/figures/cot_gsm8k.md and figure2_cot_gsm8k.md contain only directional descriptions such as Higher than baseline and Near peak; the AQuA extension is prose (figure2_cot_gsm8k.md lines 21–23). There are no numeric per-model/per-dataset/per-γ rates to bind, and no quantitative rarity threshold for high-γ invalid chains. Token-parsing examples are not substitute measurements of both outcome rates."
+    },
+    {
+      "claim_id": "C04",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "unclear",
+      "explanation": "E03 and evidence/tables/table2_codegen_humaneval_temp02.md plus tables5/6/7 full results provide pass@1/10/100 for three CodeGen models at γ=1,1.1,1.25,1.5,1.75,2.0. The original statement puts γ=1.5 in BOTH low guidance (uniform improvement) and high guidance (deterioration) but never says whether deterioration is relative to γ=1, the optimum, or the previous γ. Its large-k conjunct permits either diminishing improvement or actual harm, not a single fixed comparison. The falsifier specifies only one 350M pass@1 point and pass@100 and cannot discharge all other conditions. The comparison reference and boundary meaning remain unresolved; the duplicated 2B/6B source values are retained, not corrected."
+    },
+    {
+      "claim_id": "C05",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "evidence/figures/fig5_human_preference.md tabulates 75% system-prompt preference and 52% user-prompt relevance at γ=3 for GPT4All-J with the default negative and edited positive system prompts. The whole claim includes undegraded relevance approximately equal to chance; its falsifier names ≥60% system preference and a significant drop below 50% relevance. The catalog cannot express these reported constant thresholds plus statistical non-degradation as a complete predicate. Figure 5 notes that per-γ vote counts are unavailable despite totals of 611 votes/71 voters, so no sampling variance, equivalence margin or fresh human-evaluation protocol is invented. Comparing γ=3 to an approximate γ=1 row alone would omit the uncertainty commitment."
+    },
+    {
+      "claim_id": "C06",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "evidence/figures/fig6_entropy_analysis.md gives mean entropy 4.7 for CFG γ=1.5 versus 5.4 vanilla and approximately4.7 instruct on Falcon/P3, but the full claim also requires similarity to instruction-tuned entropy AND CFG/instruct top-p=0.9 overlap <30%. The alternate entropy_analysis.md includes <30% as an inequality-valued cell, not a precise overlap; the main figure gives it in prose. Reported pairwise relations do not express an absolute overlap threshold or entropy equivalence with an unspecified margin, and no variance supports the significant-entropy falsifier. The numeric CFG/vanilla overlap (~50%) is a different operand and is not substituted for CFG/instruct."
+    }
+  ]
+}

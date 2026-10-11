@@ -1,0 +1,60 @@
+{
+  "claims": [
+    {
+      "claim_id": "C01",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "nonquantitative",
+      "explanation": "E01 and PAPER.md describe Equation 3 and the four user-experience cases, including the Figure 5d pause scenario. This is a claim about perceptual completeness and what TTFT/TPOT cannot detect, not a reported numeric comparison; the catalog cannot establish equivalence to perceived experience."
+    },
+    {
+      "claim_id": "C02",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "parse failure",
+      "explanation": "E02, evidence/figures/figure15_avg_qoe_vs_burst_intensity.md reports up to 4.7× in a summary cell, but the production parser yields no numeric measurements for that file. No per-model/dataset/intensity Andes and vLLM QoE cells are supplied for the four-model, three-dataset sweep; reducing the claim to a directional comparison would omit the maximum magnitude."
+    },
+    {
+      "claim_id": "C03",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "parse failure",
+      "explanation": "E02, evidence/figures/figure15_avg_qoe_vs_burst_intensity.md contains textual summary cells for 61% savings and 2.6× burst capacity at QoE 0.95, all nonnumeric under the production parser. The threshold-conditioned capacity curves and GPU counts needed for the full 61%/2.6× assertion are not tabulated."
+    },
+    {
+      "claim_id": "C04",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "E01, evidence/figures/figure11_burstgpt_cdf_qoe_ttft_tds.md supplies Andes/vLLM average QoE 0.99/0.88, qualifying-request percentages 97/75, and TTFT 1.8/10.5 seconds for Phi-3.5-MoE on the one-hour trace. These parse, but reported-evidence relations only compare measured operands; they cannot assert all six absolute values. Relative improvement alone would discard the 97% at QoE≥0.95 condition and the specified TTFT endpoint."
+    },
+    {
+      "claim_id": "C05",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "prose-only",
+      "explanation": "E04, evidence/figures/figure17_overhead_refiner_ablation.md gives only directional preemption and QoE descriptions over 25%,30%,35%,40%,45% burst durations, with no numeric measurements parsed. Both excessive preemptions and QoE degradation on Llama 3.1 70B/ShareGPT are required; neither may be replaced by an invented curve."
+    },
+    {
+      "claim_id": "C06",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "prose-only",
+      "explanation": "E05, evidence/figures/figure18_knapsack_solver_comparison.md gives the approximately 20× speedup as text and describes slightly better QoE without numeric per-intensity/per-duration results or solver runtimes. The causal explanation and O(N log N) versus O(MN²) complexity also cannot be discharged by a reported pairwise QoE relation."
+    },
+    {
+      "claim_id": "C07",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "prose-only",
+      "explanation": "E01 names Figures 3 and 13 for peak waiting-queue length, but the supplied Figure 11 evidence tabulates only QoE, TTFT, and TDS. The 85% peak-queue reduction has no underlying peak queue measurements in the supplied evidence; QoE is not a substitute for queue length."
+    },
+    {
+      "claim_id": "C08",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "prose-only",
+      "explanation": "E02/E03/E06 and evidence/figures/figure15_avg_qoe_vs_burst_intensity.md, figure16_avg_qoe_vs_burst_duration.md, figure20_poisson_arrival.md describe superiority to vLLM, Sarathi-Serve, and LQSF but provide no parsed numeric QoE grid covering the four architectures, three datasets, both burst sweeps, and Poisson rates. A best-baseline aggregation is expressible, but its required operand grid is unavailable."
+    }
+  ]
+}

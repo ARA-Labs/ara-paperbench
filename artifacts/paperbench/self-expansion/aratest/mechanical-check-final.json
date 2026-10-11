@@ -1,0 +1,80 @@
+{
+  "format_version": "1",
+  "ara": "/home/yfhe/ara/DissClaimer/.runs/rq1-direct-20261010/artifacts/paperbench/self-expansion",
+  "results": null,
+  "claims": [
+    {
+      "claim_id": "C01",
+      "standing": "violated",
+      "properties": [
+        {
+          "kind": "best_baseline_consistency",
+          "version": "1",
+          "outcome": {
+            "tag": "violated",
+            "witnesses": [
+              {
+                "case_id": "[[\"dataset\",\"CIFAR-100\"],[\"method\",\"CODA-P\"]]",
+                "detail": "91.37 ge 91.55"
+              }
+            ]
+          },
+          "note": "a baseline in [CODA-P] beats the treatment for group in [(all)]",
+          "refinement": {
+            "label": "inconsistency",
+            "note": ""
+          },
+          "statistic": null,
+          "checked": true,
+          "witnesses": [
+            "[[\"dataset\",\"CIFAR-100\"],[\"method\",\"CODA-P\"]]"
+          ]
+        }
+      ],
+      "record": null
+    },
+    {
+      "claim_id": "C03",
+      "standing": "holds",
+      "properties": [
+        {
+          "kind": "best_baseline_consistency",
+          "version": "1",
+          "outcome": {
+            "tag": "holds"
+          },
+          "note": "the treatment is the best of 5 baselines [Avg. W., No Exp., Rand. Sel., Rand. W., Top-1 Sel.] across all 1 groups",
+          "refinement": {
+            "label": "holds",
+            "note": ""
+          },
+          "statistic": null,
+          "checked": true,
+          "witnesses": []
+        },
+        {
+          "kind": "best_baseline_consistency",
+          "version": "1",
+          "outcome": {
+            "tag": "holds"
+          },
+          "note": "the treatment is the best of 5 baselines [Avg. W., No Exp., Rand. Sel., Rand. W., Top-1 Sel.] across all 1 groups",
+          "refinement": {
+            "label": "holds",
+            "note": ""
+          },
+          "statistic": null,
+          "checked": true,
+          "witnesses": []
+        }
+      ],
+      "record": null
+    }
+  ],
+  "undeclared": [
+    "C02",
+    "C04"
+  ],
+  "record_errors": [],
+  "exit_code": 1
+}

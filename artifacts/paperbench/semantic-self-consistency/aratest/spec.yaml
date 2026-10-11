@@ -1,0 +1,27 @@
+format_version: 7
+evidence:
+  evidence/tables/table6_featurizer_distance.md:
+    metric:
+      axis: column
+    axes:
+      BERT-Model: featurizer
+    at:
+      task_scope: arithmetic reasoning samples
+labels:
+  metric:
+    avg distance (↓): average pairwise Euclidean distance
+claims:
+  - claim_id: C04
+    provenance:
+      author: AnnotateInference; semantic review by Main
+      model: openai-codex/gpt-6-astra
+    properties:
+      - kind: best_baseline_consistency
+        metric: average pairwise Euclidean distance
+        over: task_scope
+        in_scope:
+          - arithmetic reasoning samples
+        treatment:
+          featurizer: RoBERTa
+        baseline_axis: featurizer
+        comparator: gt

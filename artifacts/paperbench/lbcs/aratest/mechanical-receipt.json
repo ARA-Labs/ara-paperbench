@@ -1,0 +1,14 @@
+{
+  "command": [
+    "aratest",
+    "test",
+    "artifacts/paperbench/lbcs",
+    "--format",
+    "json",
+    "--no-records"
+  ],
+  "exit_code": 4,
+  "stdout": "{\n  \"format_version\": \"1\",\n  \"ara\": \"/home/yfhe/ara/DissClaimer/.runs/rq1-direct-20261010/artifacts/paperbench/lbcs\",\n  \"results\": null,\n  \"claims\": [\n    {\n      \"claim_id\": \"C02\",\n      \"standing\": \"undecided\",\n      \"properties\": [\n        {\n          \"kind\": \"best_baseline_consistency\",\n          \"version\": \"1\",\n          \"outcome\": {\n            \"tag\": \"inconclusive\"\n          },\n          \"note\": \"the treatment ties, reads approximate, or is unobserved against a baseline of [CCS, EL2N, GraNd, Influential, Moderate, Probabilistic, Uniform] for dataset in [CIFAR-10 (LBCS coreset sizes: \u2248970, 1955, 2914, 3736)]\",\n          \"refinement\": {\n            \"label\": \"inconclusive\",\n            \"note\": \"\"\n          },\n          \"statistic\": null,\n          \"checked\": true,\n          \"witnesses\": []\n        }\n      ],\n      \"record\": null\n    }\n  ],\n  \"undeclared\": [\n    \"C01\",\n    \"C03\",\n    \"C04\",\n    \"C05\"\n  ],\n  \"record_errors\": [],\n  \"exit_code\": 4\n}\n",
+  "stderr": "",
+  "spec_sha256": "a3dc416599b47913badc143b9c955e2af8eea985cc496ec4e83dc677df4ba33c"
+}

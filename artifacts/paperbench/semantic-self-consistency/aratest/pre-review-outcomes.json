@@ -1,0 +1,46 @@
+{
+  "claims": [
+    {
+      "claim_id": "C01",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "Table 1 (evidence/tables/table1_semantic_consistency.md, rows 9–20) reports accuracy for SCW versus SC at k=10, temperature=0.8, across five models and three datasets. Its parsed axes are Dataset, Method/Metric, and column (model). The assertion is a pooled majority of all 15 model–dataset pairs, not a majority within each dataset or model. Catalog consistency counts values of one axis; best_baseline_consistency imposes separate group requirements. Neither the evidence map nor these relations forms and counts the two-axis Cartesian product as eight of 15. Conjoining per-dataset majorities or choosing observed winning cells would change the quantifier."
+    },
+    {
+      "claim_id": "C02",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "Table 1 (evidence/tables/table1_semantic_consistency.md, CPW and SC baseline rows for AQuA-RAT, SVAMP and StrategyQA) supplies per-model accuracies and parenthesized percentage-point deltas. C02 requires across-model arithmetic means, their directions for all three datasets, and the stated +3.14, +0.97 and −1.63 magnitudes. The reported-evidence catalog compares individual measurements but provides no mean-of-differences/additive-value relation. Per-model comparisons or a count of positive deltas would not express these dataset-level averages."
+    },
+    {
+      "claim_id": "C03",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "prose-only",
+      "explanation": "E02 requires Isolation Forest, KNN and one-class SVM best-configuration accuracy to beat SC in a majority of conditions AND gains to persist with fewer samples. evidence/tables/table2_outlier_detection.md contains Best / Average entries only at k=10 (conditions, line 5); it has no reduced-sample-size results. Reduced-size persistence appears only as the procedure/expected outcome in logic/experiments.md E02, lines 42 and 46. Even a declaration of the available k=10 comparisons would omit the required reduced-size condition, and best and average must not be interchanged."
+    },
+    {
+      "claim_id": "C04",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "unclear",
+      "explanation": "evidence/tables/table6_featurizer_distance.md and table6_featurizer_comparison.md report the arithmetic-sample mean distances 45.281 (SciBERT), 45.892 (MathBERT), and 48.697 (RoBERTa), without sample counts, sampling variability or a significance procedure. C04 says significantly lower, whereas its falsifier only asks whether RoBERTa is ≤ either alternative; E03 defines only a mean-distance comparison. The fixed inputs do not resolve whether significantly is an inferential commitment or merely emphasis. A pairwise directional declaration is available but cannot be asserted to preserve that unresolved qualifier; no zero variance or significance level is invented."
+    },
+    {
+      "claim_id": "C05",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "evidence/tables/table3_seq_length_bleu.md has average token length and average semantic-method accuracy increase for the 15 model–dataset units (AQuA-RAT, SVAMP, StrategyQA; five models). The claim and E04 concern a positive cross-unit correlation, with a proposed discriminative-signal explanation, not pairwise monotonicity or a treatment/baseline difference. No installed reported-evidence relation calculates or tests correlation between measurement columns. Ranking a selected subset or imposing all-pairs monotonicity would change the asserted tendency."
+    },
+    {
+      "claim_id": "C06",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "evidence/tables/table3_seq_length_bleu.md contains BLEU and average accuracy increase on all 15 model–dataset units; C06 falsifies on statistically significant positive correlation. E04 requests no significant correlation, but specifies no correlation statistic, significance level or inferential sampling protocol. The catalog has neither a reported correlation test nor an independence/equivalence predicate for these paired columns. ROUGE-N averages in evidence/figures/figure2_rouge_n.md are a different metric and cannot replace the BLEU assertion or establish that generation quality and reasoning accuracy are orthogonal."
+    }
+  ]
+}

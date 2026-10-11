@@ -1,0 +1,53 @@
+{
+  "reviewer": "fresh-context same-system AI review",
+  "claims": [
+    {
+      "claim_id": "C01",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Correct skip. E01/Table 2 covers RoBERTa/T5 MNLI and SST2 and T5 CNN/DM ROUGE-1/2/L at 60% sparsity. 'Up to 98%' does not identify a retention floor, maximum or task aggregation, while the falsifier introduces a different 96% floor. CNN/DM cells are slash-separated triples, not three numeric metric operands under the production reader. A GLUE-only declaration or a substituted 96% threshold would not cover the stated scope and magnitude."
+    },
+    {
+      "claim_id": "C02",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Correct revised skip. The corrected spec contains no declaration, and the outcome explicitly identifies the unavailable precision-aware ratio-equality semantics needed for both reported model-specific speedups. It no longer presents identical-target ratio_ge/ratio_le conjunctions as a rounded-ratio test. It preserves SST2 97%-TTA, 60% sparsity, the stated 8.4×/8.2× magnitudes and the raw-table discrepancy, without substituting evidence-derived ratios, invented tolerances or the weaker 6× falsifier. This resolves the original declaration-fidelity issue."
+    },
+    {
+      "claim_id": "C03",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Correct skip. E01/Table 2 supplies the CoFi Prune+Distill comparison: MNLI 86.4 versus 87.3, SST2 94.5 versus 94.5, memory 70.1% versus 168.5% of FT, and time 592.1% versus 1495.3% of FT. The 41.6% memory claim is relative to CoFi, not directly to FT; 70.1/168.5≈0.416 preserves that baseline identity. The full claim additionally requires the additive within-0.9-point MNLI margin, SST2 equality and reported 2.5× convergence magnitude. The reported catalog has no general additive-margin/equality relation for this complete conjunction. E04/Table 10's FT-teacher and LoRA-teacher variants are not interchangeable with CoFi."
+    },
+    {
+      "claim_id": "C04",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Correct revised skip. The corrected spec removes the incomplete ratio-only declaration. The outcome now retains the substantively asserted 50.0→38.1 endpoint change and derived 23.8% reduction for APT versus w/o kurtosis on LLaMA2-7B at 30% sparsity. It identifies the absent scalar-endpoint and precision-aware ratio-equality relations rather than narrowing the claim to directional degradation or the weaker 5% falsifier. This resolves the original whole-claim coverage and equality-semantics issues."
+    },
+    {
+      "claim_id": "C05",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Correct skip. E03/Table 4 supplies full APT versus static-rank w/o AT SST2 94.5→93.2, MNLI 86.4→84.5 and normalized convergence time 592.1→684.9. A roughly 16% slowdown comparison alone would omit the explicitly asserted task-specific endpoint changes; direction-only accuracy comparisons likewise omit them. The reported catalog has no scalar/additive-change relation covering this complete conjunction. The additive 0.5-point falsifier must not be silently converted to a ratio margin."
+    },
+    {
+      "claim_id": "C06",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Correct revised skip. The corrected spec removes the identical-target ratio conjunctions, and the outcome preserves both 86.4% performance retention and 75.8% training memory while documenting the unavailable precision-aware ratio-equality semantics. The average still covers ARC, HellaSwag, MMLU and TruthfulQA at the 30%-pruned APT setting, with dense LoRA as the performance and normalized-memory reference. Parenthetical 50.0/57.9 values remain operand grounding, not an invented additional endpoint obligation. No FT/LLMPruner baseline substitution, evidence-derived tolerance or weaker 80%/90% falsifier is introduced. This resolves the original declaration-fidelity issue."
+    },
+    {
+      "claim_id": "C07",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Correct skip on unresolved memory conditions. E02/Table 3 supplies APT/LLMPruner Avg. 50.0/42.9 and normalized memory 75.8%/253.6%, consistent with approximately 30% relative memory. But Table 12 gives raw APT 24,408 MB and LLMPruner 23,425 MB, explicitly conflicting with the ~80 GB LLMPruner prose figure and noting possible phase/condition differences. No available evidence identifies a same-phase pair supporting both the relative and absolute memory conditions. An accuracy-only property or an unqualified normalized-memory comparison would narrow the whole claim."
+    },
+    {
+      "claim_id": "C08",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Correct skip. E05/Figure 3 reports the same-accuracy RoBERTa 21.8% speed/7% memory advantages and T5-at-97%-dense-performance 62.7% speed/24.8% memory advantages in textual cells. It does not provide numeric matched-accuracy operand pairs or significance information. Table 2's fixed-sparsity points have different accuracies and cannot replace the claimed Pareto comparisons. All model-specific magnitudes and target-accuracy conditions must be retained."
+    }
+  ]
+}

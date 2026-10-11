@@ -1,0 +1,46 @@
+{
+  "claims": [
+    {
+      "claim_id": "C01",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "unclear",
+      "explanation": "E01-E03 and evidence/tables/table4_nethack_full_eval.md plus evidence/figures/nethack_performance.md, montezuma_performance.md and robotic_performance.md cover three different domains and final metrics. Most practical scenarios is not a defined population, and comparable final performance has no equivalence margin. The figures also include different training horizons and approximate readings. A majority-of-three directional comparison would silently replace the stated population and comparability condition, and would not express the causal FAR-state-forgetting assertion."
+    },
+    {
+      "claim_id": "C02",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "E03 and evidence/figures/robotic_stage_success.md report FAR/CLOSE stage trajectories; evidence/figures/fig8_pushwall_loglikelihood.md gives approximate push-wall success at 0, 100K, 500K and approximately 4M steps. The complete claim requires collapse to the absolute 0% boundary within 100K steps on FAR stages and its temporal ordering before learning CLOSE, conditional on initial FAR competence/CLOSE incompetence. Reported cell-pair relations do not express this absolute boundary and event-order conjunction; a simple decrease against the initial policy would be weaker. The peg-unplug-side 100K entry is approximately 0.1, not 0, and is not corrected or silently excluded."
+    },
+    {
+      "claim_id": "C03",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "prose-only",
+      "explanation": "E01/E04 and evidence/figures/fig5_nethack_level_analysis.md and nethack_level4_sokoban.md evaluate score from AutoAscend level-4/Sokoban saves; evidence/tables/table4_nethack_full_eval.md reports final average dungeon level of fine-tuned methods. They do not tabulate the frozen BC policy versus expert visitation frequencies by level that the claim needs for rarely visits beyond Level 1. Small policy perturbations causing distribution shift and rapid forgetting are described in prose, not as a quantitative perturbation/visitation experiment. Final dungeon level is not substituted for the missing pre-trained/expert visitation comparison."
+    },
+    {
+      "claim_id": "C04",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "E01-E04 span final NetHack score, Montezuma Room-7 success and RoboticSequence FAR-stage success. evidence/tables/table5_nethack_sota_comparison.md supplies KS 10588 +/- 672 and Scaled-BC 5218 with missing spread; table4_nethack_full_eval.md gives vanilla final score 647, while nethack_performance.md uses an approximate 1K curve reading. The assertion requires significantly better final performance AND prevention of FAR forgetting for the stated retention methods, not only KS ranking above a frozen model. Available reported relations cannot certify statistical significance with the absent uncertainty or the full prevention condition; no exact-score/uncertainty assertions are replaced with gt comparisons."
+    },
+    {
+      "claim_id": "C05",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "prose-only",
+      "explanation": "E05 explicitly says KS was omitted from the final Montezuma and RoboticSequence plots after qualitative pre-analysis. evidence/figures/montezuma_performance.md and robotic_performance.md confirm KS is omitted; fig3_main_performance.md only states that it underperforms. NetHack KS/BC scores are available, but paired KS-versus-BC state-coverage-gap results for both other environments are not. The online-KL versus static-buffer explanation is also a mechanism statement. NetHack-only comparisons would omit the central method-by-gap-type condition."
+    },
+    {
+      "claim_id": "C06",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "prose-only",
+      "explanation": "E06 and evidence/figures/fig8_pushwall_loglikelihood.md describe log-likelihoods with PCA colors at 0, 100K, 500K and approximately 4M steps; only push-wall success rates are numeric. Neither expert-trajectory log-likelihood values nor original/relearned ratios are tabulated, so the falsifier recovery to within 10% of the original values cannot be bound. The available success-rate recovery is a different metric and cannot stand in for log-likelihood recovery or permanently lost transfer."
+    }
+  ]
+}

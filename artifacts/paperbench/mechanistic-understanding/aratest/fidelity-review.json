@@ -1,0 +1,41 @@
+{
+  "reviewer": "fresh-context same-system AI review",
+  "claims": [
+    {
+      "claim_id": "C01",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Skipping preserves the complete representation claim. E01 and table1_toxic_vector_tokens.md identify toxic vocabulary projections and SVD directions, but do not provide numerical similarity-versus-random or subspace-recovery operands. E02's toxicity reductions cannot substitute for the claim that high-probe-similarity MLP value vectors encode a recoverable toxicity subspace."
+    },
+    {
+      "claim_id": "C02",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Table 2 contains all three last-layer subtraction variants, GPT2 and DPO, and the required toxicity, Wikitext-2 perplexity and Wikipedia F1 measurements. However, comparable F1 and slightly increased but controlled perplexity are required conjuncts without authored equivalence margins. The falsifier gives a DPO perplexity reference but does not resolve F1 comparability. Declaring only lower toxicity, or inventing a margin from 0.192 versus 0.193, would narrow the claim."
+    },
+    {
+      "claim_id": "C03",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "The >0.99 toxic-key/value preservation condition is substantive, and the statement additionally requires a distributed offset from earlier MLP value vectors that bypasses toxic activation regions. E03 supplies the parameter-comparison plan rather than a numerical parameter grid; Figures 2, 4 and 5 supply approximate activation reductions and qualitative shifts/distributions. Comparing activations alone would omit both parameter preservation and the distributed bypass mechanism."
+    },
+    {
+      "claim_id": "C04",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "The universal per-parameter >0.99 cosine and <1e-5 average norm requirements, with the sole unembedding <1e-3 exception, are genuine numerical obligations reinforced by the falsifier. E03 lists them as expected outcomes, but the evidence inventory has no per-tensor measurements covering embeddings, MLP blocks and attention. Treating those prose thresholds as measured evidence would not ground the whole assertion."
+    },
+    {
+      "claim_id": "C05",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "The full claim is a RealToxicityPrompts/GeLU mechanism: predominantly negative inactive-neuron activations flip small value-vector changes and their contributions accumulate in the residual-shift direction. Figure 5 describes approximate distributions, increasing antipodality toward layer 19 and majority-negative activations, without neuron-level contribution measurements. A negative-correlation comparison would not express the accumulation and causal sign-flip explanation."
+    },
+    {
+      "claim_id": "C06",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Table 4 grounds the top-seven keys, 10-fold scaling, toxicity 0.458 versus original GPT2 0.453, and quality measurements relative to GPT2DPO. Nevertheless, near-baseline toxicity and unchanged/substantially undegraded quality lack numerical tolerances, and activation-region expansion/re-entry is an additional mechanistic conjunct. Equality of reported F1 alone, or merely increasing toxicity over DPO, cannot express the complete claim."
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "reviewer": "fresh-context same-system AI review",
+  "claims": [
+    {
+      "claim_id": "C01",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Correctly skipped as unclear. E01/E02 and table1_main_results.md identify zero-shot FRE at K=32, SF/FB at K=5120, and the specialized baselines, but do not define a competitiveness margin or whether the comparison applies per task, per domain, or in aggregate. K=32 and K=5120 are grounded experimental conditions, not missing absolute performance tests; the obstacle is the undefined comparison. The majority-of-tasks falsifier does not resolve the full statement's competitiveness scope. No expressible whole claim was missed."
+    },
+    {
+      "claim_id": "C02",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Correctly skipped. The four named goal-reaching evaluations and unequal adaptation budgets are available in table1_main_results.md, but significantly outperforms is stronger than a directional comparison of means. The reported relations use printed-resolution gates, not statistical significance tests, and the evidence supplies no specified significance procedure. The falsifier additionally concerns SF/FB evaluated at K=32, which is not the reported K=5120 condition. The 160-fold budget comparison is grounded by those conditions; it does not remove the significance and falsifier mismatch."
+    },
+    {
+      "claim_id": "C03",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Correctly skipped as unclear. The same FRE-all agent and its goal-reaching, directional, simplex, and path evaluations are identifiable, but competitive, solves, and near zero have no quantitative boundaries. The baseline path scores also demonstrate why near zero cannot simply be replaced by a generic FRE-greater-than-baseline comparison. Testing only directional/simplex improvements would omit goal competitiveness and path scope. The falsifier's significant-inferiority wording supplies neither a margin nor an inferential test."
+    },
+    {
+      "claim_id": "C04",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Correctly skipped as unclear. Table4_reward_subset_ablation.md and figure5_reward_diversity_scaling.md make highest total score against all six strict subsets expressible, but the statement also requires competitive per-task performance and concludes joint encoding without interference. No per-task competitiveness or interference criterion is specified, and several specialized subsets exceed FRE-all on individual tasks. The single-family-only total-score falsifier cannot replace the stronger statement covering every strict subset and per-task performance. A total-only declaration would be an incomplete subclaim."
+    },
+    {
+      "claim_id": "C05",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Correctly skipped because faithful quantitative treatment measurements are unavailable. E04 fixes all three targets and the prior-only modification, but figure6_domain_knowledge.md gives the two velocity FRE-hint cells only as higher than FRE-all. Its ant-directional estimate is explicitly borrowed from a baseline/reference rather than a printed FRE-hint measurement, and conflicts with the asserted improvement. The prose ranking is not a substitute for three paired numeric observations. Neither dropping targets nor relabeling the borrowed value would express the whole claim."
+    }
+  ]
+}

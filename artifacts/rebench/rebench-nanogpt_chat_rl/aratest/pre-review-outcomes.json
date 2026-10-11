@@ -1,0 +1,88 @@
+{
+  "claims": [
+    {
+      "claim_id": "C01",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "parse failure",
+      "explanation": "E01/E04 identify the best-of-8, four-step, lr=4e-6 held-out Alpaca mean-win-rate comparison, but reference_scores.md wraps 0.54 and 0.85 in backticks. Production aratest evidence returns value=null for both required Value cells. They cannot bind as numeric operands, and no score.log is shipped. The code conditions and absolute 0.85 falsifier are not replaced by MALT scores from different recipes."
+    },
+    {
+      "claim_id": "C02",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "prose-only",
+      "explanation": "E02 explicitly says the best-of-2 versus best-of-8 standalone ablation was not run and has no quantitative comparison. No table contains four isolated deltas or selection-variance measurements for the asserted approximately-sqrt(4) reduction. The structural implementation change is not evidence that it accounts for the largest share of the win-rate gain."
+    },
+    {
+      "claim_id": "C03",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "nonquantitative",
+      "explanation": "E03 is explicitly a code-path equality observation with no numeric metric: generate_strings_autobatch overrides temperature/top_k/max_new_tokens to 0.7/8/20 for both trainer and scorer. The full statement asserts distribution alignment is required, while the mismatched-generation experiment in its falsifier was not performed. A score-ordering relation cannot certify these code-path and necessity assertions."
+    },
+    {
+      "claim_id": "C04",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "E03 and the cited tournament implementation establish an algorithmic N-1 comparison-count formula, the N=8 round-robin count 28, and parallel logarithmic-round latency rationale. The evidence contains no measured timing/count grid, and the reported numeric relations cannot express the general-N complexity and judge-call-optimality proof. No synthetic table or fresh judge calls are created."
+    },
+    {
+      "claim_id": "C05",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "parse failure",
+      "explanation": "E04 and reference_scores.md explicitly identify the README-recorded 0.85 and absence of a shipped score.log. Production parsing returns value=null for the backtick-wrapped reference Value cell at line 6. Even with a parseable cell, this is an absolute-score claim with [0.83,0.87] falsification band rather than a mere better-than-starting comparison; no fabricated constant evidence is added."
+    },
+    {
+      "claim_id": "C06",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "prose-only",
+      "explanation": "C06 cites run-0 msg193 score_time=244.15 and labels E05, but logic/experiments.md ends at E04. malt_attempts.md has win-rate columns, not GPU/judge timing measurements. Trace score_time descriptions (e.g. N654 589.91s with retries) are narrative and not a parsed timing decomposition. Neither API-dominated wall time nor the less-than-60s falsifier can be tested from win-rate values."
+    },
+    {
+      "claim_id": "C07",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "malt_attempts.md and trace N151/N154 record 429 storms, reduced concurrency, and failed preference signals; N656 contrasts the same step-10 checkpoint under rate limiting. The full claim requires a causal binding-constraint conclusion, workload/error conditions and counts across 18 runs, and 0.4+-point same-weights gaps. Reported-cell comparisons cannot express the causal/throughput and metadata-count conjunction; no error flags or paired identities are fabricated from prose."
+    },
+    {
+      "claim_id": "C08",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "nonquantitative",
+      "explanation": "Trace N50 and N101 explicitly document the targets=None last-token-logit branch, shape [B,1,50257], and per-token-loss failures; N655 records an analogous DPO shape failure. The claim is a code/API mechanism plus a cross-run incidence assertion, not a numeric performance relation. The listed node IDs do not uniformly identify shape failures (e.g. N650 is a baseline score), so no numeric eight-of-eighteen count is inferred."
+    },
+    {
+      "claim_id": "C09",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "malt_attempts.md records collapse examples such as run 345792 lr=3e-5 at 0.0303 and run 347461 continuation 0.7061 to 0.1875; trace N400 and N504 describe model degeneration and concurrent judge failures. The assertion combines LR/step/KL conditions, universal consistent collapse below 0.1, and necessity of conservative settings. The table does not expose a controlled quantitative grid or separable causal relation for all those conditions; a few low scores are not a complete declaration."
+    },
+    {
+      "claim_id": "C10",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "The required named checkpoint pairs are present in malt_attempts.md: run 345752 attempts 9/8 (0.5693/0.0703), 345791 attempts 4/2 (0.7969/0.7813), and 347463 attempts 2/3 (0.7930/0.7852). Trace N57/N404/N654 supplies checkpoint identity. But the full claim says significantly higher and makes a persistent selection-benefit assertion; no uncertainty estimates or paired evaluation outcomes support a significance relation. The >=15-of-18 falsifier also cannot be replaced by the three favorable examples alone."
+    },
+    {
+      "claim_id": "C11",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "parse failure",
+      "explanation": "malt_attempts.md lists the 18 runs and best observed 0.8184 at run 345757 attempt 7, but the required official-reference 0.85 in reference_scores.md parses as value=null because it is backtick-wrapped. A quantitative all-attempt comparison cannot bind that reference. The additional qualitative-superiority and throughput-limited-method explanations are not discharged by the observed maximum alone."
+    },
+    {
+      "claim_id": "C12",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "nonquantitative",
+      "explanation": "Trace N56, N154 and N504 describe checkpoint overwrites and unrecoverable earlier states; N656 instead describes a rate-limited re-score of a preserved step-10 checkpoint. malt_attempts.md reports scores but not a numeric backup-policy experiment or recovery indicator for seven runs. The full operational/causal assertion and counterfactual benefit of keeping named backups are not reported-evidence numeric relations."
+    }
+  ]
+}

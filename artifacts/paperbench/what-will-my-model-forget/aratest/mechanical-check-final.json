@@ -1,0 +1,74 @@
+{
+  "format_version": "1",
+  "ara": "/home/yfhe/ara/DissClaimer/.runs/rq1-direct-20261010/artifacts/paperbench/what-will-my-model-forget",
+  "results": null,
+  "claims": [
+    {
+      "claim_id": "C04",
+      "standing": "holds",
+      "properties": [
+        {
+          "kind": "comparative",
+          "version": "1",
+          "outcome": {
+            "tag": "holds"
+          },
+          "note": "the relation holds on all 4 in-scope values",
+          "refinement": {
+            "label": "holds",
+            "note": ""
+          },
+          "statistic": null,
+          "checked": true,
+          "witnesses": []
+        }
+      ],
+      "record": null
+    },
+    {
+      "claim_id": "C05",
+      "standing": "holds",
+      "properties": [
+        {
+          "kind": "comparative",
+          "version": "1",
+          "outcome": {
+            "tag": "holds"
+          },
+          "note": "the relation holds on all 1 in-scope values",
+          "refinement": {
+            "label": "holds",
+            "note": ""
+          },
+          "statistic": null,
+          "checked": true,
+          "witnesses": []
+        },
+        {
+          "kind": "best_baseline_consistency",
+          "version": "1",
+          "outcome": {
+            "tag": "holds"
+          },
+          "note": "the treatment is the best of 2 baselines [Trainable Logit, w/o Prior] across all 1 groups",
+          "refinement": {
+            "label": "holds",
+            "note": ""
+          },
+          "statistic": null,
+          "checked": true,
+          "witnesses": []
+        }
+      ],
+      "record": null
+    }
+  ],
+  "undeclared": [
+    "C01",
+    "C02",
+    "C03",
+    "C06"
+  ],
+  "record_errors": [],
+  "exit_code": 0
+}
