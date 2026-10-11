@@ -1,0 +1,13 @@
+{
+  "command": [
+    "uv",
+    "run",
+    "--no-sync",
+    "aratest",
+    "validate",
+    ".runs/rq1-direct-20261010/artifacts/rebench/rebench-restricted_mlm"
+  ],
+  "exit_code": 2,
+  "stdout": "",
+  "stderr": "error: 1 spec problem(s):\n- claims_unreadable: logic/claims.md: C01: unknown field 'Evidence'\n"
+}

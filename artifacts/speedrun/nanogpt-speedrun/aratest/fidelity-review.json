@@ -1,0 +1,65 @@
+{
+  "reviewer": "fresh-context same-system AI review",
+  "claims": [
+    {
+      "claim_id": "C01",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "table1 provides all 21 times and losses, and the endpoint 16.1-fold speedup is genuinely ratio-expressible. The full claim/falsifier also requires every record to satisfy the absolute validation-loss limit; the reported relations lack that threshold operand, and Record 3 is actually 3.2813. Comparing losses with the baseline or keeping only the speedup would weaken the claim."
+    },
+    {
+      "claim_id": "C02",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "table3 and fig3 report approximate IQM/median FSR, while table6 groups mean FSR by record ranges. Aggregates below one do not establish that no model ever reproduced any record with acceptable validation loss. The missing individual target-time/loss successes prevent the universal negative claim from being expressed faithfully as an aggregate comparison."
+    },
+    {
+      "claim_id": "C03",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "table1 and muon_optimizer.py identify the Muon transition and its timing; its approximately 37% reduction is individually ratio-expressible. The central largest-single-transition claim requires ranking adjacent differences or ratios against all other transitions, including the falsifier's absolute/relative alternatives. Comparing record levels, or imposing one fixed threshold on all transitions, is not equivalent to that derived ranking."
+    },
+    {
+      "claim_id": "C04",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "flex_attention.py implements document/causal/window masking, and table1 records the mixed changes at Records 11-12. No controlled standard-attention/FlexAttention ablation supplies negligible-overhead and no-loss-regression evidence. The Statement compares shorter context while the falsifier invokes equivalent context; successive record times cannot isolate or reconcile these comparison conditions."
+    },
+    {
+      "claim_id": "C05",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "The progression table records a sequential accumulation of mixed architectural/optimizer changes, not architecture-only, optimizer-only and combined factorial arms. E06 is an experiment description with expected outcomes rather than those ablation results. Directional record comparisons cannot preserve multiplicative compounding or the specified architectural-increment falsifier."
+    },
+    {
+      "claim_id": "C06",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "E04 specifies a planned failure classification, but the copied evidence provides buggy-node summaries rather than a ledger separating correct ideation from implementation and wrong-strategy failures. figs3/8 do not supply the required causal/error-category proportions. Neither low FSR nor a high buggy fraction establishes the complete implementation-not-ideation claim."
+    },
+    {
+      "claim_id": "C07",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "fig5 provides a model-wise IQM scaffold comparison, so that narrower directional relation is expressible and could be falsified: Tree/Forest are below AIDE in the displayed rows, while Multi-AIDE is above it. However, the full falsifier commits to paired per-record rankings and a greater-than-50% record quantifier, which those IQMs do not supply. Replacing that statistical unit with an across-model IQM comparison would not be a complete declaration."
+    },
+    {
+      "claim_id": "C08",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "table6 and fig6 provide grouped mean/range FSR rather than individual-record success rates across all models and hints. table4/fig7 concern a different, four-transition cumulative comparison. None establishes the claim's per-record monotonicity or its causal explanation; substituting grouped recovery or the generative monotonic relation would change both evidence type and scientific scope."
+    },
+    {
+      "claim_id": "C09",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "fig4 and table3 provide IQM FSR, not binary success rates with uncertainty; table5 is a separate documentation intervention. A twofold FSR comparison is technically expressible but changes the falsifier's success-rate metric. It also cannot establish nonsignificance or the implementation-versus-understanding explanation, so skipping the complete claim is justified."
+    },
+    {
+      "claim_id": "C10",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "table1 shows Records 18-20 mixing FP8 with several other optimization changes, and the cited fp8_linear.py is absent from the copied execution directory. No matched FP8-off ablation supplies the claimed contribution or removal-time increase. A ratio along the multi-change trajectory would preserve neither specific causal attribution nor the hardware-engineering necessity assertion."
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "claims": [
+    {
+      "claim_id": "C01",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "logic/solution/algorithm.md defines the covariance-weighted score divergence, while E01/E02 and figures fig5_1_gaussian_targets.md / fig5_2_nongaussian_targets.md report finite-target convergence rather than the theorem. The full conjunction requires nonnegativity with equality iff p=q, affine invariance for coordinate transformations, and normalization independence. Catalog measurement/run relations cannot express the universal iff or mathematical dependence assertion; a sampled invariance experiment would be a narrower obligation."
+    },
+    {
+      "claim_id": "C02",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "logic/solution/algorithm.md, Match Step and Lemma B.1, gives the PSD U / PD V quadratic equation, matrix-square-root covariance solution and subsequent mean update. E01–E04 convergence figures do not establish unique global optimality throughout the Gaussian family. No catalog relation expresses that uniqueness theorem together with both closed-form matrix identities; checking numerical residuals on selected matrices would narrow the claim."
+    },
+    {
+      "claim_id": "C03",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "C03 and the U,V/mean formulas in logic/solution/algorithm.md assert exact algebraic reduction to GSM when B=1 and lambda tends to infinity. E01 is a finite-batch Gaussian benchmark, not evidence of the limiting matrix identity. Catalog relations provide no symbolic-limit or universal matrix-equality relation; comparing finite large-lambda runs would not preserve the exact limit."
+    },
+    {
+      "claim_id": "C04",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "logic/solution/algorithm.md, Theorem 3.1, states both normalized mean and covariance error bounds for every t with alpha/beta/delta depending on initialization, fixed lambda>0 and B→infinity. evidence/figures/fig5_1_gaussian_targets.md and figE3_gaussian_reverse_kl.md describe finite-batch KL curves instead. No installed relation expresses these coupled analytic bounds and the infinite-batch quantifier; a finite-seed monotonicity experiment would omit them."
+    },
+    {
+      "claim_id": "C05",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "prose-only",
+      "explanation": "E01–E04 and evidence/figures/fig5_1_gaussian_targets.md, fig5_2_nongaussian_targets.md, fig5_3_posteriordb.md and fig5_4_deep_generative.md supply qualitative convergence descriptions and batch configurations, not numerical KL/relative-mean-error/MSE trajectories at matched gradient-evaluation budgets. The non-Gaussian file explicitly distinguishes higher limiting forward KL from similar reverse KL at large skew, and the VAE file reports comparable MSE at 3000 gradients only in prose. These cannot be converted into a faithful all-four-families faster-and-lower comparison."
+    },
+    {
+      "claim_id": "C06",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "prose-only",
+      "explanation": "E01–E04 and evidence/figures/fig5_1_gaussian_targets.md, fig5_3_posteriordb.md and fig5_4_deep_generative.md describe BaM larger-batch improvements and ADVI/GSM marginal or absent gains, but do not tabulate convergence speed or stability measurements by batch. B=15/40/150 versus B=2, PosteriorDB B=32 versus 8, and VAE B=10/100/300 are configurations, not numeric measured batch effects. Both speed/stability for BaM and the no-benefit baselines must remain unsupported rather than testing only batch-size order."
+    }
+  ]
+}

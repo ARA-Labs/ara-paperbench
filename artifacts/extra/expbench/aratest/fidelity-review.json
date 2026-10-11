@@ -1,0 +1,41 @@
+{
+  "reviewer": "fresh-context same-system AI review",
+  "claims": [
+    {
+      "claim_id": "C01",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Correct skip. E01/Table 1 contains D/I/C and end-to-end scores for seven configurations, but the specified absolute phase ranges and near-zero end-to-end claim cannot be discharged by the reported pairwise catalog. The IterativeAgent/Nova D=0.1 row is outside the stated 6.4–20.6 range; 'leading' does not identify a concrete exclusion rule, so a declaration must not silently choose a favorable subset. Encoding only ranking or individual-to-conjunctive order would omit the stated ranges."
+    },
+    {
+      "claim_id": "C02",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Correct skip. E01/Table 1 supplies OpenHands/o3-mini All·E✓=0.5 and its ranking, but ranking alone cannot assert the central absolute 0.5% success rate. The table defines All·E✓ using D>0, I>0, correct conclusion and executability, and notes that execution was run only for a monitor-passing subset. These definitions and denominator conditions must not be silently strengthened or replaced while interpreting the claim's 461-task scope."
+    },
+    {
+      "claim_id": "C03",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Correct skip. E02/Figure 6b supplies the execution-verified aggregate sequence 20.6, 3.7, 0.4, 0.2 at M, M·C·D, M·C·D·I and M·C·D·I·E. Pairwise ordering would express only monotonicity, not all four independently stated averages. The evidence also lacks intermediate per-agent values needed for the majority-of-agents falsifier; terminal approximate per-agent scores are not a substitute."
+    },
+    {
+      "claim_id": "C04",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Correct skip. E03/Tables 2 and 8 supply 39.71% for Missing Essential Implementation Components, but reported ranking relations cannot enforce that absolute prevalence. Both tables explicitly show subsets of the 361 failure types distilled from 3,238 insights. Ranking within the supplied subset would also narrow the claim's single-largest-category scope rather than establish it over all implementation failures."
+    },
+    {
+      "claim_id": "C05",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Correct skip. E03/Table 2 supplies the absolute 29.38% environment/dependency and 23.84% script/file prevalences, but the reported catalog lacks scalar equality and category-sum threshold relations for the full conjunction. The evidence warns that categories may overlap, so adding the percentages does not by itself prove that their union covers over half of execution failures. No overlap or disjointness condition should be invented."
+    },
+    {
+      "claim_id": "C06",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Correct skip. E04/Figure 5 reports qualitative High/Substantially lower variance categories, not numerical variance or standard-deviation measurements for C versus C·D and E versus I·E. It supplies neither per-agent dispersion operands nor measurements for the at-least-five-of-seven falsifier. Mean correctness scores cannot replace the claimed metric-stability comparison or better capability discrimination."
+    }
+  ]
+}

@@ -1,0 +1,47 @@
+{
+  "reviewer": "fresh-context same-system AI review",
+  "claims": [
+    {
+      "claim_id": "C01",
+      "judgment": "faithful",
+      "field": null,
+      "explanation": "Both properties use the reported four-task Avg, rather than individual-task superiority: FARE2 versus TeCoA2 and FARE4 versus TeCoA4, each for OF-9B and LLaVA 1.5-7B and each of clean, attack 2/255 and attack 4/255. Exclusions retain only the matching-training-radius comparator. This preserves the complete two-model/two-encoder-pair/three-condition conjunction and E01's sample conditions. OF-9B FARE2 at attack 4/255 is correctly retained despite 11.9 being below TeCoA2's 13.3: contradictory evidence is not an annotation defect and must not be repaired by removing that case."
+    },
+    {
+      "claim_id": "C02",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "The corrected skip now accurately identifies semantic uncertainty rather than imposing statistical significance. C02 says 'significantly lower' clean distortion, while its falsifier requires only lower clean/adversarial losses; E06/Table 14 provide means for both matching-training-radius pairs on 500 ImageNet images with a 100-step attack at 4/255, without a significance test or effect-size threshold. Statistical, effect-size and informal-emphasis readings remain unresolved. The outcome preserves both metrics, both pairs and the drop-in application interpretation, and does not invent a significance requirement. Skipping with reason unclear is justified."
+    },
+    {
+      "claim_id": "C03",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Table 3 and E02 cover LLaVA-1.5 7B, six captions, 25 trials per caption, both attack radii and FARE2/FARE4. Absolute zero success for FARE4 and FARE2 at 2/255, plus FARE2's 2.0% mean at 4/255, are substantive commitments; the any-success falsifier reinforces zero. The reported relations cannot assert absolute count/rate equality. Comparing against another zero-valued encoder would introduce an unclaimed baseline and would not establish absolute zero independently."
+    },
+    {
+      "claim_id": "C04",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "The statement expressly commits to 7.0- and 6.9-percentage-point clean improvements over matching TeCoA variants, not merely higher clean accuracy, and also requires comparable FARE2/TeCoA2 adversarial accuracy at 2/255. Table 4 grounds the 13-non-ImageNet averages, but the catalog lacks additive-gap relations and an authored comparability margin. Checking only the clean directional falsifier, including ImageNet, or replacing comparability with adversarial superiority would change the complete claim."
+    },
+    {
+      "claim_id": "C05",
+      "judgment": "faithful",
+      "field": null,
+      "explanation": "The corrected declaration retains clean LLaVA-1.5 7B, mean POPE F1 over the three splits, both matching training radii, and original-CLIP preservation. Its first two properties select only FARE2-CLIP versus TeCoA2-CLIP and FARE4-CLIP versus TeCoA4-CLIP; its third compares original CLIP against both FARE variants. Together they express all four inequalities TeCoA2<FARE2<CLIP and TeCoA4<FARE4<CLIP. Table 5 supplies the corresponding mean ordering 75.9<80.8<84.5 and 72.2<76.3<84.5. The outcome explicitly limits closeness to this below-original bounded-ordering interpretation, rather than claiming an unrestricted absolute-distance primitive. The reported scores ground the comparisons; the directional matched-radius falsifier does not impose separate exact-value obligations. No named conjunct or variant is dropped and no numerical tolerance is invented."
+    },
+    {
+      "claim_id": "C06",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Table 6 grounds both matching-radius SQA-I comparisons for clean LLaVA-1.5 7B, but the full statement also specifies additive 2.3/2.4-point improvements and, importantly, that FARE2 is only 1.1 points below original CLIP. Even if the parenthetical comparison gaps are read as explanatory grounding, the explicit only-1.1-point original-CLIP preservation clause cannot be replaced by simple superiority over TeCoA. The catalog has no additive-gap or closeness-threshold relation to preserve that entire statement."
+    },
+    {
+      "claim_id": "C07",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Table 2 supplies both cross-model COCO transfers at 4/255, and Table 1 supplies the corresponding clean CIDEr references for both target models and FARE2/FARE4. The nonrobust score drops are identifiable, but near-clean performance for robust encoders is a required conjunct without a tolerance or attack-success cutoff. Some transferred robust scores are below clean and others above it. Higher performance than nonrobust CLIP, or an equivalence margin chosen from those observed gaps, would not preserve the full clean-versus-transfer condition."
+    }
+  ]
+}

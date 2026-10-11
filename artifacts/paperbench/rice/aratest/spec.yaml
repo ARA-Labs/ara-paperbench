@@ -1,0 +1,59 @@
+format_version: 7
+evidence:
+  evidence/tables/table1_main_results.md:
+    metric:
+      name: final_environment_performance
+    axes:
+      Task: environment
+      column: refining_method
+  evidence/figures/figure3_sac_hopper.md:
+    metric:
+      name: hopper_episode_reward
+    axes:
+      Method: refining_method
+      column: checkpoint
+    at:
+      environment: Hopper
+claims:
+  - claim_id: C02
+    provenance:
+      author: direct-session-annotation
+      model: openai-codex/gpt-6-astra
+    properties:
+      - kind: best_baseline_consistency
+        metric: final_environment_performance
+        over: environment
+        in_scope:
+          - Hopper
+          - Walker2d
+          - Reacher
+          - HalfCheetah
+          - Selfish Mining
+          - Cage Challenge 2
+          - Auto Driving
+          - Malware Mutation
+        where:
+          section: 'Group 1: Fix Explanation (Ours); Vary Refining Methods'
+        treatment:
+          refining_method: Ours
+        baseline_axis: refining_method
+        exclude:
+          - No Refine
+        comparator: gt
+  - claim_id: C06
+    provenance:
+      author: direct-session-annotation
+      model: openai-codex/gpt-6-astra
+    properties:
+      - kind: best_baseline_consistency
+        metric: hopper_episode_reward
+        over: checkpoint
+        in_scope:
+          - '~1M steps (final)'
+        where:
+          environment: Hopper
+          section: 'Refining Phase (Right — 0 to 1M additional steps)'
+        treatment:
+          refining_method: Ours (RICE)
+        baseline_axis: refining_method
+        comparator: gt

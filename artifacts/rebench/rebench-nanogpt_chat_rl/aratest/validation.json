@@ -1,0 +1,5 @@
+{
+  "returncode": 2,
+  "stdout": "",
+  "stderr": "error: 1 spec problem(s):\n- claims_unreadable: logic/claims.md: 1 validation error for Claim\nstatus\n  Input should be 'hypothesis', 'testing', 'supported' or 'refuted' [type=literal_error, input_value='hypothesis (untested iso... than a hyperparameter)', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.13/v/literal_error\n"
+}

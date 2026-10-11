@@ -1,0 +1,35 @@
+{
+  "reviewer": "fresh-context same-system AI review",
+  "claims": [
+    {
+      "claim_id": "C01",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "C01 is a universal theorem over ANY joint density with correct marginals, dependent or independent, asserting the unique minimizer of a quadratic objective and, in its falsifier, the transport equation. E01 is analytical/GMM validation; table1_couplings.md lists symbolic densities and figure2_transport_comparison.md is a qualitative three-mode illustration. Reported domains compare measured numeric operands; finite generative invariant/differential checks do not express minimizer uniqueness or a universal transport identity. Verifying loss ordering on a selected GMM or three selected couplings would not represent all densities or uniqueness. The no-relation skip is correct without judging the theorem itself true or false and without replacing analytical scope by a finite empirical subclaim."
+    },
+    {
+      "claim_id": "C02",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "C02 asserts a symbolic expectation/integral bound equals d*sigma^2 and is strictly below2*E|x1|^2+d*sigma^2 under x0=m(x1)+sigma*zeta and the specified alpha/beta schedule. E01 suggests comparing kinetic energy for GMM couplings, but figure2_transport_comparison.md explicitly supplies no numerical trajectory data. Reported domains have no symbolic expectation or integral-equality language; numeric ratio comparisons cannot express this universally parameterized identity. Generative checks at chosen d/sigma or m=x1 would change the scope and cannot establish the unspecified proximal-m condition. The no-relation skip is correct for the complete equality, bound and strict-improvement conjunction. This review does not silently repair the theoretical formula or treat a finite visual illustration as its proof."
+    },
+    {
+      "claim_id": "C03",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Table2_inpainting_fid.md gives1.13 dependent and1.35 uncoupled FID-50k on ImageNet256 validation with50k samples; E02 supplies the mask coupling and reversed alpha=t,beta=1-t schedule. The directional title and E02 expected outcome alone would fit comparative/consistency, but the actual falsifier independently rejects dependent FID>=1.35 OR uncoupled FID<=1.13 on reproduction. Those two fixed boundaries remain substantive even when the original reported numbers also ground the comparison. A dependent<uncoupled property could hold for2.0<3.0 or0.8<1.0 while violating those acceptance conditions, so it is not the full claim. The reported schema has no literal thresholds/equality of attained values; its generative band relations consume experiment batches, not these reported cells. The skip is correct. Do not manufacture reference constants or count the narrower directional comparison as a declared C03."
+    },
+    {
+      "claim_id": "C04",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Table3_superresolution_fid.md reports dependent-coupling train2.13 and valid2.05, and I2SB valid2.70 with no train value. E03/C04 retain ImageNet64-to256 resolution and both train/validation measurements; the falsifier specifies the fixed validation2.70 threshold. The comparison against the reported I2SB validation cell is expressible and preserves the previous-best reference; numeric values therefore are not automatically unexpressible merely because they occur in the prose. Nevertheless that one comparison does not encode the separately asserted train2.13 outcome or the complete train/valid attainment conjunction. Replacing it by training dominance over SR3/ADM/Cascaded Diffusion would invent a different proposition, while supplying an I2SB train value would invent evidence. Reported domains cannot check literal attained-score identities. The full skip remains correct; preserve the original outputs and do not count the validation-only subclaim."
+    },
+    {
+      "claim_id": "C05",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Figure2_transport_comparison.md explicitly labels its2D three-mode GMM illustration qualitative with no numerical data points. The dependent-coupling panel describes simple, non-crossing trajectories and no auxiliary intermediate modes; the independent panel describes complex crossing flows and extra modes. E04 gives no trajectory-complexity metric, crossing count, intermediate-mode detector or quantitative tolerance. Reported relations cannot evaluate these categorical visual descriptions, and a fabricated0/1 encoding would invent measurements and a detection rule. The nonquantitative skip is correct for all conjuncts and the original GMM scope; it is not an assessment of the visual claim as scientifically incorrect."
+    }
+  ]
+}

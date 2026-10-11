@@ -1,0 +1,35 @@
+{
+  "reviewer": "fresh-context same-system AI review",
+  "claims": [
+    {
+      "claim_id": "C01",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Correctly skipped. Table2_main_results.md makes the all-dataset/all-k accuracy comparisons available, but the claim independently requires final coreset size strictly less than the predefined k in every configuration. Those literal per-row bounds are not addressable measurement operands in the reported relations. Using a best-baseline property alone would drop an essential conjunct, even though it could reveal accuracy counterexamples such as F-MNIST k=1000 and CIFAR-10 k=4000. The weaker falsifier involving accuracy below all baselines must not replace accuracy at least equal to the best baseline."
+    },
+    {
+      "claim_id": "C02",
+      "judgment": "faithful",
+      "field": null,
+      "explanation": "The final best_baseline_consistency declaration retains all three datasets, all four configurations per dataset, mean test accuracy, LBCS, and all seven baseline methods: 12 cells with seven comparisons each. ge preserves highest mean and the falsifier's any-baseline-higher rule, including the CIFAR-10 final-row tie. Table 3 and E01 step 7 identify the resized-baseline experiment rather than fixed-k Table 2. F-MNIST's k=2000 row says approximately 1935 while its section and Table 2 say 1915; the annotation transparently retains the conflicting source labels and tests within-row comparisons, not numerical equality of realized sizes. First-to-final repair removes only the redundant F-MNIST override identical to the default scope; the domain's fallback retains the same four rows and all baseline comparisons. Meaning is retained, although the source size discrepancy remains unresolved evidence provenance."
+    },
+    {
+      "claim_id": "C03",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Correctly skipped. The statement is an almost-sure asymptotic convergence theorem under both Progressable and Stable Moving conditions, targeting the constrained global minimum of coreset size. E03 and table5_ablation_search_times.md supply only finite-search empirical observations. None of the reported pair relations expresses the probability-one limit, formal assumptions, or constrained optimum. Empirical plateaus and size reductions cannot substitute for this theoretical claim, so no expressible whole assertion was missed."
+    },
+    {
+      "claim_id": "C04",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Correctly skipped. The full claim covers 30% noise, 50% noise, and class imbalance, every k in {1000,2000,3000,4000}, all seven baselines, and the epsilon-compromise overfitting explanation. Both supplied Figure-2 transcriptions provide approximate accuracy for only 30% noise and imbalance, with disagreeing readings. The 50%-noise tables report coreset sizes, not test accuracy, and the cited Figure-4 accuracy evidence is absent from the evidence inventory. A two-condition ranking would omit a required condition and would not establish the mechanism."
+    },
+    {
+      "claim_id": "C05",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Correctly skipped. E05 and table4_imagenet.md fix ImageNet-1k, ResNet-50, both predefined ratios, and the reported baseline cohort; Influential is unavailable, not a zero-score baseline. Highest Top-5 accuracy is expressible, but optimized ratios 68.53% and 77.82% are independently asserted, and the falsifier also requires optimized ratios below predefined ratios. The parser exposes only the leading accuracy number from each parenthetical cell, leaving its ratio in raw text, and reported relations lack literal bound/equality operands. An accuracy-only declaration would therefore miss substantive size commitments, not merely contextual numbers."
+    }
+  ]
+}

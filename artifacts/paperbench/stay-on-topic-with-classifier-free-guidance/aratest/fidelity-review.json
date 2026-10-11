@@ -1,0 +1,41 @@
+{
+  "reviewer": "fresh-context same-system AI review",
+  "claims": [
+    {
+      "claim_id": "C01",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "E01 and fig2a_zero_shot_arc_boolq_hellaswag.md/fig2b_zero_shot_piqa_sciq_trivia_wino_lambada.md cover GPT-2, Pythia and LLaMA at gamma=1 versus 1.5, but PaLM-540B 77.9% is only prose, not a comparable table operand. Consolidated table2_zero_shot_benchmarks.md and general_benchmarks_b.md do not add a PaLM row. The quoted approximately81% LLaMA score is grounded by the 73.6 / 81.3 cell; the PaLM comparison is a substantive conjunct and its fixed 77.9% boundary appears in the falsifier. EvidenceEntry cannot convert prose to a measurement or supply a literal comparison operand. Moreover the primary benchmark baseline/CFG cells are slash-packed values, which the numeric reader does not unpack into two comparable accuracies; the ledger description of bindable paired cells is too optimistic, but that does not invalidate the skip. The full skipped claim is correct; replacing SOTA by self-baseline or omitting seven-benchmark/family scope is not recommended."
+    },
+    {
+      "claim_id": "C02",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Table4_ancova_pvalues.md explicitly supplies nine p-values and categorical winners under matched inference FLOPs, with significance at 0.01: five nonsignificant, two CFG wins and two vanilla wins. Thus p=0.01, five-of-nine and the even 2/2 split are substantive statistical/counting commitments, not incidental printed scores. The reported domains have pairwise numeric comparators and at-least counts on one axis, but no literal p-value threshold, categorical-winner counting or exact split predicate. ConfigSubstitution/equivalence operates on aligned binary per-sample outcomes with a supplied margin and cannot reproduce this ANCOVA assertion. Generative threshold is a controlled imposed-null rejection-rate experiment, not thresholding these nine ANCOVA cells. A accuracy/FLOP comparison would lose the statistical test. The no-relation skip correctly preserves the whole claim and matched 2x-size/doubled-CFG-FLOPs condition."
+    },
+    {
+      "claim_id": "C03",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "C03/E02 require both valid-answer rate and accuracy for GSM8K AND AQuA on WizardLM-30B/Guanaco-65B at low gamma, plus rare invalid chains with accuracy deterioration at gamma>1.5. Cot_gsm8k.md and figure2_cot_gsm8k.md provide directional labels only, not numeric outcome rates. AQuA is a prose extension rather than a separate numeric model/dataset/gamma series, and rarity has no numerical boundary. ReportedEvidence emits pairs of numeric measurements, not comparisons of Higher than baseline or Near peak labels. CoT examples do not substitute for rates over the two datasets. A declaration for one rate, one dataset or only low gamma would omit required conjuncts. The prose-only skip is correct; no invented numerical rates or rarity threshold are proposed."
+    },
+    {
+      "claim_id": "C04",
+      "judgment": "unclear",
+      "field": null,
+      "explanation": "Table2_codegen_humaneval_temp02.md and tables5/6/7_codegen full contain pass@1/10/100 for the three named CodeGen models and gamma=1,1.1,1.25,1.5,1.75,2 at temperature0.2 (plus other temperatures in the full tables). C04 assigns gamma=1.5 to BOTH the uniformly improving low regime and the deteriorating high regime; it does not specify whether deterioration is relative to vanilla, the model-specific optimum or the previous gamma. The table itself has 350M pass@1=10.9 at1.5 versus11.0 vanilla, while2B/6B remain above vanilla through1.75. That is not evidence that scope may be shrunk to favorable points. Diminishing improvement OR harm at large k is also not a fixed directional predicate, and the narrow falsifier cannot resolve the complete regime claim. Preserve skipped/unclear until the intended reference/boundary is explicit; retain the printed duplicate2B/6B numbers, all models and the original temperature scope."
+    },
+    {
+      "claim_id": "C05",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Fig5_human_preference.md gives75% system-prompt preference and52% user relevance at gamma3 under the default-negative/edited-positive prompts on GPT4All-J. These are not merely values to compare against another gamma: C05 asserts chance-like undegraded relevance, and its falsifier fixes system preference>=60% and rejects a significant relevance drop below50%. No per-gamma vote counts are provided;611 votes and71 voters are overall totals, not a binomial sample size for gamma3. Reported comparators do not express literal preference thresholds plus statistical non-degradation/equivalence. Generative equivalence requires binary aligned samples and a margin absent here; inventing those or comparing to an approximate50% gamma1 row changes the test. The no-relation skip is correct for the complete system-following AND user-relevance assertion."
+    },
+    {
+      "claim_id": "C06",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Fig6_entropy_analysis.md and entropy_analysis.md ground mean CFG entropy4.7 versus vanilla5.4 on Falcon/P3 at gamma1.5, with instruct entropy approximately4.7. These two entropy numbers may ground the directional reduction, but the full claim separately requires similarity to instruct AND top-p0.9 CFG/instruct overlap<30%. That30% is an explicit inequality, not an incidental point estimate; the falsifier also requires significant entropy reduction and checks a>50% overlap boundary. The main figure describes CFG/instruct overlap in prose; the alternate table uses an inequality-valued <30% label, not a precise comparable numeric overlap. The reported domains lack equivalence margins, inferential entropy tests and literal overlap thresholds; no sampling variance or margin is given. Comparing CFG to vanilla entropy or substituting the different CFG/vanilla approximately50% overlap is incomplete. The whole no-relation skip is correct."
+    }
+  ]
+}

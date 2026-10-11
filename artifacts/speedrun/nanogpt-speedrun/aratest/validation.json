@@ -1,0 +1,34 @@
+{
+  "command": [
+    "uv",
+    "run",
+    "--no-sync",
+    "aratest",
+    "validate",
+    ".runs/rq1-direct-20261010/artifacts/speedrun/nanogpt-speedrun"
+  ],
+  "exit_code": 0,
+  "stdout": {
+    "ara": ".runs/rq1-direct-20261010/artifacts/speedrun/nanogpt-speedrun",
+    "source_format_version": 7,
+    "valid": true,
+    "property_count": 0,
+    "property_problems": [],
+    "families": [],
+    "legacy_unmapped": [],
+    "undeclared_claims": [
+      "C01",
+      "C02",
+      "C03",
+      "C04",
+      "C05",
+      "C06",
+      "C07",
+      "C08",
+      "C09",
+      "C10"
+    ],
+    "skipped_cells": []
+  },
+  "stderr": ""
+}

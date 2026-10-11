@@ -1,0 +1,41 @@
+{
+  "reviewer": "fresh-context same-system AI review",
+  "claims": [
+    {
+      "claim_id": "C01",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Skipping is appropriate for the whole claim. Figure 2 provides approximate PPO performance readings for Shadow Hand and Allegro Kuka Throw through about 100,000 environments, with a plateau near 25,000. C01 additionally attributes saturation to redundant IID samples from a shared Gaussian policy. A finite ordering of approximate curve points would not express that mechanism or a saturation/change-point law; the installed reported relations do not provide either. The plot-based falsifier identifies a potential refutation but does not make the causal clause disappear."
+    },
+    {
+      "claim_id": "C02",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "The unresolved claim ambiguity justifies skipping. The statement simultaneously asserts higher SAPG performance and 'near-zero improvements over PPO and PQL which fail entirely', whereas E02 expects substantial improvement. Table 1 measures episode success counts, not success rates; it distinguishes SAPG entropy=0 and entropy=0.005, with different best variants by task, and leaves Two Arms PQL and SAPG entropy=0 unreported. Its numerical Two Arms values are 28.58 versus DexPBT 14.46, while the note calls the gain greater than 2×, creating an additional source-level inconsistency. A full four-task declaration would require resolving wording, variants, unavailable operands, and the stated 12–66% scope rather than dropping inconvenient comparisons."
+    },
+    {
+      "claim_id": "C03",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Skipping is appropriate. E04 fixes five tasks, the leader-follower versus symmetric aggregation variants, and final performance at 2e10 steps, but Figure 6 reports symmetric performance only qualitatively as worse or worst, without the paired numeric final rewards/successes needed for the three-of-five falsifier. The statement also attributes the performance difference to policy convergence eliminating diversity, which is not measured for those variants in the cited ablation evidence. Neither a numeric majority comparison nor the entire mechanism claim can be faithfully bound."
+    },
+    {
+      "claim_id": "C04",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Skipping is appropriate because both required reconstruction-error comparisons lack numeric observations. E05 requires PCA error over component counts and MLP error over hidden dimensions for visited states. Figures 7–8 and their separate evidence files expressly supply rankings and approximate qualitative descriptions rather than error measurements, with some MLP panels described as similar for SAPG and PPO. Component counts and hidden-layer sizes are coordinates, not reconstruction-error operands; they cannot establish strict superiority across the measured ranges."
+    },
+    {
+      "claim_id": "C05",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Skipping is appropriate. Figure 6 identifies the actual no-off-policy ablation and describes it as worst or significantly worse across the five E04 tasks, but supplies no numeric final performance for that variant. Table 1 contains complete SAPG entropy variants and PPO/PBT/PQL, not the no-off-policy variant. Consequently a majority-of-tasks degradation property or the matching-on-three-tasks falsifier would require manufactured measurements or substitution of a different baseline. The qualitative evidence cannot be converted into quantitative significance."
+    },
+    {
+      "claim_id": "C06",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "The ambiguity-aware skip is appropriate for the full selective-benefit claim. Table 1 supplies the entropy=0 and entropy=0.005 comparisons, including Reorientation 33.2 versus 38.6 and lower entropy-regularized means on AllegroHand, Regrasping, and Throw. However, the statement permits 'marginal or negative benefit' on the simpler tasks without defining a positive marginal-benefit tolerance; the falsifier resolves non-positive benefit only for AllegroHand and Throw, not Regrasping. Binding non-improvement on all three merely because the observed means happen to be lower would strengthen the allowed condition. A ratio comparison for Reorientation alone would omit the selective-benefit clause."
+    }
+  ]
+}

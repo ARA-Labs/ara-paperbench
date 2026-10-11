@@ -1,0 +1,88 @@
+{
+  "format_version": "1",
+  "ara": "/home/yfhe/ara/DissClaimer/.runs/rq1-direct-20261010/artifacts/paperbench/lca-on-the-line",
+  "results": null,
+  "claims": [
+    {
+      "claim_id": "C03",
+      "standing": "holds",
+      "properties": [
+        {
+          "kind": "compound_consistency",
+          "version": "1",
+          "outcome": {
+            "tag": "holds"
+          },
+          "note": "all 6 groups hold in scope and at dataset=ImgNet within id_tolerance=0.0",
+          "refinement": {
+            "label": "holds",
+            "note": ""
+          },
+          "statistic": null,
+          "checked": true,
+          "witnesses": []
+        }
+      ],
+      "record": null
+    },
+    {
+      "claim_id": "C04",
+      "standing": "holds",
+      "properties": [
+        {
+          "kind": "comparative",
+          "version": "1",
+          "outcome": {
+            "tag": "holds"
+          },
+          "note": "the relation holds on all 1 in-scope values",
+          "refinement": {
+            "label": "holds",
+            "note": ""
+          },
+          "statistic": null,
+          "checked": true,
+          "witnesses": []
+        },
+        {
+          "kind": "comparative",
+          "version": "1",
+          "outcome": {
+            "tag": "holds"
+          },
+          "note": "the relation holds on all 1 in-scope values",
+          "refinement": {
+            "label": "holds",
+            "note": ""
+          },
+          "statistic": null,
+          "checked": true,
+          "witnesses": []
+        },
+        {
+          "kind": "comparative",
+          "version": "1",
+          "outcome": {
+            "tag": "holds"
+          },
+          "note": "the relation holds on all 1 in-scope values",
+          "refinement": {
+            "label": "holds",
+            "note": ""
+          },
+          "statistic": null,
+          "checked": true,
+          "witnesses": []
+        }
+      ],
+      "record": null
+    }
+  ],
+  "undeclared": [
+    "C01",
+    "C02",
+    "C05"
+  ],
+  "record_errors": [],
+  "exit_code": 0
+}

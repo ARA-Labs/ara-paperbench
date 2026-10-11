@@ -1,0 +1,5 @@
+{
+  "returncode": 0,
+  "stdout": "{\n  \"ara\": \"/home/yfhe/ara/DissClaimer/.runs/rq1-direct-20261010/artifacts/paperbench/test-time-model-adaptation\",\n  \"source_format_version\": 7,\n  \"valid\": true,\n  \"property_count\": 6,\n  \"property_problems\": [],\n  \"families\": [],\n  \"legacy_unmapped\": [],\n  \"undeclared_claims\": [\n    \"C01\",\n    \"C03\",\n    \"C04\",\n    \"C05\",\n    \"C06\"\n  ],\n  \"skipped_cells\": [\n    {\n      \"path\": \"evidence/tables/table11_noniid.md\",\n      \"count\": 0\n    },\n    {\n      \"path\": \"evidence/tables/table2_imagenetc_accuracy.md\",\n      \"count\": 0\n    },\n    {\n      \"path\": \"evidence/tables/table4_quantized_accuracy.md\",\n      \"count\": 0\n    },\n    {\n      \"path\": \"evidence/tables/table7_memory_usage.md\",\n      \"count\": 0\n    }\n  ]\n}\n",
+  "stderr": ""
+}

@@ -1,0 +1,14 @@
+{
+  "command": [
+    "aratest",
+    "test",
+    "artifacts/paperbench/semantic-self-consistency",
+    "--format",
+    "json",
+    "--no-records"
+  ],
+  "exit_code": 0,
+  "spec_sha256": "9faa0c4354a6c376aee21b6fe0bd081f9a934c2ee5efa742b698c3f4d87d9ffd",
+  "stdout": "{\n  \"format_version\": \"1\",\n  \"ara\": \"/home/yfhe/ara/DissClaimer/.runs/rq1-direct-20261010/artifacts/paperbench/semantic-self-consistency\",\n  \"results\": null,\n  \"claims\": [\n    {\n      \"claim_id\": \"C04\",\n      \"standing\": \"holds\",\n      \"properties\": [\n        {\n          \"kind\": \"best_baseline_consistency\",\n          \"version\": \"1\",\n          \"outcome\": {\n            \"tag\": \"holds\"\n          },\n          \"note\": \"the treatment is the best of 2 baselines [MathBERT, SciBERT] across all 1 groups\",\n          \"refinement\": {\n            \"label\": \"holds\",\n            \"note\": \"\"\n          },\n          \"statistic\": null,\n          \"checked\": true,\n          \"witnesses\": []\n        }\n      ],\n      \"record\": null\n    }\n  ],\n  \"undeclared\": [\n    \"C01\",\n    \"C02\",\n    \"C03\",\n    \"C05\",\n    \"C06\"\n  ],\n  \"record_errors\": [],\n  \"exit_code\": 0\n}\n",
+  "stderr": ""
+}

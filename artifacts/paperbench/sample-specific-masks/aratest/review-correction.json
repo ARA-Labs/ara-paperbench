@@ -1,0 +1,13 @@
+{
+  "trigger": "Main relayed fresh source-fidelity review and directed a correction; no verdict feedback was used.",
+  "claim_id": "C04",
+  "before": {"disposition": "skipped", "reason": "no relation", "declaration_ids": []},
+  "after": {"disposition": "declared", "declaration_ids": ["C04"]},
+  "interpretation_change": "Treat the stated average values and notable gains as reported evidence grounding rather than separate effect-size thresholds. Preserve majority superiority over all four baselines across the complete eleven ViT-B32 datasets, plus strict reported-average superiority.",
+  "scope": "Default-LR Table 2, all eleven datasets including UCF101 and EuroSAT; min_pass=6; AVERAGE separately required.",
+  "preserved_before_edit": ["pre-review-spec.yaml", "pre-review-outcomes.json"],
+  "candidate_before_validation": "review-spec.yaml",
+  "prior_files_untouched": ["first-spec.yaml", "validation.json"],
+  "validation_policy": "Production load/bind only; no test/check verdict or scientific experiment.",
+  "other_claims_changed": false
+}

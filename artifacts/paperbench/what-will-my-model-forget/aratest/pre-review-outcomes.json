@@ -1,0 +1,52 @@
+{
+  "claims": [
+    {
+      "claim_id": "C01",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "parse failure",
+      "explanation": "Table 1 is the required 7-of-8 best-method evidence, but aratest evidence rejects its repeated BART0Large/FLAN-T5Large/FLAN-T53B column headers at line 5. Moreover the fixed table visibly contains only seven configurations (2+3+2), not the claimed eight; the omitted setting cannot be invented or the quantifier silently changed to 6-of-7."
+    },
+    {
+      "claim_id": "C02",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "parse failure",
+      "explanation": "The all-eight prior-versus-no-prior comparison relies on Table 1 Representation and w/o Prior rows. Production parsing rejects duplicate model headers at line 5, and the seven visible columns do not identify an eighth configuration. No numeric values are copied into replacement evidence and no all-seven substitute is declared."
+    },
+    {
+      "claim_id": "C03",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "parse failure",
+      "explanation": "Table 1 contains the required BART0Large Full FT trainable-logit/threshold pair 57.15/55.75 and FLAN-T5Large LoRA 36.54/43.93 and Full FT 40.91/48.43. The production parser rejects its duplicate model headers. Figure 2(a) demonstrates token-level transfer on one example pair but does not replace these configuration-level F1 operands."
+    },
+    {
+      "claim_id": "C04",
+      "disposition": "declared",
+      "declaration_ids": [
+        "C04"
+      ],
+      "reason": null,
+      "explanation": "One comparative property includes all four Table 3 sequential error-fixing model/tuning settings, comparing Representation replay with Random replay on EM Drop (%). Table 4 is separate single-error fixing and is intentionally not substituted; success rate is not an asserted conjunct of C04."
+    },
+    {
+      "claim_id": "C05",
+      "disposition": "declared",
+      "declaration_ids": [
+        "C05"
+      ],
+      "reason": null,
+      "explanation": "Table 2 P3-TestOOD binary F1 on BART0Large Full FT: Representation with prior must exceed Threshold; Threshold must exceed both Trainable Logit and w/o Prior. The second property aggregates both unsuccessful alternatives. This preserves the word only, not merely best-of-all performance; ID scores are outside the claim."
+    },
+    {
+      "claim_id": "C06",
+      "disposition": "declared",
+      "declaration_ids": [
+        "C06"
+      ],
+      "reason": null,
+      "explanation": "The stated 1/6700 FLOP magnitude is preserved as conjunction of ratio_ge and ratio_le with Ground Truth over Representation from Table 8 (FLAN-T5Large Full FT, 3600 upstream examples); it is not weakened to merely cheaper or the 1%-cost falsifier. Table 8 actually reports 1.35e10 and 9.04e14, whose displayed ratio differs from the prose magnitude; no semantic repair is made. Comparable replay EM Drop is bounded within factor two in both directions using Table 3 FLAN-T5Large Full FT Representation and GT Forget, as specified by the falsifier. No missing variance is imputed."
+    }
+  ]
+}

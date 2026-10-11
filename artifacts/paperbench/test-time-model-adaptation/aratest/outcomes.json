@@ -1,0 +1,57 @@
+{
+  "claims": [
+    {
+      "claim_id": "C01",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "Tables 2 and 16 report ImageNet-C severity-5 mean accuracy/ECE for 32-bit ViT-Base (FOA 66.3/3.2, TENT 59.6/18.5), and Table 8 reports zero backward passes. The full statement also requires no model-weight modification; the reported-evidence numeric relations cannot certify that algorithmic constraint. An accuracy/ECE-only declaration would omit it."
+    },
+    {
+      "claim_id": "C02",
+      "disposition": "declared",
+      "declaration_ids": [
+        "C02"
+      ],
+      "reason": null,
+      "explanation": "Two required comparisons preserve cross-precision identity: Table 4 8-bit PTQ4ViT FOA mean accuracy versus Table 2 32-bit TENT on all 15 severity-5 ImageNet-C corruptions, and Table 7 BS=64 FOA (8-bit) versus TENT memory. The 63.5/59.6 and 208/5165 values identify reported operands, not fabricated constants. Table 7 explicitly calls 8-bit memory an ideal 0.25-times estimate; it is not an independently measured 8-bit allocation."
+    },
+    {
+      "claim_id": "C03",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "Table 7 BS=64 supplies FOA 8-bit 208 MB and TENT 32-bit 5165 MB, with the former estimated from 832 MB rather than measured. A ratio comparison could express the memory reduction, but not the claim's required causal attribution to absence of gradient buffers/backward computation graph. The 24.8-fold assertion is not replaced by the weaker falsifier threshold of 10-fold."
+    },
+    {
+      "claim_id": "C04",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "Table 9 exp5 (norm layers+CMA+entropy) gives 0.1% and exp6 (prompts+CMA+entropy) 44.9%, versus NoAdapt 55.5%; Table 5 confirms the prompt ablation. Numeric comparisons cannot express the full conclusion that entropy alone cannot provide stable CMA learning signals, and no stability measurement or time series is reported. The within-5-percentage-point falsifier is not reduced to merely worse-than-NoAdapt."
+    },
+    {
+      "claim_id": "C05",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "Table 5 separates NoAdapt 55.5%, activation-discrepancy-only 63.4%, and full entropy+discrepancy+shifting 66.3%; Table 9 instead reports a distinct 65.4% FOA design-choice row. Reported relations could compare those averages but cannot certify consistent learning signals/stability or the required additive gain of at least 5 percentage points in the falsifier. The variants are not aliased."
+    },
+    {
+      "claim_id": "C06",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "Table 12 provides clean-ImageNet accuracy FOA 85.11, NoAdapt 85.17, TENT 84.80, CoTTA 83.91, SAR 84.52, with signed drops in parentheses. Full fidelity requires the near-original/at-most-1-percentage-point NoAdapt drop condition as well as superiority to all three gradient baselines. The catalog has no standalone additive-difference bound on reported cells; compound_consistency ties its ID clause to the same baseline as a separate non-ID scope, which this clean-only comparison does not supply. No arbitrary relative-ratio surrogate is introduced."
+    },
+    {
+      "claim_id": "C07",
+      "disposition": "declared",
+      "declaration_ids": [
+        "C07"
+      ],
+      "reason": null,
+      "explanation": "All four Table 11 method comparisons are declared: higher accuracy and lower ECE against both TENT and SAR for class-ordered online label shift and the single mixed-corruption stream. Each property aggregates every other method row (the cohort is exactly TENT and SAR). Separate properties are necessary for four metric columns, and preserve the stronger statement rather than the weaker ECE falsifier."
+    }
+  ]
+}

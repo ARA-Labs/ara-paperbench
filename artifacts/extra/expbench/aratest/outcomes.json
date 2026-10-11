@@ -1,0 +1,46 @@
+{
+  "claims": [
+    {
+      "claim_id": "C01",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "E01, evidence/tables/table1_main_results.md parses seven agent configurations and D/I/C/All·E✓ percentages. The specified phase ranges 6.4–20.6, 10.0–35.0, 0.0–14.9 and near-zero end-to-end conjunction cannot be represented by the reported-evidence pairwise catalog as absolute range/extremum assertions. The table also contains IterativeAgent+Nova D=0.1, outside the stated D range; it is not silently excluded."
+    },
+    {
+      "claim_id": "C02",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "E01, evidence/tables/table1_main_results.md supplies OpenHands+o3-mini All·E✓=0.5 across 461 tasks. A best-baseline relation could encode its ranking but not the independently asserted absolute 0.5% success rate; using only ranking would omit the central claim. The notes define the actual D>0/I>0/C/executable conjunction, which is retained rather than redefined."
+    },
+    {
+      "claim_id": "C03",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "E02, evidence/figures/fig6b_conjunctive_metrics.md parses the execution-verified average sequence 20.6,3.7,0.4,0.2 at M,M·C·D,M·C·D·I,M·C·D·I·E. Pairwise inequalities can encode decreasing order but cannot enforce the four asserted absolute averages; per-agent values for all intermediate levels required by the falsifier are also absent."
+    },
+    {
+      "claim_id": "C04",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "E03, evidence/tables/table2_failure_patterns.md and table8_extended_failure_patterns.md parse Missing Essential Implementation Components=39.71%. Ranking relations cannot express the absolute 39.71% prevalence condition. Both tables explicitly provide only subsets of the 361 categories distilled from 3,238 insights, so declaring a best-baseline comparison would also narrow the all-failure-category scope."
+    },
+    {
+      "claim_id": "C05",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "E03, evidence/tables/table2_failure_patterns.md parses execution environment/dependency errors=29.38% and script/file errors=23.84%. The catalog lacks reported scalar equality and sum-over-categories threshold relations, so neither both absolute percentages nor their over-half conjunction can be completely expressed. The evidence also warns that categories may overlap; no disjoint union is invented."
+    },
+    {
+      "claim_id": "C06",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "prose-only",
+      "explanation": "E04, evidence/figures/fig5_metric_stability.md contains High/Substantially lower descriptions, not numeric variances or standard deviations. There are no per-task/per-agent dispersion measurements for C vs C·D or E vs I·E to encode the lower-variance comparison or the falsifier requiring at least five of seven configurations."
+    }
+  ]
+}

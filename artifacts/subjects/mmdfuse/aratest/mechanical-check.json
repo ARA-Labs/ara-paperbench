@@ -1,0 +1,64 @@
+{
+  "format_version": "1",
+  "ara": "/home/yfhe/ara/DissClaimer/.runs/rq1-direct-20261010/artifacts/subjects/mmdfuse",
+  "results": null,
+  "claims": [
+    {
+      "claim_id": "C08",
+      "standing": "holds",
+      "properties": [
+        {
+          "kind": "consistency",
+          "version": "1",
+          "outcome": {
+            "tag": "holds"
+          },
+          "note": "4 of 5 in-scope values pass (min_pass=1)",
+          "refinement": {
+            "label": "holds",
+            "note": ""
+          },
+          "statistic": null,
+          "checked": true,
+          "witnesses": []
+        }
+      ],
+      "record": null
+    },
+    {
+      "claim_id": "C12",
+      "standing": "undecided",
+      "properties": [
+        {
+          "kind": "invariant",
+          "version": "1",
+          "outcome": {
+            "tag": "no_verdict",
+            "reason": "missing_evidence",
+            "detail": "not checked on reported evidence: kind 'invariant' needs aratest.run-batch@1 cases from an experiment"
+          },
+          "note": "",
+          "refinement": null,
+          "statistic": null,
+          "checked": false,
+          "witnesses": []
+        }
+      ],
+      "record": null
+    }
+  ],
+  "undeclared": [
+    "C01",
+    "C02",
+    "C03",
+    "C04",
+    "C05",
+    "C06",
+    "C07",
+    "C09",
+    "C10",
+    "C11"
+  ],
+  "record_errors": [],
+  "exit_code": 4
+}

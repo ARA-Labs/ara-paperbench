@@ -1,0 +1,62 @@
+{
+  "claims": [
+    {
+      "claim_id": "C01",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "E01 and evidence/tables/table2_main_results.md identify the Combined setting and four task-specific gains, including GSM8K +6.77 points. The assertion additionally fixes the four-task average gain to 6.39% and access restrictions (table1_method_comparison.md). Reported relations do not compute/check the additive average or maximum gain, nor categorical parameter/probability access. Comparing Combined > CoT alone would drop required conditions; accuracy and TruthfulQA True+Info are not silently treated as the same metric."
+    },
+    {
+      "claim_id": "C02",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "E03 and evidence/tables/table4_cost_analysis.md give full-step training costs $3.48/$11.58 and SFT $153.00/$216.50 for StrategyQA/GSM8K. The claimed approximately 31.30-fold reduction combines dataset-specific ratios; a per-dataset ratio_ge 31.30 would be a different assertion. No reported relation aggregates ratios or tests an approximate aggregate equality, and the caption’s per-thousand normalization versus abbreviated Training Cost ($) headers is retained rather than silently changed."
+    },
+    {
+      "claim_id": "C03",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "E03 and evidence/tables/table4_cost_analysis.md give StrategyQA/GSM8K full-step costs $5.37/$12.46 per 1k questions versus Azure-SFT $7.50/$28.30, and single-step costs $2.20/$3.10. The full claim requires approximately 1.84-fold and 6.27-fold reductions across these datasets for distinct full-step and single-step variants. No reported relation computes the averages of those ratios or expresses their approximate equality; separate directional cost comparisons would not preserve the claimed magnitudes."
+    },
+    {
+      "claim_id": "C04",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "E05 and evidence/tables/table5_ablation_loss.md provide the specific StrategyQA 0.1B and GSM8K 0.3B NCE/MLM accuracy operands. C04 explicitly asserts +10.10 and +3.05 percentage-point gains as well as 71.62 versus 61.52 and 73.86 versus 70.81. Reported relations have no additive-difference equality; NCE > MLM alone would omit these quantified gains. The claim is not expanded to the other two adapter/task combinations."
+    },
+    {
+      "claim_id": "C05",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "E02 and evidence/tables/table3_plug_and_play.md explicitly identify the gpt-3.5-turbo Combined adapter transferred without retraining and provide Average delta +6.85 for davinci-002 and +4.50 for Mixtral-8×7B across StrategyQA/GSM8K/TruthfulQA. There is no reported relation testing those additive gains against their claim values or linking the averages to all three constituent metrics. Generic adapted > base comparisons would omit the fixed average-improvement assertions; fresh retraining is not proposed."
+    },
+    {
+      "claim_id": "C06",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "E01 and evidence/tables/table2_main_results.md / table10_main_results_std.md provide AI Feedback and Ground-Truth rows for all four tasks, including TruthfulQA True+Info rather than accuracy. The statement requires an absolute difference ≤1.77 percentage points on every dataset (not the weaker 5-point falsifier). No reported relation expresses symmetric bounded additive differences for these existing cells. compound_consistency adds a mandatory separate directional scope and cannot encode this bound alone without inventing another conjunct; generative equivalence would instead require new runs and inferential assumptions."
+    },
+    {
+      "claim_id": "C07",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "E06 and evidence/figures/fig3a_beam_scaling.md state average enhancement 2.41 points from k=1 to k=5 over 0.1B/0.3B adapters. The figure’s approximate per-beam cells differ from evidence/figures/figure3_scale_analysis.md, so neither extraction is treated as exact. Reported relations cannot compute the additive cross-adapter average, and declaring only monotonic per-beam accuracy would replace the magnitude assertion with the falsifier."
+    },
+    {
+      "claim_id": "C08",
+      "disposition": "declared",
+      "declaration_ids": [
+        "C08"
+      ],
+      "reason": null,
+      "explanation": "E07 and evidence/figures/fig3b_iteration_scaling.md bind StrategyQA, two-shot GPT-3.5-turbo, Ground-Truth adaptation for both 0.1B and 0.3B adapters. Six properties jointly require each adapter below the base at T=0, above it at T=1, and strictly improving T=1→2→3. T=4 is outside the asserted range. Approximate markers on T=0/1/2 are preserved; table values are never copied into operands. A single compound_consistency cannot encode the two opposite baseline directions plus adjacent-iteration increases; the conjunction retains all of them. figure3_scale_analysis.md contains an aggregate/range transcription, so the variant-resolved Figure 3(b) extraction is used without aliasing adapter sizes."
+    }
+  ]
+}

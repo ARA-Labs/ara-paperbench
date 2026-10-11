@@ -1,0 +1,117 @@
+format_version: 7
+evidence:
+  evidence/tables/table2_ood_generalization.md:
+    metric:
+      name: binary_F1
+    axes:
+      Method / Split: method
+      column: split
+    at:
+      setting: BART0Large Full FT
+  evidence/tables/table3_sequential_refinement.md:
+    metric:
+      axis: column
+    axes:
+      Methods: method
+      section: setting
+  evidence/tables/table8_flops.md:
+    metric:
+      axis: column
+    axes:
+      Method: method
+    at:
+      setting: FLAN-T5Large Full FT; 3600 upstream examples
+claims:
+- claim_id: C04
+  provenance: &id001
+    author: direct-session-annotation
+    model: openai-codex/gpt-6-astra
+  properties:
+  - kind: comparative
+    metric: EM Drop (%)
+    over: setting
+    in_scope:
+    - BART0Large — Full FT / P3-Test
+    - FLAN-T5Large — LoRA / MMLU
+    - FLAN-T5Large — Full FT / MMLU
+    - FLAN-T53B — LoRA / MMLU
+    subject:
+      method: Replay w/ Representation
+    reference:
+      method: Replay w/ Random
+    comparator: lt
+- claim_id: C05
+  provenance: *id001
+  properties:
+  - kind: comparative
+    metric: binary_F1
+    over: split
+    in_scope:
+    - P3-TestOOD
+    subject:
+      method: Representation
+    reference:
+      method: Threshold
+    comparator: gt
+    where:
+      setting: BART0Large Full FT
+  - kind: best_baseline_consistency
+    metric: binary_F1
+    over: split
+    in_scope:
+    - P3-TestOOD
+    where:
+      setting: BART0Large Full FT
+    treatment:
+      method: Threshold
+    baseline_axis: method
+    exclude:
+    - Representation
+    comparator: gt
+- claim_id: C06
+  provenance: *id001
+  properties:
+  - kind: comparative
+    metric: '# FLOPs'
+    over: setting
+    in_scope:
+    - FLAN-T5Large Full FT; 3600 upstream examples
+    subject:
+      method: Ground Truth
+    reference:
+      method: Representation
+    comparator: ratio_ge
+    ratio: 6700
+  - kind: comparative
+    metric: '# FLOPs'
+    over: setting
+    in_scope:
+    - FLAN-T5Large Full FT; 3600 upstream examples
+    subject:
+      method: Ground Truth
+    reference:
+      method: Representation
+    comparator: ratio_le
+    ratio: 6700
+  - kind: comparative
+    metric: EM Drop (%)
+    over: setting
+    in_scope:
+    - FLAN-T5Large — Full FT / MMLU
+    subject:
+      method: Replay w/ Representation
+    reference:
+      method: Replay w/ GT Forget
+    comparator: ratio_ge
+    ratio: 0.5
+  - kind: comparative
+    metric: EM Drop (%)
+    over: setting
+    in_scope:
+    - FLAN-T5Large — Full FT / MMLU
+    subject:
+      method: Replay w/ Representation
+    reference:
+      method: Replay w/ GT Forget
+    comparator: ratio_le
+    ratio: 2

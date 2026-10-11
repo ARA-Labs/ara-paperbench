@@ -1,0 +1,39 @@
+{
+  "claims": [
+    {
+      "claim_id": "C01",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "unclear",
+      "explanation": "E01/E02 and evidence/tables/table1_main_results.md report normalized cumulative rewards across AntMaze, ExORL and Kitchen, with FRE K=32 and FB/SF K=5120 fixed in the conditions; OPAL has privileged online skill rollouts. The statement never defines a competitiveness margin or whether competitiveness is per task, per domain, or an aggregate against each specialized baseline. The falsifier (statistically worse than all baselines on a majority of tasks) is not the logical complement of a specified quantitative comparison. Choosing ge everywhere, a majority threshold, or an invented noninferiority margin would change the full claim; none is declared."
+    },
+    {
+      "claim_id": "C02",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "E01 and evidence/tables/table1_main_results.md provide mean +/- standard deviation over five seeds for the four named goal-reaching evaluations, under FRE K=32 versus FB/SF K=5120. The claim asserts significant improvement, not merely a larger reported mean. Reported comparative/consistency relations do not implement an inferential significance test from these summaries, and no significance level or paired observations are supplied. The falsifier additionally invokes SF/FB at K=32, whereas the table evaluates them only at K=5120. A directional comparison of the available means would not discharge those conditions."
+    },
+    {
+      "claim_id": "C03",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "unclear",
+      "explanation": "E01 and evidence/tables/table1_main_results.md identify the same FRE-all agent and provide goal-reaching, directional, random-simplex and path scores against GC-IQL/GC-BC. Neither competitive goal-reaching performance nor solving a task nor near-zero non-goal scores has a quantitative boundary in the fixed inputs. The falsifier introduces significant inferiority on goal tasks but gives no test or margin. Comparing only directional/simplex means would drop goal competitiveness, path scope and the near-zero baseline assertion; the whole claim is left unresolved."
+    },
+    {
+      "claim_id": "C04",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "unclear",
+      "explanation": "E03, evidence/tables/table4_reward_subset_ablation.md and evidence/figures/figure5_reward_diversity_scaling.md contain total and four task-family scores for FRE-all and all six strict subsets under identical training budgets. Highest total score can be expressed against every subset, but competitive per-task scores and the no-interference conclusion have no stated margin or statistical criterion. The falsifier tests only single-family total scores and would omit both two-family baselines and the required per-task condition. No total-only substitute is declared."
+    },
+    {
+      "claim_id": "C05",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "parse failure",
+      "explanation": "E04 fixes ant-directional, exorl-cheetah-velocity and exorl-walker-velocity as the three FRE-hint targets, with only the prior distribution changed. In evidence/figures/figure6_domain_knowledge.md the two velocity FRE-hint cells literally say higher than FRE-all without a number; the ant-directional cell borrows an approximately 39.4 baseline value and the note itself warns that the FRE-hint value is not printed. Public evidence parsing yields no numeric value for these FRE-hint cells. Thus there are no faithful paired numeric measurements for the all-three-target improvement claim; the borrowed baseline is not relabeled as FRE-hint evidence."
+    }
+  ]
+}

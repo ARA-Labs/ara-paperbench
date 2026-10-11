@@ -1,0 +1,185 @@
+{
+  "authoring_mode": "direct annotation by the current assistant; no model runner or provider calls",
+  "author": {
+    "agent": "AnnotateBenchmarks",
+    "model": "openai-codex/gpt-6-astra"
+  },
+  "format_version": 7,
+  "claims_inventoried": 10,
+  "declared": 0,
+  "skipped": 10,
+  "initial_candidate": "first-spec.yaml",
+  "current_candidate": "spec.yaml",
+  "candidate_sha256": "5b1e3ece5a60baac9559920d78f7ea429efb66f3095e096b16a8f4e1a222d0c6",
+  "repaired_candidates": [],
+  "source_fidelity_review": "No independent fidelity review performed",
+  "relations_inspected": [
+    {
+      "kind": "best_baseline_consistency",
+      "version": "1",
+      "reported_evidence": true
+    },
+    {
+      "kind": "comparative",
+      "version": "1",
+      "reported_evidence": true
+    },
+    {
+      "kind": "compound_consistency",
+      "version": "1",
+      "reported_evidence": true
+    },
+    {
+      "kind": "consistency",
+      "version": "1",
+      "reported_evidence": true
+    },
+    {
+      "kind": "differential",
+      "version": "1",
+      "reported_evidence": false
+    },
+    {
+      "kind": "equivalence",
+      "version": "1",
+      "reported_evidence": false
+    },
+    {
+      "kind": "invariant",
+      "version": "1",
+      "reported_evidence": false
+    },
+    {
+      "kind": "monotonic",
+      "version": "1",
+      "reported_evidence": false
+    },
+    {
+      "kind": "threshold",
+      "version": "1",
+      "reported_evidence": false
+    }
+  ],
+  "numeric_evidence_inspected": [
+    {
+      "ara": "speedrun/nanogpt-speedrun",
+      "file": "tables/table1_speedrun_progression.md",
+      "blocks": 2,
+      "cells": 156,
+      "axes": [
+        [
+          "Record",
+          "column"
+        ],
+        [
+          "Phase",
+          "column",
+          "section"
+        ]
+      ],
+      "skipped_cells": 0
+    },
+    {
+      "ara": "speedrun/nanogpt-speedrun",
+      "file": "tables/table2_scaffold_configs.md",
+      "blocks": 1,
+      "cells": 35,
+      "axes": [
+        [
+          "Scaffold",
+          "column"
+        ]
+      ],
+      "skipped_cells": 0
+    },
+    {
+      "ara": "speedrun/nanogpt-speedrun",
+      "file": "tables/table3_main_fsr_results.md",
+      "blocks": 1,
+      "cells": 48,
+      "axes": [
+        [
+          "Scaffold",
+          "column",
+          "section"
+        ]
+      ],
+      "skipped_cells": 0
+    },
+    {
+      "ara": "speedrun/nanogpt-speedrun",
+      "file": "tables/table6_per_record_fsr.md",
+      "blocks": 1,
+      "cells": 20,
+      "axes": [
+        [
+          "Record Range",
+          "column"
+        ]
+      ],
+      "skipped_cells": 0
+    },
+    {
+      "ara": "speedrun/nanogpt-speedrun",
+      "file": "figures/fig3_fsr_distributions.md",
+      "blocks": 1,
+      "cells": 18,
+      "axes": [
+        [
+          "Hint Level",
+          "Model",
+          "column",
+          "section"
+        ]
+      ],
+      "skipped_cells": 0
+    },
+    {
+      "ara": "speedrun/nanogpt-speedrun",
+      "file": "figures/fig4_hint_ablation.md",
+      "blocks": 1,
+      "cells": 24,
+      "axes": [
+        [
+          "Model",
+          "column",
+          "section"
+        ]
+      ],
+      "skipped_cells": 0
+    },
+    {
+      "ara": "speedrun/nanogpt-speedrun",
+      "file": "figures/fig5_scaffold_comparison.md",
+      "blocks": 1,
+      "cells": 20,
+      "axes": [
+        [
+          "Model",
+          "column",
+          "section"
+        ]
+      ],
+      "skipped_cells": 0
+    },
+    {
+      "ara": "speedrun/nanogpt-speedrun",
+      "file": "figures/fig6_per_record_fsr.md",
+      "blocks": 1,
+      "cells": 18,
+      "axes": [
+        [
+          "Record Range",
+          "column",
+          "section"
+        ]
+      ],
+      "skipped_cells": 0
+    }
+  ],
+  "validation_record": "validation.json",
+  "validation_exit_code": 0,
+  "verdicts_executed": false,
+  "fresh_experiments_executed": false,
+  "provenance_note": "No claim-level provenance fields can be attached because no complete declarations were authored; author identity is recorded here, not as an unsupported spec field."
+}

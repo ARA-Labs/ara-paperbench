@@ -1,0 +1,14 @@
+{
+  "command": [
+    "aratest",
+    "test",
+    "artifacts/rebench/rebench-nanogpt_chat_rl",
+    "--format",
+    "json",
+    "--no-records"
+  ],
+  "exit_code": 2,
+  "stdout": "",
+  "stderr": "error: 1 spec problem(s):\n- claims_unreadable: logic/claims.md: 1 validation error for Claim\nstatus\n  Input should be 'hypothesis', 'testing', 'supported' or 'refuted' [type=literal_error, input_value='hypothesis (untested iso... than a hyperparameter)', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.13/v/literal_error\n",
+  "spec_sha256": "5b1e3ece5a60baac9559920d78f7ea429efb66f3095e096b16a8f4e1a222d0c6"
+}

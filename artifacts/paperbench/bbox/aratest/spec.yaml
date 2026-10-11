@@ -1,0 +1,171 @@
+format_version: 7
+evidence:
+  evidence/figures/fig3b_iteration_scaling.md:
+    metric:
+      name: accuracy_percent
+    axes:
+      Iteration (T): iteration
+      column: method
+    at:
+      task: StrategyQA
+      prompt: two-shot
+      setting: Ground-Truth
+      generator: gpt-3.5-turbo
+  evidence/tables/table3_plug_and_play.md:
+    metric:
+      axis: column
+    axes:
+      Black-Box LLM: target_model_setting
+      Plugger: trained_adapter
+    at:
+      transfer_protocol: gpt-3.5-turbo Combined adapter without retraining
+claims:
+- claim_id: C08
+  provenance:
+    author: direct-session annotation author
+    model: openai-codex/gpt-6-astra
+  properties:
+  - kind: comparative
+    metric: accuracy_percent
+    over: iteration
+    in_scope:
+    - '0'
+    subject:
+      method: adapter_0.1B
+    reference:
+      method: base
+    comparator: lt
+  - kind: comparative
+    metric: accuracy_percent
+    over: iteration
+    in_scope:
+    - '1'
+    subject:
+      method: adapter_0.1B
+    reference:
+      method: base
+    comparator: gt
+  - kind: comparative
+    metric: accuracy_percent
+    over: iteration
+    in_scope:
+    - '0'
+    subject:
+      method: adapter_0.3B
+    reference:
+      method: base
+    comparator: lt
+  - kind: comparative
+    metric: accuracy_percent
+    over: iteration
+    in_scope:
+    - '1'
+    subject:
+      method: adapter_0.3B
+    reference:
+      method: base
+    comparator: gt
+  - kind: consistency
+    metric: accuracy_percent
+    over: method
+    in_scope:
+    - adapter_0.1B
+    - adapter_0.3B
+    treatment:
+      iteration: '2'
+    baseline:
+      iteration: '1'
+    comparator: gt
+  - kind: consistency
+    metric: accuracy_percent
+    over: method
+    in_scope:
+    - adapter_0.1B
+    - adapter_0.3B
+    treatment:
+      iteration: '3'
+    baseline:
+      iteration: '2'
+    comparator: gt
+- claim_id: C05
+  provenance:
+    author: direct-session annotation author
+    model: openai-codex/gpt-6-astra
+  properties:
+  - kind: comparative
+    metric: StrategyQA Acc. (%)
+    over: transfer_protocol
+    in_scope:
+    - gpt-3.5-turbo Combined adapter without retraining
+    where:
+      trained_adapter: BBOX-ADAPTER (gpt-3.5-turbo)
+    subject:
+      target_model_setting: davinci-002 (Plugged)
+    reference:
+      target_model_setting: davinci-002
+    comparator: gt
+  - kind: comparative
+    metric: GSM8K Acc. (%)
+    over: transfer_protocol
+    in_scope:
+    - gpt-3.5-turbo Combined adapter without retraining
+    where:
+      trained_adapter: BBOX-ADAPTER (gpt-3.5-turbo)
+    subject:
+      target_model_setting: davinci-002 (Plugged)
+    reference:
+      target_model_setting: davinci-002
+    comparator: gt
+  - kind: comparative
+    metric: TruthfulQA True+Info (%)
+    over: transfer_protocol
+    in_scope:
+    - gpt-3.5-turbo Combined adapter without retraining
+    where:
+      trained_adapter: BBOX-ADAPTER (gpt-3.5-turbo)
+    subject:
+      target_model_setting: davinci-002 (Plugged)
+    reference:
+      target_model_setting: davinci-002
+    comparator: gt
+  - kind: comparative
+    metric: StrategyQA Acc. (%)
+    over: transfer_protocol
+    in_scope:
+    - gpt-3.5-turbo Combined adapter without retraining
+    where:
+      trained_adapter: BBOX-ADAPTER (gpt-3.5-turbo)
+    subject:
+      target_model_setting: Mixtral-8×7B (Plugged)
+    reference:
+      target_model_setting: Mixtral-8×7B
+    comparator: gt
+  - kind: comparative
+    metric: GSM8K Acc. (%)
+    over: transfer_protocol
+    in_scope:
+    - gpt-3.5-turbo Combined adapter without retraining
+    where:
+      trained_adapter: BBOX-ADAPTER (gpt-3.5-turbo)
+    subject:
+      target_model_setting: Mixtral-8×7B (Plugged)
+    reference:
+      target_model_setting: Mixtral-8×7B
+    comparator: gt
+  - kind: comparative
+    metric: TruthfulQA True+Info (%)
+    over: transfer_protocol
+    in_scope:
+    - gpt-3.5-turbo Combined adapter without retraining
+    where:
+      trained_adapter: BBOX-ADAPTER (gpt-3.5-turbo)
+    subject:
+      target_model_setting: Mixtral-8×7B (Plugged)
+    reference:
+      target_model_setting: Mixtral-8×7B
+    comparator: gt
+labels:
+  method:
+    Adapter 0.1B Acc. (%): adapter_0.1B
+    Adapter 0.3B Acc. (%): adapter_0.3B
+    Base Model Acc. (%): base

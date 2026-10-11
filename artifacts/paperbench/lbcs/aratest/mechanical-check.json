@@ -1,0 +1,37 @@
+{
+  "format_version": "1",
+  "ara": "/home/yfhe/ara/DissClaimer/.runs/rq1-direct-20261010/artifacts/paperbench/lbcs",
+  "results": null,
+  "claims": [
+    {
+      "claim_id": "C02",
+      "standing": "undecided",
+      "properties": [
+        {
+          "kind": "best_baseline_consistency",
+          "version": "1",
+          "outcome": {
+            "tag": "inconclusive"
+          },
+          "note": "the treatment ties, reads approximate, or is unobserved against a baseline of [CCS, EL2N, GraNd, Influential, Moderate, Probabilistic, Uniform] for dataset in [CIFAR-10 (LBCS coreset sizes: ≈970, 1955, 2914, 3736)]",
+          "refinement": {
+            "label": "inconclusive",
+            "note": ""
+          },
+          "statistic": null,
+          "checked": true,
+          "witnesses": []
+        }
+      ],
+      "record": null
+    }
+  ],
+  "undeclared": [
+    "C01",
+    "C03",
+    "C04",
+    "C05"
+  ],
+  "record_errors": [],
+  "exit_code": 4
+}

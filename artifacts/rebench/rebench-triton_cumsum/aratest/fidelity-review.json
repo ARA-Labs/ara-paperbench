@@ -1,0 +1,77 @@
+{
+  "reviewer": "fresh-context same-system AI review",
+  "claims": [
+    {
+      "claim_id": "C01",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "algorithm.md, E03 and the reference kernel describe the staged parity/value scans. The claim is an associative decomposition and functional-correctness identity over valid inputs, not a scalar performance ordering. Finite timing comparisons or finite generated examples do not preserve the full algebraic commitment."
+    },
+    {
+      "claim_id": "C02",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "The reference implementation shifts the positive-count mask, supporting exclusive-prefix semantics. The claim additionally asserts necessity and wrong results whenever any element is positive, universally over valid inputs. Numeric reported-cell comparisons do not express that input-dependent correctness assertion."
+    },
+    {
+      "claim_id": "C03",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "reference_scores.md gives 4.76 versus 1.6 ms, so a naive-PyTorch/reference ordering is expressible. The full claim also commits to five or more launches, intermediate allocations, an attained latency range and significant inferiority at the specified size. The evidence lacks a launch/allocation measurement series and statistical uncertainty; a timing-only declaration would omit those scientific/mechanistic conditions."
+    },
+    {
+      "claim_id": "C04",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "E04 explicitly says the compiled CUDA-graph alternative was not scored, and the source shows compilation/capture without a matched performance result or fusion trace. Naming the file cheese is not evidence for inferiority. Neither non-fusion nor no-sub-reference performance can be recovered by substituting another MALT compilation variant."
+    },
+    {
+      "claim_id": "C05",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "The reference table supplies an anchor, and the source/E03 specify the three-kernel configuration. There is no separate measured pipeline row or reported absolute-target relation establishing attainment of 0.47/1.6 ms at N=10^8. Self-comparing the anchor is vacuous; comparing it with naive PyTorch would instead test a weaker speedup claim."
+    },
+    {
+      "claim_id": "C06",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "The source shows three warmup calls, graph capture and subsequent replay. That supports a code-ordering account, not a reported measurement of JIT overhead elimination or graph-versus-direct launch performance. Numeric comparisons cannot express the full execution mechanism, and the performance falsifier lacks matched timing evidence."
+    },
+    {
+      "claim_id": "C07",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "The MALT table and E07 document dtype-mismatch statuses and cast recovery, but the claim is a universal dtype-promotion and scorer-acceptance contract with specified repair choices. These statuses are textual logical outcomes, not score measurements that may be converted to numeric failures. Comparing scores or counting selected invalid rows would not preserve the full semantic assertion."
+    },
+    {
+      "claim_id": "C08",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "The cited five failure indices occur in textual status cells, and E08 describes float32 precision loss and recovery. The full claim requires cumulative magnitude past 2^24, a one-ULP mismatch mechanism and safe int64 intermediates, not just selected failures. The artifact lacks paired outputs/cumulative magnitudes, so this is missing correctness evidence and relation support rather than a parser error."
+    },
+    {
+      "claim_id": "C09",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "E05-E06 and the MALT table provide eager/compiled timing observations, but not measured 1.6-GB traffic or proof that Triton fusion is necessary. Several time entries conflict with the ms header, and sub-reference attempts were explicitly filtered out, so the retained cohort cannot establish every-observed-run inferiority. Timing orderings would omit the ranges, bandwidth mechanism and necessity commitment."
+    },
+    {
+      "claim_id": "C10",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "The MALT table contains both incorrect all-zero single-program attempts and valid but extremely slow serial kernels. The claim universally combines correctness/runtime alternatives with a programming-model explanation. A numeric comparison cannot encode that full disjunction and universal kernel-class statement, and null scores must not be treated as measured correctness numbers."
+    },
+    {
+      "claim_id": "C11",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "The cited table rows and E10 describe failures of local/block-carry designs, and the reference source supplies one working multi-kernel algorithm. The claim asserts universal necessity/insufficiency of parity-carry representations and characterizes correct solutions. Reported timing or score relations cannot establish those algorithmic correctness and completeness commitments."
+    },
+    {
+      "claim_id": "C12",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "The table records repeated compilation-mode scores, but not separately measured first-call overhead or a complete cold-process/code-identity ledger. It also labels attempt 345741/7 as max-autotune-no-cudagraphs, not reduce-overhead, and excludes sub-reference attempts needed for the minority count. Fixed-ratio comparisons could express selected dispersion bounds, but not the complete cold-overhead, mode-regression, count and autotune-causation conjunction."
+    }
+  ]
+}

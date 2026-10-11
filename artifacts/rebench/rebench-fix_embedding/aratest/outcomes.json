@@ -1,0 +1,95 @@
+{
+  "claims": [
+    {
+      "claim_id": "C01",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "prose-only",
+      "explanation": "E01 explicitly records only notes.md:7 saying vanilla fine-tuning performed poorly, with no surviving final-loss log or configuration. The required no-adapter/no-small-model outcome against loss 2.8 is unavailable as numeric evidence; the sparse-gradient causal explanation is also not a reported metric."
+    },
+    {
+      "claim_id": "C02",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "prose-only",
+      "explanation": "E02 documents adapter-only training at lr=1e-3 for 1000 iterations with frozen small-model embeddings, but explicitly says no exact final loss was recorded. reference_scores.md reports only the eventual full pipeline, not the adapter-only below-5.5 outcome; the PCA-space sharing subclaim is qualitative rather than a reported embedding-similarity measurement."
+    },
+    {
+      "claim_id": "C03",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "prose-only",
+      "explanation": "E03 documents lr=1e-4 and 2000 iterations after adapter warmup, but its outcome is only continued loss reduction. Neither the Stage-1 plateau nor Stage-2 final loss nor the extra-2000-iteration adapter-only control named in the falsifier is tabulated. The end-to-end full-pipeline reference score cannot stand in for this stage comparison."
+    },
+    {
+      "claim_id": "C04",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "prose-only",
+      "explanation": "E04 gives the exact bake operation and 4000-iteration lr=8e-5 schedule, but only the eventual 2.8917 final loss is recorded. There is no matched continued-adapter+all control or pre-bake loss to test further reduction; the dimensional-bottleneck mechanism is not a numerical evidence relation."
+    },
+    {
+      "claim_id": "C05",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "reference_scores.md distinguishes the score.log official-run loss 2.8917 and derived 0.328 from README reference 0.26 / approximately 2.8. The full assertion is an absolute reported loss plus logarithmic score transformation, not an ordering against a baseline. The installed reported-evidence relations cannot assert a cell equals that stated value or verify ln(loss-1.5); using the README row as if it were the same run would change the claim."
+    },
+    {
+      "claim_id": "C06",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "reference_scores.md records the original uncorrupted loss 2.55, but the statement universally bounds every permissible future recovery procedure. Pairwise comparisons of the existing finite attempts do not establish that information-theoretic lower bound, and no reported-evidence relation expresses the universal procedure quantifier."
+    },
+    {
+      "claim_id": "C07",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "malt_attempts.md run 345749 attempts 5-15 tabulates the scale-up sweep; 345751 attempts 5-15 and 347458 attempts 7-11 record the small downward-scaling improvement near 0.66. The full claim combines universal nonrecoverability, monotonicity in absolute distance from one, and a qualified exception. The reported-evidence catalog cannot express that entire shape/universal assertion; its monotonic relation requires fresh run-batch evidence, not these cells. No outside experiment is run."
+    },
+    {
+      "claim_id": "C08",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "malt_attempts.md run 345790 gives ascending-L2 8.3875, ascending-mean 13.4166, descending-L2 13.4438 and unchanged baseline 10.4909. Comparisons could express their ordering, but the whole assertion also requires inverse-permutation invariance and the frequency-norm-alignment explanatory mechanism. Those do not follow as executable reported-cell relations, so no narrower sorting comparison discharges C08."
+    },
+    {
+      "claim_id": "C09",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "E10/E11 and malt_attempts.md distinguish run 345746 unlogged 5.138 loss / null official score from run 345747 logged 5.447 / 1.373. The full statement quantifies over any reachable LR/batch/iteration combination, asserts plateau/range and official-log restrictions, and compares to the reference. Finite mixed-strategy attempt rows cannot encode the universal budget-limited failure or plateau; the stated 5+ log-unit gap is not replaced with a weaker direction."
+    },
+    {
+      "claim_id": "C10",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "malt_attempts.md contains tile/upcast failures, e.g. 345788 attempt 2 loss 22.2167 and 348011 attempt 7 loss 22.276, but also zero-pad runs 345748 at 6.1291 and 5.5514. The full claim includes the [18.7,22.3] range, destructive-interference mechanism, and only-known-transfer-path assertion. The reported catalog cannot express that conjunction and no contradictory rows are filtered away to create a directional-only surrogate."
+    },
+    {
+      "claim_id": "C11",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "All 19 runs appear in malt_attempts.md and E05-E23. The table mixes internal and official scores (run 345746 summary 1.2915 versus timeout/null official attempt 13); E10/E11 distinguish best internal 1.29 and best official 1.373. The claim additionally asserts absence of an adapter curriculum and a structural causal explanation. Numeric score comparisons neither inspect program-construction absence nor express that mechanism, so the full claim remains skipped."
+    },
+    {
+      "claim_id": "C12",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "prose-only",
+      "explanation": "E10 and malt_attempts.md run 345746 attempts 13-14 record an official timeout even though internal loss 5.138 was printed; E16 and run 347460 attempts 4-9 describe recurrent timeout/corrupt-checkpoint failures. No parsed table reports checkpoint deserialization duration, wall-clock ceiling observations, or a conditional timeout-cascade frequency. Scores and textual status labels cannot substitute for the required approximately-60-second and 180-second timing evidence."
+    },
+    {
+      "claim_id": "C13",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "Trace N511/N512 report small-versus-large wpe standard deviations 0.122681/0.015167 and the wte=0.001 comparison 10.823 versus 10.827; malt_attempts.md run 345789 attempts 10 and 13 give corresponding losses. The original uncorrupted large-model wpe standard deviation required by the falsifier is not supplied. A small-model variance comparison cannot establish corruption of the large model, and no defined equivalence margin quantifies negligible improvement. The mechanistic/full claim is not replaced by a loss-ordering subclaim."
+    }
+  ]
+}

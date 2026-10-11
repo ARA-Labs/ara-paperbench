@@ -1,0 +1,41 @@
+{
+  "reviewer": "fresh-context same-system AI review",
+  "claims": [
+    {
+      "claim_id": "C01",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Correctly skipped as unclear. E01-E03 cover three benchmark environments, not a defined population of most practical scenarios, and comparable final performance has no equivalence margin. The available figures and table4_nethack_full_eval.md also use different horizons and metrics; Montezuma explicitly reports vanilla fine-tuning exceeding scratch at the end. A majority-of-three ordering could test a narrower benchmark observation, not the stated practical-scenario scope or causal attribution to FAR-state forgetting. No whole-claim relation was overlooked."
+    },
+    {
+      "claim_id": "C02",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Correctly skipped. The full statement combines initial FAR competence/CLOSE incompetence, forgetting before CLOSE learning, and the explicit collapse-to-0%-within-100K commitment. Reported cell comparisons do not encode that absolute boundary and event-order conjunction. Moreover, robotic_stage_success.md gives peg-unplug-side approximately 0.1 at 100K, while push-wall is approximately zero; the latter cannot silently stand for all FAR stages. A decrease from the initial policy, or a push-wall-only comparison, would be weaker than the original claim."
+    },
+    {
+      "claim_id": "C03",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Correctly skipped as prose-only. The required comparison is the pre-trained BC policy's visitation beyond Level 1 against the expert's visitation, with policy imperfections causing distribution shift and rapid forgetting. E04's saved Level-4/Sokoban evaluations measure behavior conditional on externally supplied starting states; table4_nethack_full_eval.md measures final fine-tuned dungeon levels. Neither supplies the claimed pre-trained-policy/expert visitation comparison. Substituting those available metrics would change both the policy variant and the measured phenomenon."
+    },
+    {
+      "claim_id": "C04",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Correctly skipped. The NetHack KS score of 10588 ± 672 and frozen Scaled-BC score of 5218 are grounded reported results, but the claim also requires prevention of FAR forgetting and significantly better final performance for the retention techniques. Those commitments cannot be established by ranking KS above a frozen baseline. EWC and EM explicitly permit temporary FAR-stage declines in the supplied evidence, and the reported relation catalog has no inferential-significance operation. The approximate vanilla score and missing baseline spread should remain unresolved rather than being replaced by exact equality or invented uncertainty."
+    },
+    {
+      "claim_id": "C05",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Correctly skipped as prose-only. E05 and the Montezuma/RoboticSequence figures say KS was omitted after underperforming in preliminary analysis; there are no paired KS-versus-BC numeric results for those two state-coverage-gap environments. NetHack supplies the imperfect-cloning-gap comparison, but that alone cannot express the method-by-gap-type assertion. The online-KL versus static-buffer causal explanation is also not measured by the available comparisons. No expressible whole claim is available without adding evidence or narrowing scope."
+    },
+    {
+      "claim_id": "C06",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Correctly skipped as prose-only. E06 and fig8_pushwall_loglikelihood.md describe expert-trajectory log-likelihood through qualitative PCA colors, without original and recovered numeric log-likelihood values. The falsifier's recovery-to-within-10% requirement is a substantive numeric commitment, but its operands are absent. The numeric push-wall success-rate recovery measures task performance, not recovery of the expert policy's trajectory likelihood. It cannot substitute for the stated qualitatively different policy and lost-transfer assertion."
+    }
+  ]
+}

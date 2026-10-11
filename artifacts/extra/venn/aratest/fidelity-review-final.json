@@ -1,0 +1,41 @@
+{
+  "reviewer": "fresh-context same-system AI review",
+  "claims": [
+    {
+      "claim_id": "C01",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Correct skip. E01/Table 1 reports all five workload-specific speedups, 1.87×, 1.78×, 1.72×, 1.88× and 1.63×, under 50-job Poisson simulation with starvation prevention ε=2. The production measurement reader excludes multiplier-suffixed cells. Figure 11 supplies numerical Low/High ablations only, so it cannot stand in for the five-workload assertion. A directional comparison would also lose the individual magnitudes."
+    },
+    {
+      "claim_id": "C02",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Correct revised skip rationale. The outcome now acknowledges both readings of 'Venn w/o sched / FIFO': FIFO may denote the residual scheduling algorithm within the matching-only variant, rather than equating that variant with the standalone FIFO baseline. It preserves the measured distinction between Low-workload FIFO=1.55 and matching-only=1.62, and does not resolve the ambiguity through an alias or assert a definite conflation. The source wording remains ambiguous, but the revised skip explicitly and faithfully records that uncertainty. This addresses the concern in the original review."
+    },
+    {
+      "claim_id": "C03",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Correct whole-claim skip. E02/Figure 11 supplies matching-only/FIFO Low=1.62/1.55 and High=1.42/1.42, with a measured Random=1 baseline. This is sufficient grounding for the descriptive comparisons, but equal printed High means do not establish absence of statistically significant matching benefit under the explicit falsifier. No repetitions, variance or significance test are provided. Also, the reported comparison gate treats equality within printed precision as inconclusive; opposite comparisons at the same target are not an equality or significance test. A narrower Low-gain-only declaration would omit the High condition."
+    },
+    {
+      "claim_id": "C04",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Correct skip. E03/Figure 10 supplies approximate latency readings up to 1000 jobs and 100 groups. These cannot establish the asserted max(O(m log m), O(n²)) algorithmic complexity, and the reported catalog has no scalar ~1 ms ceiling relation. Both the complexity assertion and latency scope are substantive; a trend-only property or the weaker 10 ms falsifier would not represent the complete claim."
+    },
+    {
+      "claim_id": "C05",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Correct skip. E04 cites Figure 9 for FIFO/SRSF/Venn accuracy-versus-time trajectories on the real 20-job FEMNIST testbed, but the supplied evidence inventory contains no Figure 9 file or corresponding trajectories. Figure 4 measures different job counts under random matching and cannot ground the common ~0.75 terminal accuracy or faster Venn convergence. The one-percentage-point falsifier uses another baseline and must not replace the statement's comparisons."
+    },
+    {
+      "claim_id": "C06",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Correct skip. E05/Figure 14 gives 69% fair-share coverage at ε=2 and approximate sweep values for JCT speedup and fairness. The complete claim requires both that substantive absolute 69% endpoint at the defined fair-share JCT and monotonic changes across ε. Ordering-only properties would omit the endpoint, and approximate measurements are inconclusive under the reported gate. No estimate markers or fair-share threshold conditions should be erased."
+    }
+  ]
+}

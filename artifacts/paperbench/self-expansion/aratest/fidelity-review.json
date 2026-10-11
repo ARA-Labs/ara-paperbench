@@ -1,0 +1,29 @@
+{
+  "reviewer": "fresh-context same-system AI review",
+  "claims": [
+    {
+      "claim_id": "C01",
+      "judgment": "faithful",
+      "field": null,
+      "explanation": "The declaration correctly binds AN to final average accuracy, not the adjacent average-incremental Ā metric. It preserves ViT-B/16-IN1K, all six dataset/split coordinates, the seven named baseline methods, and ge for higher-or-equal accuracy. The 91.37% in the falsifier identifies the reported CIFAR-100 SEMA value rather than an independent threshold. Table 1 actually reports CODA-P AN=91.55 versus SEMA AN=91.37 on CIFAR-100, so the source claim has a reported counterexample; that is not an annotation error, because the faithful best-baseline declaration retains and exposes that comparison instead of switching to Ā, where SEMA is higher."
+    },
+    {
+      "claim_id": "C02",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Skipping the whole claim is appropriate. E02 requires sub-linear parameter growth over the ImageNet-A task sequence versus linear CODA-P/DualPrompt growth, together with fewer parameters at equivalent or better accuracy than expansion by task. Figure 8 provides approximate sparse task-index readings and a range, not a relation proving the claimed curve shape; finite endpoint comparisons would omit it. The Table 5 files also disagree in labelling the same accuracy values AN versus Ā: SEMA 86.98, 74.53, 53.32, and 89.64 match Table 1's average-incremental Ā values, not its final AN values. That source metric inconsistency cannot be silently repaired to assert the E02 final-accuracy condition."
+    },
+    {
+      "claim_id": "C03",
+      "judgment": "faithful",
+      "field": null,
+      "explanation": "The conjunction preserves the two E03/falsifier metrics, final AN and incremental Ā, and requires SEMA superiority on both ImageNet-A and VTAB against precisely No Exp., Avg. W., Rand. W., Top-1 Sel., and Rand. Sel. Table 2 supplies those comparisons under the fixed IN1K setup. Excluding Top-1 Sel. Inf. is correct: E03 lists it as a distinct sixth inference-only ablation, but C03 names only the five other variants. Requiring per-dataset superiority follows the statement rather than weakening it to the absence of one baseline winning both metrics on both datasets simultaneously."
+    },
+    {
+      "claim_id": "C04",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Skipping is appropriate because 'within 2% AN', reinforced by the falsifier's prohibition of an AN drop exceeding 2%, is a substantive additive accuracy-margin commitment. Table 3 supplies Adapter, LoRA, and Convpass AN values on both datasets, but ordinary ordering or a 0.98 ratio does not encode a two-percentage-point margin. The reported compound relation permits tolerance only together with an additional required comparison scope; this claim supplies no such extra strict-comparison condition. A generative equivalence test would additionally introduce fresh paired runs and confidence commitments absent from the reported claim. The existing numeric values therefore do not make the whole margin claim expressible in the installed reported catalog."
+    }
+  ]
+}

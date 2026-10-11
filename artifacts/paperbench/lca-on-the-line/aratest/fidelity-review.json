@@ -1,0 +1,35 @@
+{
+  "reviewer": "fresh-context same-system AI review",
+  "claims": [
+    {
+      "claim_id": "C01",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Correctly skipped. E01 and table2_correlation.md identify the combined 75-model VM/VLM population, information-content ID LCA, OOD Top-1, absolute correlations, and the four severe shifts. R-squared greater than 0.7 and PEA greater than 0.7 are explicit substantive performance bounds, not just grounded table values. Reported comparison relations cannot express those literal bounds or the approximately-zero ID-Top-1 R-squared condition. Comparing LCA to Top-1 correlation alone would omit central conjuncts; the weaker falsifier cannot replace the complete statement."
+    },
+    {
+      "claim_id": "C02",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Correctly skipped. E03 and both Table-4 transcriptions identify nine-layer K-means, 75 source hierarchies, correlations across 75 evaluation models, and all four severe OOD datasets. Mean PEA greater than 0.66 is an explicit quantitative robustness commitment; the 0.5 and 0.3 falsifier thresholds likewise cannot be replaced by relative WordNet comparisons. Reported relations provide no literal reported-cell threshold test, and slightly lower has no specified closeness margin. A WordNet-only declaration would not express the whole claim."
+    },
+    {
+      "claim_id": "C03",
+      "judgment": "faithful",
+      "field": null,
+      "explanation": "The compound_consistency declaration preserves CE plus WordNet LCA soft loss with linear weight interpolation versus CE-only, all six named backbones, Top-1 accuracy, and at least three strict improvements among ImageNet-S, ImageNet-R, ImageNet-A, and ObjectNet separately for every backbone. It is not an aggregate majority across backbones or across all 24 OOD cells. ImageNet-v2 is correctly excluded from the four severe shifts. The per-backbone ID ImageNet check uses ge with zero tolerance, preserving without reducing ID accuracy rather than allowing the falsifier's greater-than-0.5% weakening threshold. Table5_soft_labels_wordnet.md and E04 supply the variant and frozen-linear-probing conditions; no significance claim is added."
+    },
+    {
+      "claim_id": "C04",
+      "judgment": "faithful",
+      "field": null,
+      "explanation": "The three conjunctive comparative properties preserve lower OOD Top-1 error for transferable-feature f, lower ID LCA distance for f, and higher ID Top-1 error for f than confounding-feature g. The last direction correctly represents g's better ID accuracy despite its worse OOD performance. Table7_simulation.md and E06 identify the controlled 100-trial Gaussian-mixture experiment, feature assignments, and OOD absence of x2. Direct f/g rows avoid the incorrectly signed Diff row. The scope remains this simulation, not unrestricted causal validation in real datasets, and no missing trial variance is invented."
+    },
+    {
+      "claim_id": "C05",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Correctly skipped. E05 and table14_prompt_engineering.md provide CLIP-ViT32, all five tested OOD datasets including ImageNet-v2, all four prompt variants, Top-1 accuracy, and test-time cross-entropy. Directional comparisons could retain those metrics and cohorts, but significantly improves requires more than the reported-resolution ordering relation, and the evidence supplies no uncertainty or significance procedure. Testing only accuracy, only severe shifts, or the weaker four-of-five falsifier would each narrow the original statement. No expressible whole claim was missed."
+    }
+  ]
+}

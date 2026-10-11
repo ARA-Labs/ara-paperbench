@@ -1,0 +1,5 @@
+{
+  "returncode": 2,
+  "stdout": "{\n  \"ara\": \".runs/rq1-direct-20261010/artifacts/paperbench/lbcs\",\n  \"source_format_version\": 7,\n  \"valid\": false,\n  \"property_count\": 1,\n  \"property_problems\": [\n    {\n      \"claim_id\": \"C02\",\n      \"property_index\": 0,\n      \"kind\": \"best_baseline_consistency\",\n      \"reason\": \"invalid_domain\",\n      \"detail\": \"the domain of claim 'C02' (kind 'best_baseline_consistency') is not a valid BestBaselineConsistencyDomain: $: Value error, group_overrides['F-MNIST (LBCS coreset sizes: ≈957, 1915, 2832, 3746)'] repeats the default clause\"\n    }\n  ],\n  \"families\": [],\n  \"legacy_unmapped\": [],\n  \"undeclared_claims\": [\n    \"C01\",\n    \"C03\",\n    \"C04\",\n    \"C05\"\n  ],\n  \"skipped_cells\": [\n    {\n      \"path\": \"evidence/tables/table3_lbcs_sizes.md\",\n      \"count\": 0\n    }\n  ]\n}\n",
+  "stderr": ""
+}

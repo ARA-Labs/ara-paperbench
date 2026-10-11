@@ -1,0 +1,58 @@
+format_version: 7
+evidence:
+  evidence/tables/table1_lvlm_robustness.md:
+    metric:
+      name: reported_task_average_score
+    axes:
+      VLM: vlm
+      Vision encoder: encoder
+      group: dataset
+      measure: evaluation
+claims:
+  - claim_id: C01
+    provenance:
+      author: direct-session-annotation
+      model: openai-codex/gpt-6-astra
+    properties:
+      - kind: best_baseline_consistency
+        metric: reported_task_average_score
+        over: evaluation
+        in_scope:
+          - clean
+          - 2/255
+          - 4/255
+        where:
+          dataset: Avg
+        treatment:
+          encoder: FARE2
+        baseline_axis: encoder
+        exclude:
+          - CLIP
+          - FARE4
+          - TeCoA4
+        group: vlm
+        groups:
+          - OF-9B
+          - LLaVA 1.5-7B
+        comparator: gt
+      - kind: best_baseline_consistency
+        metric: reported_task_average_score
+        over: evaluation
+        in_scope:
+          - clean
+          - 2/255
+          - 4/255
+        where:
+          dataset: Avg
+        treatment:
+          encoder: FARE4
+        baseline_axis: encoder
+        exclude:
+          - CLIP
+          - FARE2
+          - TeCoA2
+        group: vlm
+        groups:
+          - OF-9B
+          - LLaVA 1.5-7B
+        comparator: gt

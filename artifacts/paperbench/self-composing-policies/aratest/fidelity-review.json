@@ -1,0 +1,35 @@
+{
+  "reviewer": "fresh-context same-system AI review",
+  "claims": [
+    {
+      "claim_id": "C01",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Skipping is appropriate. C01 is a structural asymptotic assertion: each module has constant-size matrices under fixed d_enc, d_model, and action size, so total parameters grow O(n). E04 and Figure B.1 discuss this argument, while their parameter entries are symbolic multiples of m and qualitative growth descriptions rather than numeric counts. Numeric finite-task comparisons cannot establish constant module size or universal linear asymptotic growth; a monotonic or endpoint property would be a different claim."
+    },
+    {
+      "claim_id": "C02",
+      "judgment": "faithful",
+      "field": null,
+      "explanation": "The six metric-specific best-baseline properties preserve both P(T) and FTr for Meta-World, SpaceInvaders, and Freeway, using ge to allow the stated equality. Table 1 supplies all five baseline methods plus CompoNet under the ten-seed, 1M-step-per-task SAC/PPO sequence conditions. Excluding RT is correct because it is a reference-transfer statistic, not one of the five compared methods. No sequence or performance/transfer metric is omitted; the SpaceInvaders performance tie with FT-N at 0.99 remains allowed rather than incorrectly converted to strict superiority."
+    },
+    {
+      "claim_id": "C03",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Skipping is appropriate for the complete three-scenario claim. E03 and Figure 4 provide scenario (i) informative-policy attention and scenario (iii) uninformative-policy/internal-policy behavior, with approximate returns, attention patterns, and matching rates. They do not provide a complete numeric relation establishing scenario (ii)'s general ability to learn a useful function of previous policies. Reducing the claim to the two available final returns or dominant-attention observations would omit one named scenario and the asserted mechanisms."
+    },
+    {
+      "claim_id": "C04",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Skipping is appropriate. C04 combines O(n²) theoretical complexity, slower empirical inference growth through 300 tasks, and an architectural explanation involving parallel attention rather than sequential lateral connections. Figure 3 separates main-figure approximate timings at d_enc=64 and action size 6 from appendix timings at d_enc=39 and action size 4 through 300 tasks. Lower times at selected points are not a growth-rate or complexity proof, and merging those configurations would violate scope. The reported relation catalog cannot express the whole growth-and-mechanism assertion."
+    },
+    {
+      "claim_id": "C05",
+      "judgment": "wrong",
+      "field": "properties",
+      "explanation": "The three gt properties faithfully capture CompoNet FTr exceeding RT in all three sequences: Table 1 reports 0.01>−0.06, 0.74>0.70, and 0.80>0.67. They do not capture the rest of the statement, namely that CompoNet leverages compositional knowledge from multiple previous tasks simultaneously. Figure D.2 defines RT through single-task fine-tuning transfer matrices; beating that statistic does not distinguish simultaneous multi-policy composition from another source of transfer improvement. The source's FTr≤RT falsifier is a sufficient empirical refutation condition, not evidence that FTr>RT proves the mechanism. Operationalizing that falsifier alone silently narrows the full causal/compositional claim; retain that limitation or skip the whole unsupported relation rather than declare full fidelity."
+    }
+  ]
+}

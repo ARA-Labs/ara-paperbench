@@ -1,0 +1,36 @@
+{
+  "date": "2026-10-10",
+  "corpus_input_commit": "a2eac9e2b40394a3f005f92badebbd3fd2f1bcae",
+  "authoring_method": "Direct assistant authoring with fresh-context workers; user explicitly replaced model-runner collection.",
+  "author_model": "openai-codex/gpt-6-astra",
+  "review_method": "Fresh-context same-system AI review of all claims, followed by source-based corrections and re-review. Review workers did not read mechanical results.",
+  "instruction_sha256": "292db6ae10a29856da4654dab9576645f1e4dc508b78020b8fb3db15147599c9",
+  "authoring_contract_sha256": "36cbfd5faa07cb09110546a5be74cbc948a48432db85035662893e7c5efb34c0",
+  "aratest_version": "1.0.9",
+  "source_files_verified": 2890,
+  "original_review_judgments": {
+    "correct": 205,
+    "unclear": 10,
+    "wrong": 4,
+    "expressible": 4,
+    "faithful": 20
+  },
+  "final_review_judgments": {
+    "correct": 213,
+    "faithful": 24,
+    "unclear": 6
+  },
+  "structural_repairs": [
+    "artifacts/paperbench/lbcs"
+  ],
+  "researcher_review_issue": "https://github.com/ARA-Labs/DissClaimer/issues/425",
+  "provider_generation_calls": 0,
+  "usage_accounting": "Native-session authoring and review costs/tokens/times are not attributable per ARA; no per-ARA provider receipts or zero-cost claim.",
+  "limits": [
+    "Not a frozen-model held-out evaluation.",
+    "No independent GPT/GLM review and no human researcher audit.",
+    "No generative experiment execution.",
+    "Two violated declarations are candidate source inconsistencies, not confirmed paper errors.",
+    "Six final skipped claims retain unclear fidelity-review judgments."
+  ]
+}

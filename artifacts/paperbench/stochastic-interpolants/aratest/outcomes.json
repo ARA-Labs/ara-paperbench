@@ -1,0 +1,39 @@
+{
+  "claims": [
+    {
+      "claim_id": "C01",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "C01 asserts a universal theorem: for ANY joint density with correct marginals, including dependent couplings, the conditional velocity is the UNIQUE minimizer of the quadratic objective and satisfies the transport equation. E01 is an analytical validation plan; evidence/tables/table1_couplings.md classifies coupling PDFs and figure2_transport_comparison.md provides a three-mode GMM illustration. No reported comparison or finite generative catalog predicate expresses universal minimizer uniqueness and the transport identity. Numeric loss comparisons on a chosen GMM would be a narrower assertion, not a test of this whole theorem."
+    },
+    {
+      "claim_id": "C02",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "C02 requires the symbolic transport bound under x0=m(x1)+σζ with α=1−t, β=t to equal dσ² and be strictly below 2E|x1|²+dσ². E01 supplies an analytical/GMM procedure; evidence/figures/figure2_transport_comparison.md explicitly contains no numerical trajectory data. The catalog does not express equality of symbolic expectation integrals or the universally parameterized bound. In particular, the unspecified dependence on m(x1) must not be silently replaced by m(x1)=x1; a numerical comparison at one selected σ, d or coupling would change the claim."
+    },
+    {
+      "claim_id": "C03",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "evidence/tables/table2_inpainting_fid.md reports ImageNet-256 FID-50k 1.13 for the data-dependent mask coupling and 1.35 for the uncoupled model, with the E02 coupling/schedule conditions. A directional comparison between those two evidence cells is expressible, but C03 explicitly asserts those magnitudes and its falsifier names fixed thresholds (dependent ≥1.35 OR uncoupled ≤1.13 in reproduction). The reported catalog cannot declare those absolute reported/reproduction thresholds; a mere dependent<uncoupled comparison would allow both values to move past them. No narrower directional subclaim is counted as the full assertion."
+    },
+    {
+      "claim_id": "C04",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "evidence/tables/table3_superresolution_fid.md provides train FID-50k 2.13 and validation2.05 for ImageNet64→256 dependent coupling, plus I²SB validation2.70 (its train value is unreported). C04 asserts BOTH train and validation magnitudes and superiority to I²SB; its falsifier uses the fixed validation threshold2.70. A validation pairwise comparison alone omits the independent train assertion, and comparing train to another baseline invents a condition not equivalent to train2.13. Reported relations cannot express the entire absolute-value/threshold conjunction; no values are copied into synthetic evidence or a spec constant."
+    },
+    {
+      "claim_id": "C05",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "nonquantitative",
+      "explanation": "evidence/figures/figure2_transport_comparison.md explicitly identifies itself as a qualitative 2D three-mode GMM visualization with no numerical data points. Its left/right descriptions contrast simple non-crossing dependent-coupling flows with complex independent-coupling flows and auxiliary intermediate modes. E04 gives no numeric trajectory-complexity measure, mode-detection criterion or crossing counts. None of these qualitative descriptions is converted into fabricated measurements or a finite predicate standing in for the complete visual assertion."
+    }
+  ]
+}

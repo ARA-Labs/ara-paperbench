@@ -1,0 +1,77 @@
+{
+  "reviewer": "fresh-context same-system AI review (ReviewMmdAnnotation)",
+  "claims": [
+    {
+      "claim_id": "C01",
+      "judgment": "correct",
+      "field": "disposition, reason",
+      "explanation": "No field difference requiring correction. E01, calibration.md and paper Theorem 1 concern mathematical null calibration under exchangeability, pooled permutation invariance and a fixed statistic rule. A finite threshold experiment would not express the whole universally quantified implication, and the claim explicitly excludes local finite-precision calibration. The no-relation skip is justified."
+    },
+    {
+      "claim_id": "C02",
+      "judgment": "correct",
+      "field": "disposition, reason",
+      "explanation": "No field difference requiring correction. E02, fusion.md and the paper's Donsker–Varadhan identity concern an unrestricted posterior domain, absolute continuity/integrability and an identified temperature. Finite numerical equivalence checks do not preserve the unrestricted optimization or establish the identity. Neither restricted Gamma-family optimization nor released-code temperature substitution is licensed. The no-relation skip is justified."
+    },
+    {
+      "claim_id": "C03",
+      "judgment": "correct",
+      "field": "disposition, reason",
+      "explanation": "No field difference requiring correction. The paper Definition 1 and E01/E02 give a conditional exact reuse implication for finite, positive permutation-invariant normalizers. Testing a concrete row/column permutation would test an applicability example, not the whole implication for all qualifying normalizers; degeneracy and floating-point tolerances are explicitly outside scope. The catalog has no implemented algebraic/universal relation, so skipping is justified."
+    },
+    {
+      "claim_id": "C04",
+      "judgment": "correct",
+      "field": "disposition, reason",
+      "explanation": "No field difference requiring correction. E03, power.md and paper Theorems 2/3 retain bounded kernels, comparable group sizes, a data-independent prior, sufficient permutations, finite divergence and the normalized reciprocal-normalizer moment condition. This is an attributed sufficient-power theorem/proof obligation, not an empirical rejection-rate threshold. An implemented numerical relation cannot express the whole guarantee, so skipping is justified."
+    },
+    {
+      "claim_id": "C05",
+      "judgment": "correct",
+      "field": "disposition, reason",
+      "explanation": "No field difference requiring correction. The paper's fixed-prior posterior discussion addresses reducing KL adaptation cost in a sufficient condition when signal is spread, not monotonic actual power as kernels are added. Figure 7 reports rejection proportions but no posterior divergence, and its exact FUSE sequence is not monotone. Declaring monotonic power would change both metric and proposition. The no-relation skip preserves the whole claim."
+    },
+    {
+      "claim_id": "C06",
+      "judgment": "correct",
+      "field": "disposition, reason",
+      "explanation": "No field difference requiring correction. E02/E09 and paper pages 4–7 distinguish one fused statistic/permutation calibration from MMDAgg's additional multiplicity-calibration stage. Figure 8 timings are neither an operation-level stage audit nor a universal speed guarantee; the published RHS has a separately documented provenance defect. The structural claim is appropriately skipped rather than replaced by runtime superiority."
+    },
+    {
+      "claim_id": "C07",
+      "judgment": "correct",
+      "field": "disposition, reason, explanation",
+      "explanation": "Skipping is justified for the whole mechanism hypothesis. E04/Figure 1 show whole-method mixture comparisons, whereas C07 requires only bandwidth selection to change with statistic, normalization, calibration, draws and permutations fixed, plus a simultaneous uncertainty assessment of a positive local-scale advantage. A differential on observed means alone would not implement that criterion; a reported MMD-FUSE versus MMD-Median consistency declaration would conflate other components. The nonquantitative reason describes the explanatory claim, not an absence of quantitative evidence or a denial that future controlled testing is possible."
+    },
+    {
+      "claim_id": "C08",
+      "judgment": "faithful",
+      "field": "kind, metric, treatment, baseline, where, comparator, over, in_scope, min_pass, evidence axes",
+      "explanation": "No field difference requiring correction in either first-spec.yaml or spec.yaml. Figure 1's exact Galaxy sample-size rows have image-specific MMD-D below MMD-FUSE at 500 (0.1449999958 versus 0.2769230902), but above it at 1000, 1500, 2000 and 2500 (respectively 0.5149999857>0.4507772028, 0.9799999595>0.7172774673, 1>0.8402061462 and 1>0.8743455410). treatment=MMD-D, baseline=MMD-FUSE, comparator=gt and min_pass=1 express the existential reported exception over all five named sample sizes, not uniform dominance. where='Galaxy: sample size' correctly excludes synthetic MMD-D, the corruption panel and longer AutoML. Method/column/section mappings preserve method/sample_size/panel. This faithfully represents the bounded reported comparison; it does not claim significance or execute the separately described prospective inferential replication."
+    },
+    {
+      "claim_id": "C09",
+      "judgment": "correct",
+      "field": "disposition, reason",
+      "explanation": "No field difference requiring correction. C09 and E08/Figure 7 explicitly leave the acceptable noninferiority loss margin, starting collection, expansion range, outcome denominators/pairing and simultaneous uncertainty procedure unfrozen. These are missing scientific acceptance choices, not values that may be recovered by fitting the narrow observed curve. A constancy band, monotonic relation or symmetric equivalence margin would substitute a different claim. The unclear skip reason is justified; improvement would not refute retention."
+    },
+    {
+      "claim_id": "C10",
+      "judgment": "correct",
+      "field": "disposition, reason",
+      "explanation": "No field difference requiring correction. E07/Table 1 and source_conflicts.md distinguish the paper's printed 0.937 from the released 0.9366196990013123 aggregate and leave denominator/averaging reconciliation unresolved. The whole C10 criterion requires protocol attribution plus a prespecified uncertainty comparison of rejection probability with the declared null level, not superiority to another method. Counts cannot be inferred from rounded decimals, and a generic threshold-under-imposed-null relation would address calibration rather than this alternative image-collection detection assertion. Skipping is justified."
+    },
+    {
+      "claim_id": "C11",
+      "judgment": "correct",
+      "field": "disposition, reason",
+      "explanation": "No field difference requiring correction. E10/local_run.md retain the exact released aggregate match, 36/200 and the float32 value 0.17999999225139618. E11/source_conflicts.md and the original formula/temperature images retain the second conjunct: for equal groups the implementation exponent is Q*U/sqrt(Nhat), whereas the paper experimental exponent is sqrt(Q)*U/sqrt(Nhat), with Q=s(s-1). An outside positive statistic scale does not remove an inside log-sum-exp temperature discrepancy. Numerical reproduction alone would omit that symbolic non-equivalence, which the implemented catalog cannot express. The no-relation skip is justified."
+    },
+    {
+      "claim_id": "C12",
+      "judgment": "faithful",
+      "field": "kind, metric, statistic, include_reference, band, controls, families, explanation",
+      "explanation": "The decision predicate is faithfully declared in both specs: invariant on rejection_proportion, statistic=mean rather than each, inclusive treatment band [0.13,0.23], and a matched label control with reference band [0.13,0.23], control band [0,0.1] and reference-minus-control at least 0.05. The consuming code explicitly routes paired_shift and makes a missing/failed control inconclusive before evaluating the mean. No generic families are attached, correctly avoiding replacement of registered seeds 42/43 or the two frozen row-manifest identities with arbitrary interventions; the generic family parameter models explicitly leave concrete seeds/orders to the agent. The source control identifier 'labels' is normalized to declaration control_id='label_permutation'; future supplied cases must use that declared identifier. Crucially, include_reference=false excludes an EXTRA reference arm from the arithmetic: it must not remove the registered reference CONDITION from the two-treatment set. The seed family treatments are 0.18 and 0.235, whose source-recorded mean is 0.2075; the row-order family treatments are 0.18 and 0.19, with mean 0.185. Testing each treatment would incorrectly reject seed 43, and averaging only the non-reference seed would likewise change the target. Faithfulness therefore requires protocol-aligned cases containing exactly those two registered treatment cells, including the reference-condition cell once in treatment, with a separate matched reference arm for the gate. The declaration does not itself encode these case identities, cardinality or source protocol; the outcome explanation explicitly retains that admission restriction and acknowledges zero generator pairings/no fresh cases. This is a faithful bounded predicate declaration, not an executed robustness certification or permission to evaluate arbitrary batches or combine the two finite families into one unrestricted mean."
+    }
+  ]
+}

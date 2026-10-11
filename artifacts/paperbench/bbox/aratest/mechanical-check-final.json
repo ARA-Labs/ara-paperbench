@@ -1,0 +1,211 @@
+{
+  "format_version": "1",
+  "ara": "/home/yfhe/ara/DissClaimer/.runs/rq1-direct-20261010/artifacts/paperbench/bbox",
+  "results": null,
+  "claims": [
+    {
+      "claim_id": "C08",
+      "standing": "undecided",
+      "properties": [
+        {
+          "kind": "comparative",
+          "version": "1",
+          "outcome": {
+            "tag": "inconclusive"
+          },
+          "note": "in-scope comparison within noise, approximate, or unobserved at iteration in [0]",
+          "refinement": {
+            "label": "inconclusive",
+            "note": ""
+          },
+          "statistic": null,
+          "checked": true,
+          "witnesses": []
+        },
+        {
+          "kind": "comparative",
+          "version": "1",
+          "outcome": {
+            "tag": "inconclusive"
+          },
+          "note": "in-scope comparison within noise, approximate, or unobserved at iteration in [1]",
+          "refinement": {
+            "label": "inconclusive",
+            "note": ""
+          },
+          "statistic": null,
+          "checked": true,
+          "witnesses": []
+        },
+        {
+          "kind": "comparative",
+          "version": "1",
+          "outcome": {
+            "tag": "inconclusive"
+          },
+          "note": "in-scope comparison within noise, approximate, or unobserved at iteration in [0]",
+          "refinement": {
+            "label": "inconclusive",
+            "note": ""
+          },
+          "statistic": null,
+          "checked": true,
+          "witnesses": []
+        },
+        {
+          "kind": "comparative",
+          "version": "1",
+          "outcome": {
+            "tag": "inconclusive"
+          },
+          "note": "in-scope comparison within noise, approximate, or unobserved at iteration in [1]",
+          "refinement": {
+            "label": "inconclusive",
+            "note": ""
+          },
+          "statistic": null,
+          "checked": true,
+          "witnesses": []
+        },
+        {
+          "kind": "consistency",
+          "version": "1",
+          "outcome": {
+            "tag": "inconclusive"
+          },
+          "note": "0 of 2 in-scope values pass (min_pass=all); within noise, approximate, or unobserved at method in [adapter_0.1B, adapter_0.3B]",
+          "refinement": {
+            "label": "inconclusive",
+            "note": ""
+          },
+          "statistic": null,
+          "checked": true,
+          "witnesses": []
+        },
+        {
+          "kind": "consistency",
+          "version": "1",
+          "outcome": {
+            "tag": "inconclusive"
+          },
+          "note": "0 of 2 in-scope values pass (min_pass=all); within noise, approximate, or unobserved at method in [adapter_0.1B, adapter_0.3B]",
+          "refinement": {
+            "label": "inconclusive",
+            "note": ""
+          },
+          "statistic": null,
+          "checked": true,
+          "witnesses": []
+        }
+      ],
+      "record": null
+    },
+    {
+      "claim_id": "C05",
+      "standing": "holds",
+      "properties": [
+        {
+          "kind": "comparative",
+          "version": "1",
+          "outcome": {
+            "tag": "holds"
+          },
+          "note": "the relation holds on all 1 in-scope values",
+          "refinement": {
+            "label": "holds",
+            "note": ""
+          },
+          "statistic": null,
+          "checked": true,
+          "witnesses": []
+        },
+        {
+          "kind": "comparative",
+          "version": "1",
+          "outcome": {
+            "tag": "holds"
+          },
+          "note": "the relation holds on all 1 in-scope values",
+          "refinement": {
+            "label": "holds",
+            "note": ""
+          },
+          "statistic": null,
+          "checked": true,
+          "witnesses": []
+        },
+        {
+          "kind": "comparative",
+          "version": "1",
+          "outcome": {
+            "tag": "holds"
+          },
+          "note": "the relation holds on all 1 in-scope values",
+          "refinement": {
+            "label": "holds",
+            "note": ""
+          },
+          "statistic": null,
+          "checked": true,
+          "witnesses": []
+        },
+        {
+          "kind": "comparative",
+          "version": "1",
+          "outcome": {
+            "tag": "holds"
+          },
+          "note": "the relation holds on all 1 in-scope values",
+          "refinement": {
+            "label": "holds",
+            "note": ""
+          },
+          "statistic": null,
+          "checked": true,
+          "witnesses": []
+        },
+        {
+          "kind": "comparative",
+          "version": "1",
+          "outcome": {
+            "tag": "holds"
+          },
+          "note": "the relation holds on all 1 in-scope values",
+          "refinement": {
+            "label": "holds",
+            "note": ""
+          },
+          "statistic": null,
+          "checked": true,
+          "witnesses": []
+        },
+        {
+          "kind": "comparative",
+          "version": "1",
+          "outcome": {
+            "tag": "holds"
+          },
+          "note": "the relation holds on all 1 in-scope values",
+          "refinement": {
+            "label": "holds",
+            "note": ""
+          },
+          "statistic": null,
+          "checked": true,
+          "witnesses": []
+        }
+      ],
+      "record": null
+    }
+  ],
+  "undeclared": [
+    "C01",
+    "C02",
+    "C03",
+    "C04",
+    "C06",
+    "C07"
+  ],
+  "record_errors": [],
+  "exit_code": 4
+}

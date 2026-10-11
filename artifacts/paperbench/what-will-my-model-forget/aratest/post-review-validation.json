@@ -1,0 +1,5 @@
+{
+  "returncode": 0,
+  "stdout": "{\n  \"ara\": \"/home/yfhe/ara/DissClaimer/.runs/rq1-direct-20261010/artifacts/paperbench/what-will-my-model-forget\",\n  \"source_format_version\": 7,\n  \"valid\": true,\n  \"property_count\": 3,\n  \"property_problems\": [],\n  \"families\": [],\n  \"legacy_unmapped\": [],\n  \"undeclared_claims\": [\n    \"C01\",\n    \"C02\",\n    \"C03\",\n    \"C06\"\n  ],\n  \"skipped_cells\": [\n    {\n      \"path\": \"evidence/tables/table2_ood_generalization.md\",\n      \"count\": 0\n    },\n    {\n      \"path\": \"evidence/tables/table3_sequential_refinement.md\",\n      \"count\": 0\n    },\n    {\n      \"path\": \"evidence/tables/table8_flops.md\",\n      \"count\": 0\n    }\n  ]\n}\n",
+  "stderr": ""
+}

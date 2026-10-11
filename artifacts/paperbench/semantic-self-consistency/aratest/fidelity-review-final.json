@@ -1,0 +1,41 @@
+{
+  "reviewer": "fresh-context same-system AI review",
+  "claims": [
+    {
+      "claim_id": "C01",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "The full claim is a pooled majority over all 15 model-dataset pairs in E01/Table 1, not a separate majority for every dataset or model. I inspected table1_semantic_consistency.md and the v7 EvidenceEntry/Labels and reported ConsistencyDomain/BestBaselineConsistencyDomain schemas. Evidence mapping can rename axes and values or add file-wide coordinates; it cannot join Dataset and model into a Cartesian-product axis. consistency.min_pass counts one declared axis, while best_baseline_consistency requires its threshold separately per group. Conjoining dataset-level majorities, selecting the observed winning cells, or replacing the majority by universal improvement changes the original quantifier. The skipped outcome is justified; all 15 pairs remain the denominator. The SCW embedding/weighting definition and k=10, temperature=0.8 conditions are not alternative measurements of that pooled assertion."
+    },
+    {
+      "claim_id": "C02",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Table 1 supplies five CPW and SC accuracies per dataset; the claimed across-model average gains +3.14 and +0.97 and loss -1.63 are not reported as separate comparable aggregate cells. The falsifier requires the direction of each dataset-specific mean, not a majority of positive per-model effects. Reported domains compare individual measurements and optionally ratios; they have no mean-of-differences operator. The generative differential relation does compute a paired mean, but accepts RunPair experiments, not Table 1 cells; ReportedEvidence cannot route to it. Turning these static cells into invented runs is not a declaration of the existing evidence. The complete three-dataset average assertion, including its quantitative grounding, is therefore not expressible in the authored reported-evidence spec. The skip is correct; no per-model directional substitute is recommended."
+    },
+    {
+      "claim_id": "C03",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "C03 conjoins best-configuration improvements for Isolation Forest, KNN and one-class SVM with persistent gains at reduced sample sizes. E02 explicitly includes reduced-size verification, but table2_outlier_detection.md reports only k=10 and supplies Best / Average pairs, not reduced-k results. The measurement reader also treats header-declared best/average pairs as named non-comparable values rather than choosing the first number. Even a representation of the k=10 best comparisons would omit the reduced-size conjunct and pooled model-dataset-method quantifier. Neither average accuracy nor observed winning conditions can replace them. The skipped outcome is correct on the whole-claim criterion; the named methods, best-configuration statistic and reduced-size scope must all remain."
+    },
+    {
+      "claim_id": "C04",
+      "judgment": "faithful",
+      "field": null,
+      "explanation": "Re-reviewed only the changed C04 declaration and disposition against the original claim, E03, table6_featurizer_distance.md, and the reported relation implementation. The evidence entry reads average pairwise Euclidean distance from the column axis, renames BERT-Model to featurizer, and retains the same arithmetic reasoning samples as a file-wide task_scope coordinate. Its complete numeric cohort is RoBERTa 48.697, MathBERT 45.892 and SciBERT 45.281; parenthetical deltas are not separate thresholds. best_baseline_consistency with treatment RoBERTa, baseline_axis featurizer, comparator gt, the single arithmetic scope, and no exclusions compares RoBERTa to BOTH SciBERT and MathBERT. expected_cohort removes only RoBERTa from this mapped table, and the consumer requires every cohort comparison, so neither required featurizer is silently dropped. RoBERTa > SciBERT AND RoBERTa > MathBERT is exactly the negation of the directional falsifier RoBERTa <= SciBERT OR MathBERT. The revised outcome explicitly retains the source-grounded contextual/directional interpretation of significantly and does not assert an inferential significance test, impute variance or claim an unobserved scope. The parenthetical distances ground the reported observations rather than define independent score thresholds. The changed full declaration is faithful under that explicitly disclosed interpretation. Initial fidelity-review.json is preserved; all other claim reviews are carried forward unchanged, not re-reviewed. No mechanical outputs were consulted and no checks were run."
+    },
+    {
+      "claim_id": "C05",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "Table3_seq_length_bleu.md reports average sequence length and average semantic-method accuracy gain for all 15 model-dataset units. C05 and E04 assert a positive cross-unit correlation/tendency, with a discriminative-semantic-signal explanation. consistency/comparative compare fixed treatment/reference measurements; their schemas have no correlation statistic. Generative monotonic orders a swept setting and bounds its worst backslide, which is a stronger, different property than positive correlation and does not consume these paired measurement columns. Restricting to a favorable subset, requiring every longer sequence to improve more, or comparing length itself to accuracy would change the claim. The stated mechanistic explanation is not established by any such surrogate either. The no-relation skip is justified without dropping C05 or any of its 15 observational units."
+    },
+    {
+      "claim_id": "C06",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "C06 explicitly uses statistically significant positive BLEU/gain correlation in its falsifier, unlike the merely directional featurizer falsifier of C04. Table3_seq_length_bleu.md contains the 15 paired BLEU and accuracy-gain values, but E04 supplies neither a test statistic nor a significance level; the reported catalog has no correlation, independence or equivalence-of-columns relation. The generative equivalence relation requires aligned binary outcomes and a supplied margin and is not a correlation test over these continuous aggregate columns. A nonpositive point estimate alone would not preserve the statistical falsifier or the assertion about orthogonal generation quality and reasoning accuracy. The no-relation skip is correct. ROUGE-N is not substituted for BLEU, and no significance level, sampling variance or narrowed subset is invented."
+    }
+  ]
+}

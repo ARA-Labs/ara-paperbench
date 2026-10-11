@@ -1,0 +1,203 @@
+{
+  "format_version": "1",
+  "ara": "/home/yfhe/ara/DissClaimer/.runs/rq1-direct-20261010/artifacts/paperbench/adaptive-pruning",
+  "results": null,
+  "claims": [
+    {
+      "claim_id": "C02",
+      "standing": "violated",
+      "properties": [
+        {
+          "kind": "comparative",
+          "version": "1",
+          "outcome": {
+            "tag": "holds"
+          },
+          "note": "the relation holds on all 1 in-scope values",
+          "refinement": {
+            "label": "holds",
+            "note": ""
+          },
+          "statistic": null,
+          "checked": true,
+          "witnesses": []
+        },
+        {
+          "kind": "comparative",
+          "version": "1",
+          "outcome": {
+            "tag": "violated",
+            "witnesses": [
+              {
+                "case_id": "[[\"model\",\"RoBERTabase\"]]",
+                "detail": "6513.0 ratio_le 8.4 * 752.0"
+              }
+            ]
+          },
+          "note": "the relation fails inside the declared scope at model in [RoBERTabase]",
+          "refinement": {
+            "label": "scope_flip",
+            "note": ""
+          },
+          "statistic": null,
+          "checked": true,
+          "witnesses": [
+            "[[\"model\",\"RoBERTabase\"]]"
+          ]
+        },
+        {
+          "kind": "comparative",
+          "version": "1",
+          "outcome": {
+            "tag": "violated",
+            "witnesses": [
+              {
+                "case_id": "[[\"model\",\"T5base\"]]",
+                "detail": "14417.0 ratio_ge 8.2 * 1774.0"
+              }
+            ]
+          },
+          "note": "the relation fails inside the declared scope at model in [T5base]",
+          "refinement": {
+            "label": "scope_flip",
+            "note": ""
+          },
+          "statistic": null,
+          "checked": true,
+          "witnesses": [
+            "[[\"model\",\"T5base\"]]"
+          ]
+        },
+        {
+          "kind": "comparative",
+          "version": "1",
+          "outcome": {
+            "tag": "holds"
+          },
+          "note": "the relation holds on all 1 in-scope values",
+          "refinement": {
+            "label": "holds",
+            "note": ""
+          },
+          "statistic": null,
+          "checked": true,
+          "witnesses": []
+        }
+      ],
+      "record": null
+    },
+    {
+      "claim_id": "C04",
+      "standing": "undecided",
+      "properties": [
+        {
+          "kind": "comparative",
+          "version": "1",
+          "outcome": {
+            "tag": "inconclusive"
+          },
+          "note": "in-scope comparison within noise, approximate, or unobserved at sparsity in [30%]",
+          "refinement": {
+            "label": "inconclusive",
+            "note": ""
+          },
+          "statistic": null,
+          "checked": true,
+          "witnesses": []
+        },
+        {
+          "kind": "comparative",
+          "version": "1",
+          "outcome": {
+            "tag": "inconclusive"
+          },
+          "note": "in-scope comparison within noise, approximate, or unobserved at sparsity in [30%]",
+          "refinement": {
+            "label": "inconclusive",
+            "note": ""
+          },
+          "statistic": null,
+          "checked": true,
+          "witnesses": []
+        }
+      ],
+      "record": null
+    },
+    {
+      "claim_id": "C06",
+      "standing": "undecided",
+      "properties": [
+        {
+          "kind": "comparative",
+          "version": "1",
+          "outcome": {
+            "tag": "inconclusive"
+          },
+          "note": "in-scope comparison within noise, approximate, or unobserved at sparsity in [30%]",
+          "refinement": {
+            "label": "inconclusive",
+            "note": ""
+          },
+          "statistic": null,
+          "checked": true,
+          "witnesses": []
+        },
+        {
+          "kind": "comparative",
+          "version": "1",
+          "outcome": {
+            "tag": "inconclusive"
+          },
+          "note": "in-scope comparison within noise, approximate, or unobserved at sparsity in [30%]",
+          "refinement": {
+            "label": "inconclusive",
+            "note": ""
+          },
+          "statistic": null,
+          "checked": true,
+          "witnesses": []
+        },
+        {
+          "kind": "comparative",
+          "version": "1",
+          "outcome": {
+            "tag": "inconclusive"
+          },
+          "note": "in-scope comparison within noise, approximate, or unobserved at sparsity in [30%]",
+          "refinement": {
+            "label": "inconclusive",
+            "note": ""
+          },
+          "statistic": null,
+          "checked": true,
+          "witnesses": []
+        },
+        {
+          "kind": "comparative",
+          "version": "1",
+          "outcome": {
+            "tag": "inconclusive"
+          },
+          "note": "in-scope comparison within noise, approximate, or unobserved at sparsity in [30%]",
+          "refinement": {
+            "label": "inconclusive",
+            "note": ""
+          },
+          "statistic": null,
+          "checked": true,
+          "witnesses": []
+        }
+      ],
+      "record": null
+    }
+  ],
+  "undeclared": [
+    "C01",
+    "C03",
+    "C05",
+    "C07",
+    "C08"
+  ],
+  "record_errors": [],
+  "exit_code": 1
+}

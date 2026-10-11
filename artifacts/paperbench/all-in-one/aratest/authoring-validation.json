@@ -1,0 +1,5 @@
+{
+  "exit_code": 0,
+  "stdout": "{\n  \"ara\": \"/home/yfhe/ara/DissClaimer/.runs/rq1-direct-20261010/artifacts/paperbench/all-in-one\",\n  \"source_format_version\": 7,\n  \"valid\": true,\n  \"property_count\": 0,\n  \"property_problems\": [],\n  \"families\": [],\n  \"legacy_unmapped\": [],\n  \"undeclared_claims\": [\n    \"C01\",\n    \"C02\",\n    \"C03\",\n    \"C04\",\n    \"C05\",\n    \"C06\"\n  ],\n  \"skipped_cells\": []\n}\n",
+  "stderr": ""
+}

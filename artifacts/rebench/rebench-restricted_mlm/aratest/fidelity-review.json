@@ -1,0 +1,89 @@
+{
+  "reviewer": "fresh-context same-system AI review",
+  "claims": [
+    {
+      "claim_id": "C01",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "reference_scores.md provides both endpoint losses and scores, so their ordering is expressible. The full claim additionally commits to the logarithmic transformation and approximately 0.68 additive score improvement; an ordering or fixed ratio does not preserve those obligations. This is a relation limitation, not a source-parser failure; the table also retains the 1.143 versus approximately 1.13 reference discrepancy."
+    },
+    {
+      "claim_id": "C02",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "The cited formula and halving argument in reference_scores.md are analytical evidence. A universal functional identity and asymptotic behavior cannot be replaced by finite reported-cell comparisons or a generated trend check. Skipping the full mathematical claim is justified."
+    },
+    {
+      "claim_id": "C03",
+      "judgment": "unclear",
+      "field": "explanation",
+      "explanation": "The heading says unigram is worse, whereas the Statement, E02, notes.md and reference_scores.md say its 7.58 loss is below the 7.636 baseline. The source does not determine a consistent direction for the full claim. Even selecting the Statement would leave the marginality and both-scores-round-to-1.81 obligations, which are not discharged by a simple lower-loss relation."
+    },
+    {
+      "claim_id": "C04",
+      "judgment": "unclear",
+      "field": "explanation",
+      "explanation": "notes.md and E03-E04 establish that 5.83/5.75 bigram loss exceeds the later Conv1D loss of 5.25. The claim nevertheless calls bigrams better than that convolution model while also invoking an earlier historical cohort. Its direction and temporal comparison population need clarification; inventing a cohort or reversing the comparator would change the claim."
+    },
+    {
+      "claim_id": "C05",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "notes.md and reference_scores.md report attained Conv1D loss 5.25, but reported relations compare measurements rather than check an absolute attained-value target. The specific 100k-step architecture condition must also be preserved: tao_train.py actually instantiates the composite, so its configuration is not an independent ConvMLM-only training log. Comparing Conv1D with bigrams would test only the heading's weaker ordering."
+    },
+    {
+      "claim_id": "C06",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "The loss progression and source code support an expressible composite-versus-convolution ordering and identify the learned scalar/frozen prior. The full claim includes the 5.25-to-4.6 endpoint magnitude and largest-single-win commitment; comparing levels does not rank stage differences or establish their exact magnitude. These obligations cannot be discarded merely because the simpler ordering is available."
+    },
+    {
+      "claim_id": "C07",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "tao_solution.py places reciprocal EMA updates in update_inverse_stds(), and tao_train.py calls that method after optimization rather than inside forward(). This is an implementation-location and primitive-compliance claim, not an empirical scalar comparison. Existing numeric relations do not establish its complete code mechanism."
+    },
+    {
+      "claim_id": "C08",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "conv1d_same() visibly constructs padding, an as_strided view and einsum with the stated padding formula. The claim concerns an implementation substitution, allow-list compliance and preserved convolution semantics. A runtime ordering or scalar equality would not express that full assertion."
+    },
+    {
+      "claim_id": "C09",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "notes.md reports slowdown and nondecreasing loss in prose, while reference_scores.md records the approximation as n/a rather than a matched runtime/learning table. The notes distinguish GPT-2-small's 2.3 MFU from the smaller configuration's 1.88 versus 43.9 MFU that yields the approximately 23-fold slowdown. The full implementation-plus-runtime-plus-learning claim cannot be declared by merging those configurations or retaining only a slowdown ratio."
+    },
+    {
+      "claim_id": "C10",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "human_baselines.md supplies individual scores and aggregates, but the claim also requires loss inversion, an additive gap, a median and an exact worse-than-anchor count. Comparing the named humans against reference cannot preserve those additional commitments. The table's four beat-reference humans and other source inconsistencies are scientific/source-content issues, not parsing failures."
+    },
+    {
+      "claim_id": "C11",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "malt_attempts.md provides all 22 run scores and model identities, so named winners and Sonnet-versus-reference orderings are available as partial comparisons. The full claim also fixes attained scores and run_14's absolute distance from reference; 1.2218 minus 1.13 is 0.0918, not within an exact 0.09 bound. Declaring only the two winners or an at-least count would omit rather than preserve these commitments."
+    },
+    {
+      "claim_id": "C12",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "The cited aggregate/model tables and human table supply the reported medians, means and best scores. Their orderings are expressible, but checking the claimed attained aggregates and additive 0.71/0.247 gaps requires more than pairwise ordering or fixed-ratio relations. A model-ranking declaration would not express the full quantitative claim."
+    },
+    {
+      "claim_id": "C13",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "EM01-EM04 and malt_attempts.md narrate the winners' attention implementation, absent bigram loading and ensemble, but do not provide a code-history relation or complete per-run implementation ledger in the copied ARA. The learning-rate ceiling, zero-of-22 design rediscoveries and asserted 0.55-loss-unit contribution remain required conjuncts. The official 5.25-to-4.6 progression is also inconsistent with 0.55; score comparisons cannot resolve or replace that source commitment."
+    },
+    {
+      "claim_id": "C14",
+      "judgment": "correct",
+      "field": null,
+      "explanation": "The failure summary and EM05 document seven named affected runs, but not a per-step ledger establishing initial failure timing, reciprocal-emulation causation and universal recovery after the specified replacement. The cited external insights files are not present in this copied artifact. This is missing causal/code-history evidence and relation support, not a numeric-table parser problem."
+    }
+  ]
+}

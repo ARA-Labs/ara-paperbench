@@ -1,0 +1,41 @@
+{
+  "claims": [
+    {
+      "claim_id": "C01",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "E01/E02 and evidence/tables/table2_main_results.md contain test-accuracy means/spreads and LBCS coreset sizes for all three datasets at k=1000,2000,3000,4000. A best-baseline relation can express accuracy >= all seven baselines, but the equally required strict final-size < k compares a measured size against numeric configuration labels, not another reported measurement. No reported-evidence relation accepts those literal per-row size bounds or evaluates a coordinate as a numeric operand. Copying k into fake evidence or omitting size would narrow the conjunction; neither is done. The weaker falsifier involving lower accuracy than all baselines does not replace the stronger best-baseline statement."
+    },
+    {
+      "claim_id": "C02",
+      "disposition": "declared",
+      "declaration_ids": [
+        "C02"
+      ],
+      "reason": null,
+      "explanation": "A single best_baseline_consistency property compares LBCS mean test accuracy against every other method in evidence/tables/table3_lbcs_sizes.md, for all four configurations in each of F-MNIST, SVHN and CIFAR-10 (84 paired comparisons). ge preserves highest mean and the falsifier any baseline higher, including ties, rather than imposing a significance test or strict superiority from the title. Table 3 conditions and E01 step 7 identify these as baseline reruns at LBCS-selected sizes, not the original fixed-k Table 2. Source row/section labels are retained verbatim: F-MNIST k=2000 says approximately 1935 in its row but 1915 in its section and Table 2; no correction or equality of those sizes is asserted. The declaration tests all same-row accuracy comparisons under the reported equal-size protocol, not an independently verified exact size mapping."
+    },
+    {
+      "claim_id": "C03",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "no relation",
+      "explanation": "The statement is an almost-sure asymptotic epsilon-optimality theorem under Progressable and Stable Moving conditions, with a minimum over the feasible masks. E03 and evidence/tables/table5_ablation_search_times.md provide only finite T=100 through 2000 empirical accuracy/size observations. The installed relations cannot express a probability-one limit, the two formal assumptions, or the constrained global optimum. Finite empirical convergence or decreasing size is not substituted for Theorem 2."
+    },
+    {
+      "claim_id": "C04",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "prose-only",
+      "explanation": "E04 requires all seven baselines at all four k values under 30% noise, 50% noise and imbalance. evidence/figures/fig2_imperfect_supervision.md and figure2_imperfect_supervision.md tabulate approximate accuracy only for 30% noise and class imbalance (and disagree in the approximate readings). evidence/tables/table7_imperfect_supervision.md and table6_imperfect_supervision_sizes.md include 50% noise only for coreset SIZE, not accuracy. The referenced Figure 4 accuracy results for 50% noise are not included as numeric evidence in this fixed ARA. Thus the full three-condition accuracy claim and the epsilon-compromise overfitting mechanism cannot be discharged by checking the two available conditions."
+    },
+    {
+      "claim_id": "C05",
+      "disposition": "skipped",
+      "declaration_ids": [],
+      "reason": "parse failure",
+      "explanation": "E05 and evidence/tables/table4_imagenet.md contain ImageNet-1k Top-5 scores at predefined 70%/80% ratios and optimized ratios 68.53%/77.82% in parentheses in the LBCS cells. Public evidence parsing exposes only the primary accuracy values 89.98/90.84, not either parenthetical selection ratio as an addressable measurement. The claim independently asserts those exact optimized ratios and the falsifier requires optimized < predefined; reported pairwise relations do not provide literal ratio-equality/bound checks either. An accuracy-only best-baseline property would omit this essential size condition. Influential is unreported rather than assigned a made-up score."
+    }
+  ]
+}
